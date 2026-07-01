@@ -1,0 +1,66 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# Dependencies
+node_modules
+
+# Build output
+dist
+dist-ssr
+*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# ============================================
+# 🔐 SENSITIVE — NEVER UPLOAD THESE
+# ============================================
+.env
+.env.local
+.env.*
+*.env
+
+# Google Service Account credentials (VERY SENSITIVE!)
+sapient-flight-495410-s3-7ebddbbb3300.json
+*-credentials.json
+*serviceAccount*.json
+
+# ============================================
+# 📦 LARGE / UNNECESSARY FILES
+# ============================================
+# Large data cache files
+response.json
+
+# Temp / debug scripts (not part of the app)
+check_*.js
+check_*.cjs
+find_*.js
+inspect_*.js
+list_sheets*.js
+patch_*.cjs
+search_*.cjs
+test_*.mjs
+test-sheets*.js
+test-sheets*.cjs
+fetch.cjs
+get_schema.mjs
+migrate_stages.js
+sync_reels.js
+read_durations.js
+create-users.mjs
+patch_analytics.cjs
+patch_upsert.cjs

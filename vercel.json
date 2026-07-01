@@ -1,0 +1,8 @@
+{
+  "name": "marketing-dashboard-v1",
+  "framework": "vite",
+  "rewrites": [
+    { "source": "/api/(.*)", "destination": "/api/$1" },
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
+}

@@ -2,6 +2,7 @@
   "name": "marketing-dashboard-v1",
   "framework": "vite",
   "rewrites": [
+    { "source": "/api/users/:id", "destination": "/api/users?id=:id" },
     { "source": "/api/(.*)", "destination": "/api/$1" },
     { "source": "/(.*)", "destination": "/index.html" }
   ]

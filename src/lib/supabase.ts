@@ -27,6 +27,7 @@ export type UserProfile = {
   allowed_tabs: string[];
   is_active: boolean;
   team?: 'marketing' | 'video' | '';
+  default_mode?: 'operations' | 'reels' | 'designers';
   created_at: string;
 };
 
@@ -46,16 +47,18 @@ const rolePerm = (role: Role) => runtimeRolePermissions[role] || DEFAULT_ROLE_PE
 
 // Permission checks
 export const PERMISSIONS = {
-  canManageUsers: (role: Role) => rolePerm(role).manageUsers,
+  canManageUsers: (role: Role) => role === 'admin' || role === 'manager' || rolePerm(role).manageUsers,
   canAddEntry: (role: Role) => rolePerm(role).addEntry,
   canSync: (role: Role) => rolePerm(role).sync,
   canEditEditors: (role: Role) => rolePerm(role).editEditors,
   canEditNotes: (role: Role) => rolePerm(role).editNotes,
   canEditBunnyLinks: (role: Role) => rolePerm(role).editBunnyLinks,
-  canViewTab: (role: Role, tab: string, allowedTabs: string[]) => {
-    if (rolePerm(role).viewAllTabs) return true;
-    if (role === 'supervisor') return allowedTabs.includes(tab);
-    return false;
+  canViewTab: (role: Role, tab: string, allowedTabs: string[] = []) => {
+    if (Array.isArray(allowedTabs) && allowedTabs.length > 0) {
+      if (allowedTabs.includes('all') || allowedTabs.includes('*')) return true;
+      return allowedTabs.some(t => String(t).trim().toLowerCase() === String(tab).trim().toLowerCase());
+    }
+    return rolePerm(role)?.viewAllTabs ?? true;
   },
 };
 

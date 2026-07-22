@@ -3,6 +3,13 @@ import { google } from 'googleapis';
 
 const getSpreadsheetId = (gid: any) => {
   const g = String(gid || '');
+  const reelsGids = ['1436746012', '1939073164', '0', '798246690'];
+  if (reelsGids.includes(g)) {
+    return '1GYrPRyPda-w1fGCxFOkieSHT7X5kK5TbikQZuZ-oe1k';
+  }
+  if (g === '501319673' || g === 'designers') {
+    return '1T9x6FXjjXNrdpCwsX8lnFyyXogN11T9ou0hwrQWmdB4';
+  }
   if (g === '1476192399' || g === '2086331904') {
     return '1Hm7noXxv8ITMU3dNXQmqFEzfZY1mZlBJ4bQ9_ZIR0-M';
   }
@@ -82,7 +89,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   try {
     const strGid = String(gid);
-    const isServiceAccountSheet = (strGid === '1476192399' || strGid === '2086331904');
+    const reelsGids = ['1436746012', '1939073164', '0', '798246690'];
+    const isServiceAccountSheet = (strGid === '1476192399' || strGid === '2086331904' || reelsGids.includes(strGid));
 
     let rows: any[][] = [];
     let sheetName = '';
@@ -128,6 +136,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       const reelsGids = ['1436746012', '1939073164', '0', '798246690', '371641707', '97351444', '1639251452'];
       const activePublishedId = reelsGids.includes(strGid)
         ? '2PACX-1vTvcQ3v1JOzacx9tcsYrbriofFyHlu7rOKKlsobvpP9vjnbHGcg_Qn9TLlbkgB2YsGiX0GO1U4wlZjd'
+        : strGid === '501319673'
+        ? '2PACX-1vRkOH2-jRtYqmkf0opn6in9TMg3oOo6FBvlGfkJjhDwn-t-CSYyrTbn4EDjNCFdvKL7tQG6nQ--jSdC'
         : '1GFMUIYZIfqFyrQ0nKxCcATP6T6HKj4_noqSqN2sVEsU';
       const url = `https://docs.google.com/spreadsheets/d/e/${activePublishedId}/pub?gid=${gid}&output=csv&single=true&t=${Date.now()}`;
       

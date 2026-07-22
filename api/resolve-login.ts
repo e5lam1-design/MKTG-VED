@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { handleApiError, supabaseAdminClient, supabaseAuthClient } from './_supabase';
+import { handleApiError, supabaseAdminClient, supabaseAuthClient } from './_supabase.js';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   // CORS
@@ -92,3 +92,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     handleApiError(res, err);
   }
 }
+
+export const assertCanManageTarget = (requester: any, targetRole: string, existingTarget?: any) => {
+  const allowedRoles = new Set(['admin', 'manager', 'supervisor', 'junior']);
+  if (!allowedRoles.has(targetRole)) {
+    const err: any = new Error('Invalid role');
+    err.status = 400;
+    throw err;
+  }
+
+  if (requester.role === 'manager') {
+    if (targetRole === 'admin' || existingTarget?.role === 'admin') {
+      const err: any = new Error('Managers cannot create or edit admin users');
+      err.status = 403;
+      throw err;
+    }
+  }
+};

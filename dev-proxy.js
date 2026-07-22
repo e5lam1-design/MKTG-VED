@@ -126,7 +126,7 @@ app.use((req, res, next) => {
 
 const supabaseUrl = (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '').trim();
 const supabaseAnonKey = (process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || '').trim();
-const supabaseServiceRoleKey = (process.env.SUPABASE_SERVICE_ROLE_KEY || '').trim();
+const supabaseServiceRoleKey = (process.env.SUPABASE_SERVICE_ROLE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRwcGRhcW1ycmpibGRjeWdhZHBpIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3OTIzNTIyNSwiZXhwIjoyMDk0ODExMjI1fQ.EBZ2wyV48UA9h9tLM0vUrjovR8xCb8lPLIaVgI9aVwU').trim();
 const supabaseAuthClient = supabaseUrl && supabaseAnonKey
   ? createClient(supabaseUrl, supabaseAnonKey)
   : null;
@@ -1551,6 +1551,9 @@ const getSpreadsheetId = (gid) => {
   if (g === '1476192399' || g === '2086331904') {
     return '1Hm7noXxv8ITMU3dNXQmqFEzfZY1mZlBJ4bQ9_ZIR0-M';
   }
+  if (g === '501319673') {
+    return '1T9x6FXjjXNrdpCwsX8lnFyyXogN11T9ou0hwrQWmdB4';
+  }
   return '1lh0-kh9MlT4AZCi3-QBn0fkkiNpMcpg6qcoDfBeNK8g';
 };
 
@@ -1693,7 +1696,7 @@ app.get('/api/sheet', async (req, res) => {
 
     const strGid = String(gid);
     const reelsGids = ['1436746012', '1939073164', '0', '798246690'];
-    const isServiceAccountSheet = (strGid === '1476192399' || strGid === '2086331904' || reelsGids.includes(strGid));
+    const isServiceAccountSheet = (strGid === '1476192399' || strGid === '2086331904' || strGid === '501319673' || reelsGids.includes(strGid));
 
     if (isServiceAccountSheet) {
       const auth = new google.auth.GoogleAuth({
@@ -1772,8 +1775,10 @@ app.get('/api/sheet', async (req, res) => {
       }
     } else {
       // Stage sheets: fetch CSV directly from public URL
-      const DEFAULT_PUBLISHED_ID = '2PACX-1vRuuQ4J0z5ze6hHeZIvM24VqPApNS_eHIvnBmZ4EyPWj7J1MpvBOyPodwx0DKa1yqNkjlFdahgN6jZI';
-      const url = `https://docs.google.com/spreadsheets/d/e/${DEFAULT_PUBLISHED_ID}/pub?gid=${gid}&output=csv&single=true&t=${Date.now()}`;
+      const activePublishedId = strGid === '501319673'
+        ? '2PACX-1vRkOH2-jRtYqmkf0opn6in9TMg3oOo6FBvlGfkJjhDwn-t-CSYyrTbn4EDjNCFdvKL7tQG6nQ--jSdC'
+        : '2PACX-1vRuuQ4J0z5ze6hHeZIvM24VqPApNS_eHIvnBmZ4EyPWj7J1MpvBOyPodwx0DKa1yqNkjlFdahgN6jZI';
+      const url = `https://docs.google.com/spreadsheets/d/e/${activePublishedId}/pub?gid=${gid}&output=csv&single=true&t=${Date.now()}`;
       
       console.log(`[API] Fetching public GID ${gid} from CSV url`);
       const csvRes = await fetch(url);
@@ -1840,6 +1845,331 @@ app.get('/api/sheet', async (req, res) => {
   } catch (err) {
     console.error('[API] Error:', err.message);
     res.status(500).json({ error: err.message });
+  }
+});
+
+// --- Design Tasks Endpoints ---
+app.get('/api/design-tasks', async (req, res) => {
+  try {
+    const requester = await getRequesterProfile(req);
+    if (!supabaseAdminClient) throw new Error('Supabase admin not configured');
+    const { data, error } = await supabaseAdminClient
+      .from('design_tasks')
+      .select('*')
+      .order('created_at', { ascending: false });
+      
+    if (error) throw error;
+    res.json({ tasks: data || [] });
+  } catch (err) {
+    handleApiError(res, err);
+  }
+});
+
+app.post('/api/design-tasks', async (req, res) => {
+  try {
+    const requester = await getRequesterProfile(req);
+    if (!supabaseAdminClient) throw new Error('Supabase admin not configured');
+    
+    const { assigned_date, designer_name, priority, requested_by, design_type, deadline, reference_link, notes, is_done } = req.body;
+    
+    // Append to Google Sheets GID 501319673
+    try {
+      const auth = new google.auth.GoogleAuth({
+        credentials: {
+          client_email: credentials.client_email,
+          private_key: credentials.private_key,
+        },
+        scopes: ['https://www.googleapis.com/auth/spreadsheets'],
+      });
+      const sheets = google.sheets({ version: 'v4', auth });
+      const targetSpreadsheetId = '1T9x6FXjjXNrdpCwsX8lnFyyXogN11T9ou0hwrQWmdB4';
+      
+      const spreadsheet = await sheets.spreadsheets.get({ spreadsheetId: targetSpreadsheetId });
+      const sheetMeta = spreadsheet.data.sheets?.find(
+        (s) => String(s.properties?.sheetId) === '501319673'
+      );
+      const sheetTitle = sheetMeta?.properties?.title || 'Designers';
+      
+      const rowValue = [
+        assigned_date || new Date().toLocaleDateString('en-US'),
+        designer_name || '',
+        priority || '',
+        requested_by || '',
+        design_type || '',
+        deadline || '',
+        reference_link || '',
+        notes || '',
+        is_done ? 'TRUE' : 'FALSE'
+      ];
+      
+      console.log(`[API] Appending row to Designers Google Sheet:`, rowValue);
+      await sheets.spreadsheets.values.append({
+        spreadsheetId: targetSpreadsheetId,
+        range: `${sheetTitle}!A:I`,
+        valueInputOption: 'USER_ENTERED',
+        insertDataOption: 'INSERT_ROWS',
+        requestBody: {
+          values: [rowValue]
+        }
+      });
+    } catch (sheetErr) {
+      console.error('[API] Failed to append to Google Sheets:', sheetErr.message);
+    }
+
+    const { data, error } = await supabaseAdminClient
+      .from('design_tasks')
+      .insert({
+        assigned_date: assigned_date || new Date().toISOString().split('T')[0],
+        designer_name: designer_name || '',
+        priority: priority || '',
+        requested_by: requested_by || '',
+        design_type: design_type || '',
+        deadline: deadline || null,
+        reference_link: reference_link || '',
+        notes: notes || '',
+        is_done: !!is_done,
+        updated_by: requester.id
+      })
+      .select()
+      .single();
+      
+    if (error) throw error;
+    res.status(201).json({ task: data });
+  } catch (err) {
+    handleApiError(res, err);
+  }
+});
+
+app.patch('/api/design-tasks', async (req, res) => {
+  try {
+    const requester = await getRequesterProfile(req);
+    if (!supabaseAdminClient) throw new Error('Supabase admin not configured');
+    
+    const targetId = String(req.query.id || req.body.id || '');
+    if (!targetId) {
+      const err = new Error('Task ID missing');
+      err.status = 400;
+      throw err;
+    }
+    
+    const updates = { ...req.body };
+    delete updates.id;
+    updates.updated_by = requester.id;
+    
+    const { data, error } = await supabaseAdminClient
+      .from('design_tasks')
+      .update(updates)
+      .eq('id', targetId)
+      .select()
+      .single();
+      
+    if (error) throw error;
+    res.json({ task: data });
+  } catch (err) {
+    handleApiError(res, err);
+  }
+});
+
+app.put('/api/design-tasks/update', async (req, res) => {
+  try {
+    const requester = await getRequesterProfile(req);
+    if (!supabaseAdminClient) throw new Error('Supabase admin not configured');
+    
+    const { id, reference, field, value } = req.body;
+    if (!field) {
+      return res.status(400).json({ error: 'Missing field parameter' });
+    }
+
+    console.log(`[API] Updating design task: id "${id || ''}", reference "${reference || ''}", setting "${field}" to "${value}"`);
+
+    // 1. Update in Supabase
+    const dbFieldMap = {
+      designer: 'designer_name',
+      priority: 'priority',
+      requester: 'requested_by',
+      type: 'design_type',
+      deadline: 'deadline',
+      notes: 'notes',
+      done: 'is_done'
+    };
+
+    const dbField = dbFieldMap[field];
+    if (dbField) {
+      let dbValue = value;
+      if (field === 'done') dbValue = !!value;
+      
+      const updates = { [dbField]: dbValue, updated_by: requester.id };
+      
+      if (id) {
+        await supabaseAdminClient
+          .from('design_tasks')
+          .update(updates)
+          .eq('id', id);
+      } else if (reference && reference !== '-') {
+        await supabaseAdminClient
+          .from('design_tasks')
+          .update(updates)
+          .eq('reference_link', reference);
+      }
+    }
+
+    // 2. Fetch details from database if needed to locate Google Sheet row
+    let targetRef = reference;
+    let targetDate = '';
+    let targetDesigner = '';
+    let targetRequester = '';
+
+    if (id) {
+      const { data: dbTask } = await supabaseAdminClient
+        .from('design_tasks')
+        .select('*')
+        .eq('id', id)
+        .maybeSingle();
+      if (dbTask) {
+        if (!targetRef || targetRef === '-') targetRef = dbTask.reference_link;
+        targetDate = dbTask.assigned_date;
+        targetDesigner = dbTask.designer_name;
+        targetRequester = dbTask.requested_by;
+      }
+    }
+
+    // 3. Update in Google Sheets GID 501319673
+    try {
+      const auth = new google.auth.GoogleAuth({
+        credentials: { client_email: credentials.client_email, private_key: credentials.private_key },
+        scopes: ['https://www.googleapis.com/auth/spreadsheets'],
+      });
+      const sheets = google.sheets({ version: 'v4', auth });
+      const targetSpreadsheetId = '1T9x6FXjjXNrdpCwsX8lnFyyXogN11T9ou0hwrQWmdB4';
+      
+      const spreadsheet = await sheets.spreadsheets.get({ spreadsheetId: targetSpreadsheetId });
+      const sheetMeta = spreadsheet.data.sheets?.find(
+        (s) => String(s.properties?.sheetId) === '501319673'
+      );
+      const sheetTitle = sheetMeta?.properties?.title || 'Designers';
+      
+      const rangeRes = await sheets.spreadsheets.values.get({
+        spreadsheetId: targetSpreadsheetId,
+        range: `${sheetTitle}!A:J`
+      });
+      
+      const rows = rangeRes.data.values || [];
+      let rowIndex = -1;
+
+      // Try finding by reference first
+      if (targetRef && targetRef !== '' && targetRef !== '-') {
+        rowIndex = rows.findIndex(r => String(r[6] || '').trim() === String(targetRef).trim());
+      }
+
+      // Fallback: find by matching date, designer, requester combo
+      if (rowIndex === -1) {
+        const normalizeDate = (dStr) => {
+          if (!dStr) return '';
+          const clean = dStr.trim();
+          if (clean.includes('-')) {
+            const parts = clean.split('-');
+            if (parts.length === 3) {
+              return `${parseInt(parts[1], 10)}/${parseInt(parts[2], 10)}/${parts[0]}`;
+            }
+          }
+          return clean;
+        };
+
+        const sheetDateToMatch = normalizeDate(targetDate);
+        
+        rowIndex = rows.findIndex(r => {
+          const rDate = normalizeDate(r[0]);
+          const rDesigner = String(r[1] || '').trim().toUpperCase();
+          const rRequester = String(r[3] || '').trim().toUpperCase();
+          
+          return (rDate === sheetDateToMatch || !sheetDateToMatch) &&
+                 rDesigner === String(targetDesigner).trim().toUpperCase() &&
+                 rRequester === String(targetRequester).trim().toUpperCase();
+        });
+      }
+      
+      if (rowIndex !== -1) {
+        const sheetRowNumber = rowIndex + 1;
+        
+        const sheetColIndexMap = {
+          date: 0,
+          designer: 1,
+          priority: 2,
+          requester: 3,
+          type: 4,
+          deadline: 5,
+          reference: 6,
+          notes: 7,
+          done: 8,
+          completed_date: 9
+        };
+        
+        const colIdx = sheetColIndexMap[field];
+        if (colIdx !== undefined) {
+          const colLetter = String.fromCharCode(65 + colIdx);
+          
+          let cellValue = value;
+          if (field === 'done') cellValue = value ? 'TRUE' : 'FALSE';
+          
+          console.log(`[API] Writing "${cellValue}" to cell ${colLetter}${sheetRowNumber}`);
+          await sheets.spreadsheets.values.update({
+            spreadsheetId: targetSpreadsheetId,
+            range: `${sheetTitle}!${colLetter}${sheetRowNumber}`,
+            valueInputOption: 'USER_ENTERED',
+            requestBody: {
+              values: [[cellValue]]
+            }
+          });
+
+          // Write completion date to column J if marked done
+          if (field === 'done') {
+            const completedColLetter = 'J';
+            const completedDateVal = value ? new Date().toLocaleDateString('en-US') : '';
+            console.log(`[API] Writing completion date "${completedDateVal}" to Column J${sheetRowNumber}`);
+            await sheets.spreadsheets.values.update({
+              spreadsheetId: targetSpreadsheetId,
+              range: `${sheetTitle}!${completedColLetter}${sheetRowNumber}`,
+              valueInputOption: 'USER_ENTERED',
+              requestBody: {
+                values: [[completedDateVal]]
+              }
+            });
+          }
+        }
+      } else {
+        console.error(`[API] Google Sheet row with reference "${targetRef || ''}" or combo not found!`);
+      }
+    } catch (sheetErr) {
+      console.error('[API] Failed to update Google Sheets:', sheetErr.message);
+    }
+
+    res.json({ success: true });
+  } catch (err) {
+    handleApiError(res, err);
+  }
+});
+
+app.delete('/api/design-tasks', async (req, res) => {
+  try {
+    const requester = await getRequesterProfile(req);
+    if (!supabaseAdminClient) throw new Error('Supabase admin not configured');
+    
+    const targetId = String(req.query.id || req.body.id || '');
+    if (!targetId) {
+      const err = new Error('Task ID missing');
+      err.status = 400;
+      throw err;
+    }
+    
+    const { error } = await supabaseAdminClient
+      .from('design_tasks')
+      .delete()
+      .eq('id', targetId);
+      
+    if (error) throw error;
+    res.json({ ok: true });
+  } catch (err) {
+    handleApiError(res, err);
   }
 });
 

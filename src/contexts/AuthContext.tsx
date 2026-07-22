@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState } from 'react';
+import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import type { UserProfile, Role } from '../lib/supabase';
 import type { User, Session } from '@supabase/supabase-js';
@@ -24,93 +24,111 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
+  const localProfileIdRef = useRef<string | null>(null);
 
-  const fetchProfile = async (userId: string, email?: string | null) => {
+  // Fetch from Supabase ONLY — single source of truth
+  const fetchProfileFromDB = async (userId: string, email?: string | null): Promise<UserProfile | null> => {
     const normalizedEmail = (email || '').toLowerCase().trim();
 
-    // Guaranteed bootstrap access for the project owner.
-    if (normalizedEmail && SUPER_ADMIN_EMAILS.has(normalizedEmail)) {
-      setProfile({
-        id: userId,
-        email: normalizedEmail,
-        name: normalizedEmail.split('@')[0],
-        role: 'admin',
-        allowed_tabs: [],
-        is_active: true,
-        created_at: new Date().toISOString(),
-      });
-      return;
-    }
-
-    const { data, error } = await supabase
+    // Try by ID first
+    const { data: byId } = await supabase
       .from('user_profiles')
       .select('*')
       .eq('id', userId)
-      .single();
-    if (!error && data) {
-      setProfile(data as UserProfile);
-      return;
-    }
+      .maybeSingle();
+    if (byId) return byId as UserProfile;
 
-    // Fallback for legacy rows where profile id is not equal to auth user id.
+    // Try by email
     if (normalizedEmail) {
-      const { data: fallbackData, error: fallbackError } = await supabase
+      const { data: byEmail } = await supabase
         .from('user_profiles')
         .select('*')
         .eq('email', normalizedEmail)
-        .single();
-
-      if (!fallbackError && fallbackData) {
-        setProfile(fallbackData as UserProfile);
-        return;
-      }
-
-      // Legacy fallback: some environments store role mapping in dashboard_data.
-      const { data: roleMapData, error: roleMapError } = await supabase
-        .from('dashboard_data')
-        .select('value')
-        .eq('field', normalizedEmail)
         .maybeSingle();
+      if (byEmail) return byEmail as UserProfile;
 
-      const mappedRole = String(roleMapData?.value || '').toLowerCase() as Role;
-      if (!roleMapError && VALID_ROLES.includes(mappedRole)) {
-        setProfile({
+      // Try by name (for username-style logins)
+      const { data: byName } = await supabase
+        .from('user_profiles')
+        .select('*')
+        .ilike('name', normalizedEmail)
+        .maybeSingle();
+      if (byName) return byName as UserProfile;
+
+      // Super admin bootstrap — always give admin access if in the whitelist
+      if (SUPER_ADMIN_EMAILS.has(normalizedEmail)) {
+        return {
           id: userId,
           email: normalizedEmail,
           name: normalizedEmail.split('@')[0],
-          role: mappedRole,
+          role: 'admin',
           allowed_tabs: [],
           is_active: true,
           created_at: new Date().toISOString(),
-        });
-        return;
+        } as UserProfile;
       }
     }
 
-    setProfile(null);
+    return null;
+  };
+
+  const applyProfile = (p: UserProfile) => {
+    setProfile(p);
+    localStorage.setItem(LOCAL_LOGIN_KEY, JSON.stringify(p));
   };
 
   const refreshProfile = async () => {
-    if (user) await fetchProfile(user.id, user.email);
+    // If Supabase auth session exists, use that
+    if (user?.id) {
+      const p = await fetchProfileFromDB(user.id, user.email);
+      if (p) { applyProfile(p); return; }
+    }
+
+    // Fallback: use stored local profile ID to re-fetch from Supabase
+    const storedId = localProfileIdRef.current;
+    if (storedId) {
+      const p = await fetchProfileFromDB(storedId);
+      if (p) { applyProfile(p); return; }
+    }
+
+    // Last resort: re-read localStorage and re-fetch
+    try {
+      const raw = localStorage.getItem(LOCAL_LOGIN_KEY);
+      if (raw) {
+        const stored = JSON.parse(raw) as UserProfile;
+        const p = await fetchProfileFromDB(stored.id, stored.email);
+        if (p) { applyProfile(p); return; }
+        // If Supabase can't be reached, use stored data as-is
+        setProfile(stored);
+      }
+    } catch {}
   };
 
   useEffect(() => {
-    const rawLocalProfile = localStorage.getItem(LOCAL_LOGIN_KEY);
-    if (rawLocalProfile) {
-      try {
-        const localProfile = JSON.parse(rawLocalProfile) as UserProfile;
-        setProfile(localProfile);
-        setLoading(false);
-      } catch {
-        localStorage.removeItem(LOCAL_LOGIN_KEY);
+    // Bootstrap from localStorage immediately for fast load
+    try {
+      const raw = localStorage.getItem(LOCAL_LOGIN_KEY);
+      if (raw) {
+        const stored = JSON.parse(raw) as UserProfile;
+        setProfile(stored);
+        localProfileIdRef.current = stored.id;
+        // Immediately re-fetch from DB to get latest allowed_tabs
+        fetchProfileFromDB(stored.id, stored.email).then(fresh => {
+          if (fresh) applyProfile(fresh);
+        });
       }
+    } catch {
+      localStorage.removeItem(LOCAL_LOGIN_KEY);
     }
 
+    // Supabase auth session
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
       setUser(session?.user ?? null);
       if (session?.user) {
-        fetchProfile(session.user.id, session.user.email).finally(() => setLoading(false));
+        fetchProfileFromDB(session.user.id, session.user.email)
+          .then(p => { if (p) applyProfile(p); })
+          .finally(() => setLoading(false));
       } else {
         setLoading(false);
       }
@@ -120,18 +138,27 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       setSession(session);
       setUser(session?.user ?? null);
       if (session?.user) {
-        fetchProfile(session.user.id, session.user.email);
-      } else {
+        fetchProfileFromDB(session.user.id, session.user.email)
+          .then(p => { if (p) applyProfile(p); });
+      } else if (!localProfileIdRef.current) {
         setProfile(null);
       }
     });
 
-    return () => subscription.unsubscribe();
+    // Listen for profile-updated events from UserManagement
+    const handleProfileUpdated = () => { refreshProfile(); };
+    window.addEventListener('profile-updated', handleProfileUpdated);
+
+    return () => {
+      subscription.unsubscribe();
+      window.removeEventListener('profile-updated', handleProfileUpdated);
+    };
   }, []);
 
   const signIn = async (identifier: string, password?: string) => {
     const normalizedIdentifier = identifier.toLowerCase().trim();
 
+    // With password → use Supabase auth
     if (password && password.trim().length > 0) {
       let email = normalizedIdentifier;
       if (!normalizedIdentifier.includes('@')) {
@@ -149,10 +176,11 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       const { error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) return { error: error.message };
       localStorage.removeItem(LOCAL_LOGIN_KEY);
+      localProfileIdRef.current = null;
       return { error: null };
     }
 
-    // Optional password mode: login by name/email from user_profiles only.
+    // Without password → look up in user_profiles
     let query = supabase.from('user_profiles').select('*').limit(1);
     if (normalizedIdentifier.includes('@')) {
       query = query.eq('email', normalizedIdentifier);
@@ -163,17 +191,18 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     if (error || !data) return { error: 'الاسم أو الإيميل غير موجود' };
     if (data.is_active === false) return { error: 'الحساب غير مفعل' };
 
-    const localProfile = data as UserProfile;
+    const p = data as UserProfile;
+    localProfileIdRef.current = p.id;
     setUser(null);
     setSession(null);
-    setProfile(localProfile);
-    localStorage.setItem(LOCAL_LOGIN_KEY, JSON.stringify(localProfile));
+    applyProfile(p);
     return { error: null };
   };
 
   const signOut = async () => {
     await supabase.auth.signOut();
     localStorage.removeItem(LOCAL_LOGIN_KEY);
+    localProfileIdRef.current = null;
     setProfile(null);
     setUser(null);
     setSession(null);

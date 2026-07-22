@@ -135,6 +135,20 @@ export const mapSheetRow = (row: any[], gid: string) => {
     };
   }
 
+  if (gid === '501319673') {
+    return {
+      date: formatDateToShort(row[0] || ''),
+      designer: row[1] || '',
+      priority: row[2] || '',
+      requester: row[3] || '',
+      type: row[4] || '',
+      deadline: formatDateToShort(row[5] || ''),
+      reference: row[6] || '',
+      notes: row[7] || '',
+      done: row[8] === 'TRUE' || row[8] === true || String(row[8]).toLowerCase() === 'true',
+      completed_date: formatDateToShort(row[9] || ''),
+    };
+  }
 
   // All sheets (Junior 4 to Senior 3) have the same layout!
   const parsedDate = formatDateToShort(row[2] || row[1] || '');
@@ -174,9 +188,10 @@ export function useGoogleSheets(gid: string, customDocId?: string) {
     try {
       let rows: any[][] = [];
 
-      // For all proxy-managed sheets: Operations, Tagme3at Backend, and REELS
+      // For all proxy-managed sheets: Operations, Tagme3at Backend, REELS, and Designers/Creators
       const reelsGids = ['1436746012', '1939073164', '0', '798246690'];
-      if (targetGid === OPERATIONS_GID || targetGid === '1535230545' || targetGid === '2086331904' || reelsGids.includes(targetGid)) {
+      const proxyGids = [OPERATIONS_GID, '1535230545', '2086331904', '501319673', ...reelsGids];
+      if (proxyGids.includes(targetGid)) {
         try {
           const res = await fetch(`/api/sheet?gid=${targetGid}&t=${Date.now()}`);
           if (!res.ok) throw new Error(`API error: ${res.status}`);

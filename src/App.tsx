@@ -35,15 +35,32 @@ import {
   MapPin,
   FolderOpen,
   Video,
-  FileImage
+  FileImage,
+  Pin,
+  Trash2,
+  Bookmark
 } from 'lucide-react';
 import { useGoogleSheets } from './hooks/useGoogleSheets';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { LoginPage } from './pages/LoginPage';
 import { UserManagement } from './components/UserManagement';
 import { ReelsAnalytics } from './components/ReelsAnalytics';
+import DesignersDashboard from './components/DesignersDashboard';
+import { DesignAnalytics } from './components/DesignAnalytics';
 import { supabase, PERMISSIONS, ROLE_LABELS, ROLE_COLORS, DEFAULT_ROLE_PERMISSIONS, setRuntimeRolePermissions } from './lib/supabase';
 
+
+const yearLabels: Record<string, string> = {
+  'J4': 'Junior 4 (الرابع الابتدائي)',
+  'J5': 'Junior 5 (الخامس الابتدائي)',
+  'J6': 'Junior 6 (السادس الابتدائي)',
+  'M1': 'Middle 1 (الأول الإعدادي)',
+  'M2': 'Middle 2 (الثاني الإعدادي)',
+  'M3': 'Middle 3 (الثالث الإعدادي)',
+  'S1': 'Senior 1 (الأول الثانوي)',
+  'S2': 'Senior 2 (الثاني الثانوي)',
+  'S3': 'Senior 3 (الثالث الثانوي)',
+};
 
 const generateKey = (item: any) => {
   let hash = 0;
@@ -431,7 +448,7 @@ const CustomSelect = ({ value, onChange, options, placeholder, isColumn = false 
 };
 
 // ─── Sidebar Item ─────────────────────────────────────────────────────────────
-const SidebarItem = ({ icon: Icon, label, active, onClick, colorHex, colorful }: any) => {
+const SidebarItem = ({ icon: Icon, label, active, onClick, colorHex, colorful, isPinned, onTogglePin }: any) => {
   const cHex = colorHex || '#3b82f6';
 
   const bgStyle = colorful
@@ -463,9 +480,89 @@ const SidebarItem = ({ icon: Icon, label, active, onClick, colorHex, colorful }:
       <div style={iconBgStyle} className="p-2.5 rounded-xl transition-all duration-300 group-hover:scale-110 flex items-center justify-center shrink-0">
         <Icon size={20} />
       </div>
-      <span className="font-bold text-sm tracking-tight truncate text-left text-white">{label}</span>
-      {active && <motion.div layoutId="active-pill" className="ml-auto text-white"><ChevronRight size={16} /></motion.div>}
+      <span className="font-bold text-sm tracking-tight truncate text-left text-white flex-1">{label}</span>
+      {onTogglePin && (
+        <span
+          onClick={(e) => {
+            e.stopPropagation();
+            onTogglePin();
+          }}
+          className={`p-1.5 rounded-lg transition-all cursor-pointer ${
+            isPinned 
+              ? 'text-amber-400 bg-amber-400/10 opacity-100' 
+              : 'text-white/20 hover:text-amber-400 hover:bg-white/10 opacity-0 group-hover:opacity-100'
+          }`}
+          title={isPinned ? 'إلغاء التثبيت من المفضلة' : 'تثبيت في المفضلة'}
+        >
+          <Pin size={14} className={isPinned ? 'fill-amber-400' : ''} />
+        </span>
+      )}
+      {active && <motion.div layoutId="active-pill" className="text-white"><ChevronRight size={16} /></motion.div>}
     </button>
+  );
+};
+
+// ─── Collapsible Sidebar Group ────────────────────────────────────────────────
+const SidebarGroup = ({ title, iconEmoji, colorHex, stagesList, activeGid, onSelectStage, pinnedTabs, togglePinTab, colorful, profile }: any) => {
+  const visibleStages = stagesList.filter((stage: any) =>
+    !profile?.role || PERMISSIONS.canViewTab(profile.role, stage.label, profile.allowed_tabs || [])
+  );
+
+  const isAnyActive = visibleStages.some((s: any) => s.gid === activeGid);
+  const [isOpen, setIsOpen] = useState(isAnyActive);
+
+  useEffect(() => {
+    if (isAnyActive) setIsOpen(true);
+  }, [isAnyActive]);
+
+  if (visibleStages.length === 0) return null;
+
+  return (
+    <div className="flex flex-col gap-1 my-1">
+      <button
+        type="button"
+        onClick={() => setIsOpen(prev => !prev)}
+        className="w-full flex items-center justify-between px-4 py-3 rounded-2xl bg-white/[0.03] hover:bg-white/[0.07] border border-white/[0.06] transition-all cursor-pointer group"
+      >
+        <div className="flex items-center gap-3">
+          <span className="text-base">{iconEmoji}</span>
+          <span className="font-bold text-xs text-white/90 group-hover:text-white transition-colors arabic-text">{title}</span>
+          <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-white/5 text-muted border border-white/10">
+            {visibleStages.length}
+          </span>
+        </div>
+        <ChevronDown
+          size={14}
+          className={`text-muted group-hover:text-white transition-transform duration-300 ${isOpen ? 'rotate-180' : ''}`}
+        />
+      </button>
+
+      <AnimatePresence initial={false}>
+        {isOpen && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            transition={{ duration: 0.25 }}
+            className="flex flex-col gap-1 pr-2 pt-1 border-r-2 border-white/10 mr-4 overflow-hidden"
+          >
+            {visibleStages.map((stage: any) => (
+              <SidebarItem
+                key={stage.gid}
+                icon={stage.icon}
+                label={stage.label}
+                colorHex={stage.colorHex}
+                colorful={colorful}
+                active={activeGid === stage.gid}
+                isPinned={pinnedTabs.includes(stage.gid)}
+                onTogglePin={() => togglePinTab(stage.gid)}
+                onClick={() => onSelectStage(stage.gid, stage.label)}
+              />
+            ))}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
   );
 };
 
@@ -726,6 +823,7 @@ const OperationsRow = ({ item, index, youtubeItems, onYoutubeToggle, isSelectedF
 const TagmeRow = ({ 
   item, 
   index, 
+  isSimple = false,
   onUpdateEditor, 
   editorsList, 
   onUpdateEditorNotes, 
@@ -829,7 +927,7 @@ const TagmeRow = ({
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay: index * 0.05 }}
-      className={`transition-all duration-500 border-b border-white/[0.03] row-hover ${
+      className={`transition-all duration-500 border-b border-white/[0.03] row-hover group/row ${
         isGlowing 
           ? 'bg-emerald-500/20 shadow-[inset_0_0_25px_rgba(16,185,129,0.4)] ring-2 ring-emerald-500/50 border-emerald-500/50 animate-pulse relative z-10' 
           : done 
@@ -895,32 +993,36 @@ const TagmeRow = ({
           ))}
         </select>
       </td>
-      <td className="px-3 py-6 text-center">
-        <input
-          type="date"
-          value={toInputDate(date)}
-          onChange={(e) => {
-            const newDate = fromInputDate(e.target.value);
-            onUpdateDate(item.uniqueKey || generateKey(item), newDate);
-          }}
-          style={{ colorScheme: 'dark' }}
-          disabled={!(profile?.role && PERMISSIONS.canEditEditors(profile.role))}
-          className={`bg-white/5 border border-white/10 hover:border-emerald-500/50 rounded-xl px-2 py-1 text-xs font-bold text-white text-center outline-none focus:bg-[#0b1019] focus:border-emerald-500/50 focus:ring-2 focus:ring-emerald-500/50 transition-all shadow-inner font-mono max-w-[125px] ${profile?.role && PERMISSIONS.canEditEditors(profile.role) ? '' : 'cursor-not-allowed opacity-50'}`}
-        />
-      </td>
-      <td className="px-3 py-6 text-center">
-        <select
-          value={item.branch || ''}
-          onChange={(e) => onUpdateBranch(item.uniqueKey || generateKey(item), e.target.value)}
-          disabled={!(profile?.role && PERMISSIONS.canEditEditors(profile.role))}
-          className={`bg-white/5 border border-white/10 hover:border-emerald-500/50 rounded-xl px-3 py-2 text-xs font-bold text-white outline-none transition-all shadow-lg focus:ring-2 focus:ring-emerald-500/50 min-w-[90px] ${profile?.role && PERMISSIONS.canEditEditors(profile.role) ? 'cursor-pointer hover:bg-white/10' : 'cursor-not-allowed opacity-50'}`}
-        >
-          <option value="" className="bg-[#0b1019] text-muted">غير محدد</option>
-          {branchesList?.map((branch: string) => (
-            <option key={branch} value={branch} className="bg-[#0b1019] text-white font-bold">{branch}</option>
-          ))}
-        </select>
-      </td>
+      {!isSimple && (
+        <td className="px-3 py-6 text-center">
+          <input
+            type="date"
+            value={toInputDate(date)}
+            onChange={(e) => {
+              const newDate = fromInputDate(e.target.value);
+              onUpdateDate(item.uniqueKey || generateKey(item), newDate);
+            }}
+            style={{ colorScheme: 'dark' }}
+            disabled={!(profile?.role && PERMISSIONS.canEditEditors(profile.role))}
+            className={`bg-white/5 border border-white/10 hover:border-emerald-500/50 rounded-xl px-2 py-1 text-xs font-bold text-white text-center outline-none focus:bg-[#0b1019] focus:border-emerald-500/50 focus:ring-2 focus:ring-emerald-500/50 transition-all shadow-inner font-mono max-w-[125px] ${profile?.role && PERMISSIONS.canEditEditors(profile.role) ? '' : 'cursor-not-allowed opacity-50'}`}
+          />
+        </td>
+      )}
+      {!isSimple && (
+        <td className="px-3 py-6 text-center">
+          <select
+            value={item.branch || ''}
+            onChange={(e) => onUpdateBranch(item.uniqueKey || generateKey(item), e.target.value)}
+            disabled={!(profile?.role && PERMISSIONS.canEditEditors(profile.role))}
+            className={`bg-white/5 border border-white/10 hover:border-emerald-500/50 rounded-xl px-3 py-2 text-xs font-bold text-white outline-none transition-all shadow-lg focus:ring-2 focus:ring-emerald-500/50 min-w-[90px] ${profile?.role && PERMISSIONS.canEditEditors(profile.role) ? 'cursor-pointer hover:bg-white/10' : 'cursor-not-allowed opacity-50'}`}
+          >
+            <option value="" className="bg-[#0b1019] text-muted">غير محدد</option>
+            {branchesList?.map((branch: string) => (
+              <option key={branch} value={branch} className="bg-[#0b1019] text-white font-bold">{branch}</option>
+            ))}
+          </select>
+        </td>
+      )}
       <td className="px-3 py-6 text-center">
         <HistoryInput
           itemKey={item.uniqueKey || generateKey(item)}
@@ -976,16 +1078,18 @@ const TagmeRow = ({
           </button>
         </div>
       </td>
-      <td className="px-3 py-6 text-center">
-        <HistoryInput
-          itemKey={item.uniqueKey || generateKey(item)}
-          fieldKey="editor_notes"
-          value={item.notesEditors || ''}
-          onChange={(val: string) => onUpdateEditorNotes(item.uniqueKey || generateKey(item), val)}
-          placeholder="اكتب ملاحظة..."
-          disabled={!(profile?.role && PERMISSIONS.canEditNotes(profile.role))}
-        />
-      </td>
+      {!isSimple && (
+        <td className="px-3 py-6 text-center">
+          <HistoryInput
+            itemKey={item.uniqueKey || generateKey(item)}
+            fieldKey="editor_notes"
+            value={item.notesEditors || ''}
+            onChange={(val: string) => onUpdateEditorNotes(item.uniqueKey || generateKey(item), val)}
+            placeholder="اكتب ملاحظة..."
+            disabled={!(profile?.role && PERMISSIONS.canEditNotes(profile.role))}
+          />
+        </td>
+      )}
       <td className="px-6 py-6 text-center">
           <button
             onClick={() => {
@@ -1007,160 +1111,204 @@ const TagmeRow = ({
             <AlertCircle size={20} />
           </button>
       </td>
-      <td className="px-3 py-6 text-center">
-        <div className="flex items-center justify-center gap-1.5">
-          {isEditingThumbnail ? (
-            <input 
-              autoFocus
-              type="text" 
-              value={thumbnailVal} 
-              onChange={e => setThumbnailVal(e.target.value)}
-              onBlur={() => {
-                setIsEditingThumbnail(false);
-                if (thumbnailVal !== item.thumbnailLink) {
-                  onUpdateThumbnailLink(item.uniqueKey || generateKey(item), thumbnailVal);
-                }
-              }}
-              onKeyDown={e => {
-                if (e.key === 'Enter') {
-                  e.currentTarget.blur();
-                }
-              }}
-              className="w-full max-w-[120px] bg-white/5 border border-white/10 hover:bg-white/10 rounded-xl px-2 py-1 text-xs font-bold text-center text-white/90 outline-none transition-all focus:bg-[#0b1019] focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/30 text-left" 
-              placeholder="Paste link..."
-            />
-          ) : (
-            <div className="flex items-center justify-center gap-1.5">
-              {item.thumbnailLink ? (
-                (() => {
-                  const parsed = parseDriveLink(item.thumbnailLink);
-                  return (
-                    <div className="flex flex-col items-center gap-1.5">
+      {!isSimple && (
+        <td className="px-3 py-6 text-center">
+          <div className="flex items-center justify-center gap-1.5">
+            {isEditingThumbnail ? (
+              <input 
+                autoFocus
+                type="text" 
+                value={thumbnailVal} 
+                onChange={e => setThumbnailVal(e.target.value)}
+                onBlur={() => {
+                  setIsEditingThumbnail(false);
+                  if (thumbnailVal !== item.thumbnailLink) {
+                    onUpdateThumbnailLink(item.uniqueKey || generateKey(item), thumbnailVal);
+                  }
+                }}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') {
+                    e.currentTarget.blur();
+                  }
+                }}
+                className="w-full max-w-[120px] bg-white/5 border border-white/10 hover:bg-white/10 rounded-xl px-2 py-1 text-xs font-bold text-center text-white/90 outline-none transition-all focus:bg-[#0b1019] focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/30 text-left" 
+                placeholder="Paste link..."
+              />
+            ) : (
+              <div className="flex items-center justify-center gap-1.5">
+                {item.thumbnailLink ? (
+                  (() => {
+                    const parsed = parseDriveLink(item.thumbnailLink);
+                    return (
+                      <div className="flex flex-col items-center gap-1.5">
+                        <a 
+                          href={parsed.url} 
+                          target="_blank" 
+                          rel="noopener noreferrer" 
+                          className="px-2 py-1 rounded-lg bg-blue-500/15 text-blue-400 font-mono text-[10px] underline cursor-pointer shadow-sm truncate max-w-[110px]"
+                          title={parsed.url}
+                        >
+                          {parsed.url}
+                        </a>
+                        <div 
+                          onClick={() => parsed.url && window.open(parsed.url, '_blank')}
+                          className="relative group/preview mt-1.5 w-32 h-20 rounded-xl overflow-hidden border border-white/10 hover:border-blue-500/50 shadow-md bg-white/5 transition-all hover:scale-105 active:scale-95 cursor-pointer flex items-center justify-center"
+                          title="عرض الملف"
+                        >
+                          <PreviewImage url={item.thumbnailLink} />
+                        </div>
+                      </div>
+                    );
+                  })()
+                ) : (
+                  <span className="text-muted/40 text-xs px-2 shrink-0">---</span>
+                )}
+                <button 
+                  onClick={() => setIsEditingThumbnail(true)} 
+                  className="p-1 rounded-full bg-white/5 hover:bg-white/15 text-muted hover:text-white transition-all scale-90 cursor-pointer shrink-0" 
+                  title="تعديل الثمنيل"
+                >
+                  <Pencil size={9} />
+                </button>
+              </div>
+            )}
+          </div>
+        </td>
+      )}
+      {!isSimple && (
+        <td className="px-3 py-6 text-center">
+          <input
+            type="datetime-local"
+            value={timeVal}
+            onChange={e => setTimeVal(e.target.value)}
+            onBlur={() => {
+              if (timeVal !== item.time) {
+                onUpdateTime(item.uniqueKey || generateKey(item), timeVal);
+              }
+            }}
+            style={{ colorScheme: 'dark' }}
+            className="bg-white/5 border border-white/10 hover:border-emerald-500/50 rounded-xl px-2 py-1 text-xs font-bold text-white text-center outline-none focus:bg-[#0b1019] focus:border-emerald-500/50 focus:ring-2 focus:ring-emerald-500/50 transition-all shadow-inner font-mono max-w-[190px]"
+          />
+        </td>
+      )}
+      {!isSimple && (
+        <td className="px-3 py-6 text-center">
+          <div className="flex items-center justify-center gap-1.5">
+            {isEditingYoutube ? (
+              <input 
+                autoFocus
+                type="text" 
+                value={youtubeVal} 
+                onChange={e => setYoutubeVal(e.target.value)}
+                onBlur={() => {
+                  setIsEditingYoutube(false);
+                  if (youtubeVal !== item.youtubeLink) {
+                    onUpdateYoutubeLink(item.uniqueKey || generateKey(item), youtubeVal);
+                  }
+                }}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') {
+                    e.currentTarget.blur();
+                  }
+                }}
+                className="w-full max-w-[120px] bg-white/5 border border-white/10 hover:bg-white/10 rounded-xl px-2 py-1 text-xs font-bold text-center text-white/90 outline-none transition-all focus:bg-[#0b1019] focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/30 text-left" 
+                placeholder="Paste Youtube..."
+              />
+            ) : (
+              <div className="flex items-center justify-center gap-1.5">
+                {item.youtubeLink ? (
+                  (() => {
+                    const parsed = parseDriveLink(item.youtubeLink);
+                    return (
                       <a 
                         href={parsed.url} 
                         target="_blank" 
                         rel="noopener noreferrer" 
-                        className="px-2 py-1 rounded-lg bg-blue-500/15 text-blue-400 font-mono text-[10px] underline cursor-pointer shadow-sm truncate max-w-[110px]"
+                        className="px-2 py-1 rounded-lg bg-red-500/15 text-red-400 font-mono text-[10px] underline cursor-pointer shadow-sm truncate max-w-[110px]"
                         title={parsed.url}
                       >
                         {parsed.url}
                       </a>
-                      <div 
-                        onClick={() => parsed.url && window.open(parsed.url, '_blank')}
-                        className="relative group/preview mt-1.5 w-32 h-20 rounded-xl overflow-hidden border border-white/10 hover:border-blue-500/50 shadow-md bg-white/5 transition-all hover:scale-105 active:scale-95 cursor-pointer flex items-center justify-center"
-                        title="عرض الملف"
-                      >
-                        <PreviewImage url={item.thumbnailLink} />
-                      </div>
-                    </div>
-                  );
-                })()
-              ) : (
-                <span className="text-muted/40 text-xs px-2 shrink-0">---</span>
-              )}
-              <button 
-                onClick={() => setIsEditingThumbnail(true)} 
-                className="p-1 rounded-full bg-white/5 hover:bg-white/15 text-muted hover:text-white transition-all scale-90 cursor-pointer shrink-0" 
-                title="تعديل الثمنيل"
-              >
-                <Pencil size={9} />
-              </button>
-            </div>
-          )}
-        </div>
-      </td>
-      <td className="px-3 py-6 text-center">
-        <input
-          type="datetime-local"
-          value={timeVal}
-          onChange={e => setTimeVal(e.target.value)}
-          onBlur={() => {
-            if (timeVal !== item.time) {
-              onUpdateTime(item.uniqueKey || generateKey(item), timeVal);
-            }
-          }}
-          style={{ colorScheme: 'dark' }}
-          className="bg-white/5 border border-white/10 hover:border-emerald-500/50 rounded-xl px-2 py-1 text-xs font-bold text-white text-center outline-none focus:bg-[#0b1019] focus:border-emerald-500/50 focus:ring-2 focus:ring-emerald-500/50 transition-all shadow-inner font-mono max-w-[190px]"
-        />
-      </td>
-      <td className="px-3 py-6 text-center">
-        <div className="flex items-center justify-center gap-1.5">
-          {isEditingYoutube ? (
-            <input 
-              autoFocus
-              type="text" 
-              value={youtubeVal} 
-              onChange={e => setYoutubeVal(e.target.value)}
-              onBlur={() => {
-                setIsEditingYoutube(false);
-                if (youtubeVal !== item.youtubeLink) {
-                  onUpdateYoutubeLink(item.uniqueKey || generateKey(item), youtubeVal);
-                }
-              }}
-              onKeyDown={e => {
-                if (e.key === 'Enter') {
-                  e.currentTarget.blur();
-                }
-              }}
-              className="w-full max-w-[120px] bg-white/5 border border-white/10 hover:bg-white/10 rounded-xl px-2 py-1 text-xs font-bold text-center text-white/90 outline-none transition-all focus:bg-[#0b1019] focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/30 text-left" 
-              placeholder="Paste Youtube..."
-            />
-          ) : (
-            <div className="flex items-center justify-center gap-1.5">
-              {item.youtubeLink ? (
-                (() => {
-                  const parsed = parseDriveLink(item.youtubeLink);
-                  return (
-                    <a 
-                      href={parsed.url} 
-                      target="_blank" 
-                      rel="noopener noreferrer" 
-                      className="px-2 py-1 rounded-lg bg-red-500/15 text-red-400 font-mono text-[10px] underline cursor-pointer shadow-sm truncate max-w-[110px]"
-                      title={parsed.url}
-                    >
-                      {parsed.url}
-                    </a>
-                  );
-                })()
-              ) : (
-                <span className="text-muted/40 text-xs px-2 shrink-0">---</span>
-              )}
-              <button 
-                onClick={() => setIsEditingYoutube(true)} 
-                className="p-1 rounded-full bg-white/5 hover:bg-white/15 text-muted hover:text-white transition-all scale-90 cursor-pointer shrink-0" 
-                title="تعديل رابط اليوتيوب"
-              >
-                <Pencil size={9} />
-              </button>
-            </div>
-          )}
-        </div>
-      </td>
-      <td className="px-3 py-6 text-center">
-        <button
-          onClick={() => {
-            const nextVal = !isUploaded;
-            setIsUploaded(nextVal);
-            onUpdateUploaded(item.uniqueKey || generateKey(item), nextVal);
-          }}
-          className={`w-6 h-6 rounded-md flex items-center justify-center mx-auto transition-all duration-300 cursor-pointer ${
-            isUploaded ? 'bg-emerald-500 text-white shadow-[0_0_10px_rgba(16,185,129,0.5)]' : 'bg-white/10 text-muted hover:bg-emerald-500/30 hover:text-emerald-300'
-          }`}
-          title="تم الرفع؟"
-        >
-          {isUploaded && <CheckCircle2 size={14} />}
-        </button>
-      </td>
+                    );
+                  })()
+                ) : (
+                  <span className="text-muted/40 text-xs px-2 shrink-0">---</span>
+                )}
+                <button 
+                  onClick={() => setIsEditingYoutube(true)} 
+                  className="p-1 rounded-full bg-white/5 hover:bg-white/15 text-muted hover:text-white transition-all scale-90 cursor-pointer shrink-0" 
+                  title="تعديل رابط اليوتيوب"
+                >
+                  <Pencil size={9} />
+                </button>
+              </div>
+            )}
+          </div>
+        </td>
+      )}
+      {!isSimple && (
+        <td className="px-3 py-6 text-center">
+          <button
+            onClick={() => {
+              const nextVal = !isUploaded;
+              setIsUploaded(nextVal);
+              onUpdateUploaded(item.uniqueKey || generateKey(item), nextVal);
+            }}
+            className={`w-6 h-6 rounded-md flex items-center justify-center mx-auto transition-all duration-300 cursor-pointer ${
+              isUploaded ? 'bg-emerald-500 text-white shadow-[0_0_10px_rgba(16,185,129,0.5)]' : 'bg-white/10 text-muted hover:bg-emerald-500/30 hover:text-emerald-300'
+            }`}
+            title="تم الرفع؟"
+          >
+            {isUploaded && <CheckCircle2 size={14} />}
+          </button>
+        </td>
+      )}
     </motion.tr>
   );
 };
 
 // ─── Stage Row (Junior/Middle/Senior) ─────────────────────────────────────────
-const StageRow = ({ item, index, tagmeTransfers, onTagmeToggle, activeLabel, isGlowing }: any) => {
+const StageRow = ({ item, index, tagmeTransfers, onTagmeToggle, activeLabel, isGlowing, onUpdateDate, onUpdateWeek }: any) => {
   const { profile } = useAuth();
-  const itemKey = 'tgm-' + (item.uniqueKey || generateKey(item));
+  const rowKey = item.uniqueKey || generateKey(item);
+  const itemKey = 'tgm-' + rowKey;
   const isTagmeChecked = (tagmeTransfers || []).some((i: any) => i.uniqueKey === itemKey);
   const [received, setReceived] = useState(item.check2);
+  const [weekVal, setWeekVal] = useState(item.week || '');
+  const [dateVal, setDateVal] = useState(item.date || item.id || '');
+
+  useEffect(() => {
+    setWeekVal(item.week || '');
+  }, [item.week]);
+
+  useEffect(() => {
+    setDateVal(item.date || item.id || '');
+  }, [item.date, item.id]);
+
+  const toInputDate = (dStr: string) => {
+    if (!dStr || dStr === '---') return '';
+    const parts = dStr.split('/');
+    if (parts.length === 3) {
+      const month = parts[0].padStart(2, '0');
+      const day = parts[1].padStart(2, '0');
+      let year = parts[2];
+      if (year.length === 2) year = '20' + year;
+      return `${year}-${month}-${day}`;
+    }
+    return dStr;
+  };
+
+  const fromInputDate = (dStr: string) => {
+    if (!dStr) return '';
+    const parts = dStr.split('-');
+    if (parts.length === 3) {
+      const year = parts[0];
+      const month = parseInt(parts[1], 10).toString();
+      const day = parseInt(parts[2], 10).toString();
+      return `${month}/${day}/${year}`;
+    }
+    return dStr;
+  };
 
   const getWeekColor = (w: string) => {
     if (!w) return 'bg-white/5 border-white/10 text-muted';
@@ -1182,7 +1330,7 @@ const StageRow = ({ item, index, tagmeTransfers, onTagmeToggle, activeLabel, isG
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay: index * 0.01 }}
-      className={`transition-all duration-300 border-b border-white/[0.03] row-hover ${
+      className={`transition-all duration-300 border-b border-white/[0.03] row-hover group/row ${
         isGlowing 
           ? 'bg-emerald-500/20 shadow-[inset_0_0_25px_rgba(16,185,129,0.4)] ring-2 ring-emerald-500/50 border-emerald-500/50 animate-pulse relative z-10' 
           : isTagmeChecked 
@@ -1191,12 +1339,35 @@ const StageRow = ({ item, index, tagmeTransfers, onTagmeToggle, activeLabel, isG
       }`}
     >
       <td className="px-4 py-5 text-center">
-        <span className={`px-3 py-1.5 rounded-xl border text-xs font-bold shrink-0 whitespace-nowrap inline-block font-mono ${getWeekColor(item.week || '')}`}>
-          {item.week || '---'}
-        </span>
+        <input
+          type="text"
+          value={weekVal}
+          onChange={(e) => setWeekVal(e.target.value)}
+          onBlur={() => {
+            if (onUpdateWeek && weekVal !== item.week) {
+              onUpdateWeek(rowKey, weekVal);
+            }
+          }}
+          disabled={!(profile?.role && PERMISSIONS.canEditEditors(profile.role))}
+          placeholder="الأسبوع..."
+          className={`px-3 py-1.5 rounded-xl border text-xs font-bold font-mono text-center outline-none focus:ring-2 focus:ring-primary/50 transition-all max-w-[105px] ${getWeekColor(weekVal)} ${profile?.role && PERMISSIONS.canEditEditors(profile.role) ? 'cursor-pointer' : 'cursor-not-allowed opacity-70'}`}
+        />
       </td>
       <td className="px-4 py-5 text-center">
-        <span className="px-3 py-1.5 rounded-xl bg-white/5 border border-white/10 text-xs font-mono font-bold text-blue-400 shrink-0">{item.date || item.id || '---'}</span>
+        <input
+          type="date"
+          value={toInputDate(dateVal)}
+          onChange={(e) => {
+            const newDate = fromInputDate(e.target.value);
+            setDateVal(newDate);
+            if (onUpdateDate) {
+              onUpdateDate(rowKey, newDate);
+            }
+          }}
+          style={{ colorScheme: 'dark' }}
+          disabled={!(profile?.role && PERMISSIONS.canEditEditors(profile.role))}
+          className={`bg-white/5 border border-white/10 hover:border-emerald-500/50 rounded-xl px-2.5 py-1.5 text-xs font-bold text-blue-400 text-center outline-none focus:bg-[#0b1019] focus:border-emerald-500/50 focus:ring-2 focus:ring-emerald-500/50 transition-all shadow-inner font-mono max-w-[135px] ${profile?.role && PERMISSIONS.canEditEditors(profile.role) ? 'cursor-pointer' : 'cursor-not-allowed opacity-70'}`}
+        />
       </td>
       <td className="px-8 py-5" dir="rtl">
         <div className="flex flex-col text-right">
@@ -2924,18 +3095,33 @@ function App() {
   const [rolePermissions, setRolePermissions] = useState<any>(DEFAULT_ROLE_PERMISSIONS);
   const [activeGid, setActiveGid] = useState('1476192399');
   const [activeLabel, setActiveLabel] = useState('Operations');
-  const [appMode, setAppMode] = useState<'OP' | 'REELS'>('OP');
+  const [appMode, setAppMode] = useState<'OP' | 'REELS' | 'DESIGNERS'>('OP');
   const isUsersPage = activeGid === '__users__';
 
   const isOperations = activeGid === '1476192399';
   const isTagme3at = activeGid === '1535230545';
   const isAnalyticsTagme = activeGid === 'analytics_tagme3at';
   const isReelsAnalytics = activeGid === 'reels-analytics';
-  const isReelsStage = ['1436746012', '1939073164', '0', '798246690'].includes(activeGid);
-  const isStage = !isOperations && !isTagme3at && !isAnalyticsTagme && !isReelsAnalytics;
+  const isDesignersPage = activeGid === '501319673';
+  const isDesignAnalytics = activeGid === 'design-analytics';
+  const isDesignersMode = isDesignersPage || isDesignAnalytics;
 
-  const sheetGidToFetch = isAnalyticsTagme ? '1535230545' : isReelsAnalytics ? '1436746012' : activeGid;
-  const activeDocId = isReelsStage ? '2PACX-1vTvcQ3v1JOzacx9tcsYrbriofFyHlu7rOKKlsobvpP9vjnbHGcg_Qn9TLlbkgB2YsGiX0GO1U4wlZjd' : undefined;
+  const isReelsStage = ['1436746012', '1939073164', '0', '798246690'].includes(activeGid);
+  const isStage = !isOperations && !isTagme3at && !isAnalyticsTagme && !isReelsAnalytics && !isDesignersMode;
+
+  const sheetGidToFetch = isAnalyticsTagme 
+    ? '1535230545' 
+    : isReelsAnalytics 
+    ? '1436746012' 
+    : isDesignAnalytics 
+    ? '501319673' 
+    : activeGid;
+
+  const activeDocId = isReelsStage 
+    ? '2PACX-1vTvcQ3v1JOzacx9tcsYrbriofFyHlu7rOKKlsobvpP9vjnbHGcg_Qn9TLlbkgB2YsGiX0GO1U4wlZjd' 
+    : isDesignersMode 
+    ? '2PACX-1vRkOH2-jRtYqmkf0opn6in9TMg3oOo6FBvlGfkJjhDwn-t-CSYyrTbn4EDjNCFdvKL7tQG6nQ--jSdC' 
+    : undefined;
   const { data: liveData, updateData: setLiveData, loading, refresh } = useGoogleSheets(sheetGidToFetch, activeDocId);
 
   const [itemToasts, setItemToasts] = useState<{ id: string, name: string, filingName?: string }[]>([]);
@@ -2977,11 +3163,98 @@ function App() {
     return () => clearInterval(interval);
   }, [refresh, loading]);
 
+  const currentUserName = profile?.name || localStorage.getItem('user_editor_name') || 'ESLAM';
+  const [isMyTasksOnly, setIsMyTasksOnly] = useState(false);
+
+  const [pinnedTabs, setPinnedTabs] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('mktg_pinned_tabs');
+      return saved ? JSON.parse(saved) : ['1476192399', '1535230545'];
+    } catch {
+      return ['1476192399', '1535230545'];
+    }
+  });
+
+  const togglePinTab = (gid: string) => {
+    setPinnedTabs(prev => {
+      const updated = prev.includes(gid) ? prev.filter(g => g !== gid) : [...prev, gid];
+      try { localStorage.setItem('mktg_pinned_tabs', JSON.stringify(updated)); } catch {}
+      return updated;
+    });
+  };
+
+  const [customPresets, setCustomPresets] = useState<{ id: string, name: string, teacherFilter: string, yearFilter: string, termFilter: string, statusFilter: string, activeGid: string }[]>(() => {
+    try {
+      const saved = localStorage.getItem('mktg_custom_presets');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+  const [newPresetName, setNewPresetName] = useState('');
+  const [showSavePresetModal, setShowSavePresetModal] = useState(false);
+
+  const saveCurrentPreset = () => {
+    if (!newPresetName.trim()) return;
+    const preset = {
+      id: 'preset-' + Date.now(),
+      name: newPresetName.trim(),
+      teacherFilter,
+      yearFilter,
+      termFilter,
+      statusFilter,
+      activeGid,
+    };
+    const updated = [...customPresets, preset];
+    setCustomPresets(updated);
+    try { localStorage.setItem('mktg_custom_presets', JSON.stringify(updated)); } catch {}
+    setNewPresetName('');
+    setShowSavePresetModal(false);
+    toast.success(`تم حفظ الفلتر "${preset.name}" بنجاح!`);
+  };
+
+  const deletePreset = (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const updated = customPresets.filter(p => p.id !== id);
+    setCustomPresets(updated);
+    try { localStorage.setItem('mktg_custom_presets', JSON.stringify(updated)); } catch {}
+    toast.success('تم حذف الفلتر المحفوظ');
+  };
+
+  const applyPreset = (preset: any) => {
+    if (preset.activeGid && preset.activeGid !== activeGid) {
+      setActiveGid(preset.activeGid);
+    }
+    setTeacherFilter(preset.teacherFilter || 'All');
+    setYearFilter(preset.yearFilter || 'All');
+    setTermFilter(preset.termFilter || 'All');
+    setStatusFilter(preset.statusFilter || 'All');
+    toast.success(`تم تطبيق الفلتر: ${preset.name}`);
+  };
+
+  const jumpToTask = (taskId: string) => {
+    const el = document.getElementById(taskId);
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      el.classList.add('ring-2', 'ring-rose-500', 'bg-rose-500/20', 'shadow-[0_0_30px_rgba(244,63,94,0.5)]');
+      setTimeout(() => {
+        el.classList.remove('ring-2', 'ring-rose-500', 'bg-rose-500/20', 'shadow-[0_0_30px_rgba(244,63,94,0.5)]');
+      }, 2500);
+    }
+  };
+
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('All');
   const [teacherFilter, setTeacherFilter] = useState('All');
   const [yearFilter, setYearFilter] = useState('All');
+  const [termFilter, setTermFilter] = useState('All');
+  const [bypassYearTerm, setBypassYearTerm] = useState(false);
+  const [tagmeViewMode, setTagmeViewMode] = useState<'SIMPLE' | 'DETAILED'>('SIMPLE');
   const [colFilters, setColFilters] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    setBypassYearTerm(false);
+  }, [teacherFilter, activeGid]);
 
   const [newItems, setNewItems] = useState<any[]>([]);
   const [showNotifications, setShowNotifications] = useState(false);
@@ -3117,6 +3390,23 @@ const [activeVeToast, setActiveVeToast] = useState<{ item: any } | null>(null);
     }
     return {};
   });
+
+  const [assignedWeeks, setAssignedWeeks] = useState<Record<string, string>>(() => {
+    const saved = localStorage.getItem('assigned_weeks');
+    if (saved) {
+      try { return JSON.parse(saved); } catch (e) {}
+    }
+    return {};
+  });
+
+  const handleUpdateWeek = (itemKey: string, val: string) => {
+    setAssignedWeeks(prev => {
+      const updated = { ...prev, [itemKey]: val };
+      const taskName = findTaskName(itemKey);
+      syncState('assigned_weeks', updated, itemKey, taskName, 'week', `🗓️ تم تعديل الأسبوع إلى: ${val || 'غير محدد'}`);
+      return updated;
+    });
+  };
 
   const handleUpdateDate = (itemKey: string, val: string) => {
     setAssignedDates(prev => {
@@ -4276,11 +4566,15 @@ const [activeVeToast, setActiveVeToast] = useState<{ item: any } | null>(null);
     { label: 'إحصائيات التجميعات 📊', gid: 'analytics_tagme3at', icon: BarChart3, colorHex: '#10b981' },
   ];
 
+  const designersStages = [
+    { label: 'Designers', gid: '501319673', icon: Sparkles, colorHex: '#a855f7' },
+    { label: 'احصائيات تصاميم', gid: 'design-analytics', icon: BarChart3, colorHex: '#ec4899' },
+  ];
+
   const reelsStages = [
     { label: 'Shooting', gid: '1436746012', icon: Video, colorHex: '#b49fee' },
     { label: 'Ve', gid: '1939073164', icon: Video, colorHex: '#92dcf7' },
     { label: 'CUTS', gid: '0', icon: Video, colorHex: '#ff7843' },
-    { label: 'Counter', gid: '798246690', icon: Video, colorHex: '#ab4bbb' },
     { label: 'احصائيات الريلز', gid: 'reels-analytics', icon: BarChart3, colorHex: '#818cf8' },
   ];
 
@@ -4315,6 +4609,9 @@ const [activeVeToast, setActiveVeToast] = useState<{ item: any } | null>(null);
       if (assignedDates[key] !== undefined) {
         updated.date = assignedDates[key];
       }
+      if (assignedWeeks[key] !== undefined) {
+        updated.week = assignedWeeks[key];
+      }
       if (assignedBunnyLinks[key] !== undefined) {
         updated.linkBunny = assignedBunnyLinks[key];
       }
@@ -4332,7 +4629,7 @@ const [activeVeToast, setActiveVeToast] = useState<{ item: any } | null>(null);
       }
       return updated;
     });
-  }, [liveData, youtubeItems, tagmeTransfers, localEntries, activeGid, isOperations, isTagme3at, assignedEditors, editorNotes, marketingNotes, assignedOpSheets, assignedBranches, assignedDates, assignedBunnyLinks, assignedThumbnailLinks, assignedTimes, assignedYoutubeLinks, uploadedStatuses]);
+  }, [liveData, youtubeItems, tagmeTransfers, localEntries, activeGid, isOperations, isTagme3at, assignedEditors, editorNotes, marketingNotes, assignedOpSheets, assignedBranches, assignedDates, assignedWeeks, assignedBunnyLinks, assignedThumbnailLinks, assignedTimes, assignedYoutubeLinks, uploadedStatuses]);
 
   useEffect(() => {
     if (combinedData.length === 0) return;
@@ -4461,9 +4758,28 @@ const [activeVeToast, setActiveVeToast] = useState<{ item: any } | null>(null);
 
       if (!matchesSearch) return false;
 
+      if (isMyTasksOnly && currentUserName) {
+        const me = currentUserName.toLowerCase().trim();
+        const meFirstName = me.split(' ')[0];
+        
+        const editor = String(item.editor || '').toLowerCase().trim();
+        const by = String(item.by || '').toLowerCase().trim();
+        const editorCol = String(item.editorCol || '').toLowerCase().trim();
+        const creator = String(item.creator || '').toLowerCase().trim();
+
+        const matchesUser = (val: string) => {
+          if (!val || val === 'غير محدد') return false;
+          return val === me || val.includes(me) || me.includes(val) || (meFirstName.length > 2 && val.includes(meFirstName));
+        };
+
+        const isAssignedToMe = matchesUser(editor) || matchesUser(by) || matchesUser(editorCol) || matchesUser(creator);
+        if (!isAssignedToMe) return false;
+      }
+
       if (isOperations) {
         if (teacherFilter !== 'All' && item.teacher !== teacherFilter) return false;
         if (yearFilter !== 'All' && item.year !== yearFilter) return false;
+        if (termFilter !== 'All' && item.term !== termFilter) return false;
       }
       
       if (isTagme3at && statusFilter !== 'All') {
@@ -4551,7 +4867,7 @@ const [activeVeToast, setActiveVeToast] = useState<{ item: any } | null>(null);
     }
 
     return filtered;
-  }, [combinedData, searchQuery, statusFilter, teacherFilter, yearFilter, colFilters, isOperations, isTagme3at, isStage, stageWeekFilter, sortBy, sortOrder, liveData]);
+  }, [combinedData, searchQuery, statusFilter, teacherFilter, yearFilter, termFilter, bypassYearTerm, colFilters, isOperations, isTagme3at, isStage, stageWeekFilter, sortBy, sortOrder, liveData, isMyTasksOnly, profile, currentUserName]);
 
   // Column Filter Component
   const ColFilter = ({ colKey, label }: { colKey: string, label: string }) => {
@@ -4611,23 +4927,26 @@ const [activeVeToast, setActiveVeToast] = useState<{ item: any } | null>(null);
         </th>
       </>
     );
-    if (isTagme3at) return (
-      <>
-        <th className="px-8 py-4 text-right th-style">Task</th>
-        <th className="px-3 py-4 text-center th-style"><ColFilter colKey="opSheet" label="Sheet" /></th>
-        <th className="px-3 py-4 text-center th-style"><ColFilter colKey="date" label="التاريخ" /></th>
-        <th className="px-3 py-4 text-center th-style"><ColFilter colKey="branch" label="Branch" /></th>
-        <th className="px-3 py-4 text-center th-style">Marketing Notes</th>
-        <th className="px-3 py-4 text-center th-style"><ColFilter colKey="editor" label="Editor" /></th>
-        <th className="px-3 py-4 text-center th-style">Status</th>
-        <th className="px-3 py-4 text-center th-style">Editor Notes</th>
-        <th className="px-8 py-4 text-center th-style text-purple-400 font-bold">Priority</th>
-        <th className="px-4 py-4 text-center th-style text-purple-400 font-bold">thumbnail LINK</th>
-        <th className="px-4 py-4 text-center th-style text-purple-400 font-bold">time</th>
-        <th className="px-4 py-4 text-center th-style text-purple-400 font-bold">لينك اليوتيوب</th>
-        <th className="px-4 py-4 text-center th-style text-purple-400 font-bold">UPLOADED?</th>
-      </>
-    );
+    if (isTagme3at) {
+      const isSimple = tagmeViewMode === 'SIMPLE';
+      return (
+        <>
+          <th className="px-8 py-4 text-right th-style">Task</th>
+          <th className="px-3 py-4 text-center th-style"><ColFilter colKey="opSheet" label="Sheet" /></th>
+          {!isSimple && <th className="px-3 py-4 text-center th-style"><ColFilter colKey="date" label="التاريخ" /></th>}
+          {!isSimple && <th className="px-3 py-4 text-center th-style"><ColFilter colKey="branch" label="Branch" /></th>}
+          <th className="px-3 py-4 text-center th-style">Marketing Notes</th>
+          <th className="px-3 py-4 text-center th-style"><ColFilter colKey="editor" label="Editor" /></th>
+          <th className="px-3 py-4 text-center th-style">Status</th>
+          {!isSimple && <th className="px-3 py-4 text-center th-style">Editor Notes</th>}
+          <th className="px-8 py-4 text-center th-style text-purple-400 font-bold">Priority</th>
+          {!isSimple && <th className="px-4 py-4 text-center th-style text-purple-400 font-bold">thumbnail LINK</th>}
+          {!isSimple && <th className="px-4 py-4 text-center th-style text-purple-400 font-bold">time</th>}
+          {!isSimple && <th className="px-4 py-4 text-center th-style text-purple-400 font-bold">لينك اليوتيوب</th>}
+          {!isSimple && <th className="px-4 py-4 text-center th-style text-purple-400 font-bold">UPLOADED?</th>}
+        </>
+      );
+    }
     if (activeGid === '0') return ( // CUTS
       <>
         <th className="px-4 py-4 text-center th-style"><ColFilter colKey="date" label="Date" /></th>
@@ -4724,7 +5043,7 @@ const [activeVeToast, setActiveVeToast] = useState<{ item: any } | null>(null);
     return Array.from(list);
   }, [uniqueTeachers]);
 
-  const colSpan = isOperations ? 7 : isTagme3at ? 9 : activeGid === '0' ? 18 : activeGid === '1939073164' ? 20 : ['1436746012', '798246690'].includes(activeGid) ? 16 : 7;
+  const colSpan = isOperations ? 7 : isTagme3at ? (tagmeViewMode === 'SIMPLE' ? 8 : 13) : activeGid === '0' ? 18 : activeGid === '1939073164' ? 20 : ['1436746012', '798246690'].includes(activeGid) ? 16 : 7;
 
   return (
     <div className="flex min-h-screen bg-[#05070a] text-foreground selection:bg-primary/30">
@@ -4760,12 +5079,16 @@ const [activeVeToast, setActiveVeToast] = useState<{ item: any } | null>(null);
               colorHex={stage.colorHex}
               colorful={colorfulTabs}
               active={activeGid === stage.gid}
+              isPinned={pinnedTabs.includes(stage.gid)}
+              onTogglePin={() => togglePinTab(stage.gid)}
               onClick={() => {
                 setActiveGid(stage.gid);
                 setActiveLabel(stage.label);
                 setStatusFilter('All');
                 setTeacherFilter('All');
                 setYearFilter('All');
+                setTermFilter('All');
+                setBypassYearTerm(false);
                 setStageWeekFilter('All');
                 setColFilters({});
                 setSearchQuery('');
@@ -4773,43 +5096,53 @@ const [activeVeToast, setActiveVeToast] = useState<{ item: any } | null>(null);
             />
           ))}
 
-          {/* Mode Toggle Button */}
+          {/* Mode Selector (Segmented control between Operations, Reels, and Designers) */}
           <div className="mt-2 mb-4 px-1">
-            <button
-              onClick={() => {
-                const newMode = appMode === 'OP' ? 'REELS' : 'OP';
-                setAppMode(newMode);
-                // Optionally auto-select the first tab of the new mode
-                if (newMode === 'REELS') {
-                  setActiveGid('1436746012');
-                  setActiveLabel('Shooting');
-                } else {
-                  setActiveGid('497207661');
-                  setActiveLabel('Junior 4');
-                }
-              }}
-              className={`w-full flex items-center justify-between px-4 py-3 rounded-2xl border transition-all duration-300 group
-                ${appMode === 'REELS' 
-                  ? 'bg-gradient-to-r from-emerald-500/10 to-teal-500/10 border-emerald-500/30 shadow-[0_0_15px_rgba(16,185,129,0.15)]' 
-                  : 'bg-[#1a1c23] border-white/5 hover:border-white/10'}`}
-            >
-              <div className="flex items-center gap-3">
-                <div className={`p-1.5 rounded-lg transition-colors ${appMode === 'REELS' ? 'bg-emerald-500/20 text-emerald-400' : 'bg-white/5 text-white/60 group-hover:text-white/80'}`}>
-                  {appMode === 'REELS' ? <Video size={16} /> : <FolderOpen size={16} />}
-                </div>
-                <span className={`text-[11px] font-black uppercase tracking-[0.2em] transition-colors duration-300 ${appMode === 'REELS' ? 'text-emerald-400' : 'text-white/60 group-hover:text-white/80'}`}>
-                  {appMode === 'REELS' ? 'REELS MODE' : 'OP MODE'}
-                </span>
-              </div>
-              <div className={`w-10 h-5 rounded-full p-1 transition-colors duration-300 ${appMode === 'REELS' ? 'bg-emerald-500' : 'bg-white/10'}`}>
-                <div className={`w-3 h-3 rounded-full bg-white transition-transform duration-300 ${appMode === 'REELS' ? 'translate-x-5' : 'translate-x-0'}`} />
-              </div>
-            </button>
+            <div className="flex bg-white/5 p-1 rounded-2xl border border-white/10 gap-1">
+              {(['OP', 'REELS', 'DESIGNERS'] as const).map((mode) => (
+                <button
+                  key={mode}
+                  onClick={() => {
+                    setAppMode(mode);
+                    if (mode === 'REELS') {
+                      setActiveGid('1436746012');
+                      setActiveLabel('Shooting');
+                    } else if (mode === 'DESIGNERS') {
+                      setActiveGid('501319673');
+                      setActiveLabel('Designers');
+                    } else {
+                      setActiveGid('497207661');
+                      setActiveLabel('Junior 4');
+                    }
+                    setStatusFilter('All');
+                    setTeacherFilter('All');
+                    setYearFilter('All');
+                    setTermFilter('All');
+                    setBypassYearTerm(false);
+                    setStageWeekFilter('All');
+                    setColFilters({});
+                    setSearchQuery('');
+                  }}
+                  className={`flex-1 py-2 text-[10px] font-black uppercase tracking-wider rounded-xl transition-all duration-300 ${
+                    appMode === mode
+                      ? 'bg-primary text-white shadow-lg'
+                      : 'text-muted hover:text-foreground hover:bg-white/5'
+                  }`}
+                >
+                  {mode === 'OP' ? 'Operations' : mode === 'REELS' ? 'Reels' : 'Designers'}
+                </button>
+              ))}
+            </div>
           </div>
 
           {/* Dynamic Tabs based on Mode */}
           <div className="flex flex-col gap-1">
-            {(appMode === 'OP' ? stages.filter(s => s.gid !== '1476192399' && s.gid !== '1535230545' && s.gid !== 'analytics_tagme3at') : reelsStages)
+            {(appMode === 'OP' 
+              ? stages.filter(s => s.gid !== '1476192399' && s.gid !== '1535230545' && s.gid !== 'analytics_tagme3at') 
+              : appMode === 'REELS' 
+              ? reelsStages 
+              : designersStages
+            )
               .filter(stage => !profile?.role || PERMISSIONS.canViewTab(profile.role, stage.label, profile.allowed_tabs || []))
               .map((stage) => (
               <SidebarItem
@@ -4819,12 +5152,16 @@ const [activeVeToast, setActiveVeToast] = useState<{ item: any } | null>(null);
                 colorHex={stage.colorHex}
                 colorful={colorfulTabs}
                 active={activeGid === stage.gid}
+                isPinned={pinnedTabs.includes(stage.gid)}
+                onTogglePin={() => togglePinTab(stage.gid)}
                 onClick={() => {
                   setActiveGid(stage.gid);
                   setActiveLabel(stage.label);
                   setStatusFilter('All');
                   setTeacherFilter('All');
                   setYearFilter('All');
+                  setTermFilter('All');
+                  setBypassYearTerm(false);
                   setStageWeekFilter('All');
                   setColFilters({});
                   setSearchQuery('');
@@ -4849,6 +5186,8 @@ const [activeVeToast, setActiveVeToast] = useState<{ item: any } | null>(null);
                   setStatusFilter('All');
                   setTeacherFilter('All');
                   setYearFilter('All');
+                  setTermFilter('All');
+                  setBypassYearTerm(false);
                   setStageWeekFilter('All');
                   setColFilters({});
                   setSearchQuery('');
@@ -4897,6 +5236,10 @@ const [activeVeToast, setActiveVeToast] = useState<{ item: any } | null>(null);
             >
               <LogOut size={14} />
             </button>
+          </div>
+          {/* DEBUG - remove later */}
+          <div className="mt-2 text-[9px] text-yellow-400/70 break-all">
+            role: {profile?.role ?? 'NULL'} | tabs: {JSON.stringify(profile?.allowed_tabs ?? 'NULL')}
           </div>
         </div>
       </aside>
@@ -5295,10 +5638,54 @@ const [activeVeToast, setActiveVeToast] = useState<{ item: any } | null>(null);
           )}
         </AnimatePresence>
 
+
+
         <div className="p-12 space-y-10">
+          {/* Pinned Favorite Tabs Bar */}
+          {pinnedTabs.length > 0 && (
+            <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
+              <span className="text-[10px] font-black text-amber-400 uppercase tracking-widest ml-1 flex items-center gap-1.5 bg-amber-500/10 border border-amber-500/20 px-3 py-1.5 rounded-xl shrink-0">
+                <Pin size={12} className="fill-amber-400" /> المفضلة:
+              </span>
+              {pinnedTabs.map((gid) => {
+                const allStagesList = [...stages, ...reelsStages, ...designersStages];
+                const stage = allStagesList.find(s => s.gid === gid);
+                if (!stage) return null;
+                const isActive = activeGid === gid;
+                return (
+                  <button
+                    key={gid}
+                    onClick={() => {
+                      setActiveGid(gid);
+                      setActiveLabel(stage.label);
+                    }}
+                    className={`flex items-center gap-2 px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all border shrink-0 cursor-pointer ${
+                      isActive
+                        ? 'bg-primary/20 border-primary/50 text-white shadow-lg shadow-primary/20 scale-105'
+                        : 'bg-white/5 border-white/10 text-muted hover:text-white hover:bg-white/10'
+                    }`}
+                  >
+                    <span className="w-2 h-2 rounded-full" style={{ backgroundColor: stage.colorHex || '#8b5cf6' }} />
+                    <span>{stage.label}</span>
+                    <span
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        togglePinTab(gid);
+                      }}
+                      className="hover:text-rose-400 opacity-40 hover:opacity-100 transition-all p-0.5 ml-1"
+                      title="إلغاء التثبيت"
+                    >
+                      ×
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
           {/* Filters Bar */}
-          <div className="flex gap-6 items-center">
-            <div className="flex-1 relative group">
+          <div className="flex gap-4 items-center flex-wrap">
+            <div className="flex-1 min-w-[240px] relative group">
               <Search className="absolute left-6 top-1/2 -translate-y-1/2 text-muted group-focus-within:text-primary transition-colors" size={20} />
               <input
                 type="text"
@@ -5308,6 +5695,21 @@ const [activeVeToast, setActiveVeToast] = useState<{ item: any } | null>(null);
                 className="w-full bg-white/5 border border-white/10 rounded-2xl py-4 pl-14 pr-6 focus:outline-none focus:ring-4 focus:ring-primary/10 transition-all font-bold arabic-text"
               />
             </div>
+
+            {/* My Tasks Only Toggle */}
+            <button
+              onClick={() => setIsMyTasksOnly(prev => !prev)}
+              className={`flex items-center gap-2 px-4 py-3.5 rounded-2xl text-[11px] font-black uppercase tracking-wider transition-all cursor-pointer border shrink-0 ${
+                isMyTasksOnly
+                  ? 'bg-rose-500/20 border-rose-500/50 text-rose-400 shadow-lg shadow-rose-500/20 ring-2 ring-rose-500/40'
+                  : 'bg-white/5 border-white/10 text-muted hover:bg-white/10 hover:text-white'
+              }`}
+              title={isMyTasksOnly ? 'عرض كل المهام' : `عرض المهام المسندة إلى (${currentUserName})`}
+            >
+              <span>مهامي فقط ({currentUserName.split(' ')[0]}) 🎯</span>
+            </button>
+
+
 
             <div className="flex gap-2 p-1.5 bg-white/5 rounded-2xl border border-white/10">
               {isOperations && (
@@ -5330,22 +5732,80 @@ const [activeVeToast, setActiveVeToast] = useState<{ item: any } | null>(null);
                       placeholder="Years"
                     />
                   </div>
+                  <div className="flex items-center gap-2 px-4 border-r border-white/10 mr-2 group">
+                    <Clock size={16} className="text-muted group-hover:text-primary transition-colors" />
+                    <CustomSelect
+                      value={termFilter}
+                      onChange={setTermFilter}
+                      options={['T1', 'T2']}
+                      placeholder="Terms"
+                    />
+                  </div>
                 </>
               )}
-              {isTagme3at && ['All', 'Pending', 'Done'].map((f) => (
-                <button
-                  key={f}
-                  onClick={() => setStatusFilter(f)}
-                  className={`px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${statusFilter === f ? 'bg-primary text-white shadow-lg shadow-primary/30' : 'text-muted hover:bg-white/5 hover:text-foreground'}`}
-                >
-                  {f}
-                </button>
-              ))}
+              {isTagme3at && (
+                <>
+                  {['All', 'Pending', 'Done'].map((f) => (
+                    <button
+                      key={f}
+                      onClick={() => setStatusFilter(f)}
+                      className={`px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${statusFilter === f ? 'bg-primary text-white shadow-lg shadow-primary/30' : 'text-muted hover:bg-white/5 hover:text-foreground'}`}
+                    >
+                      {f}
+                    </button>
+                  ))}
+                  <div className="h-6 w-px bg-white/10 mx-2" />
+                  <button
+                    onClick={() => setTagmeViewMode(prev => prev === 'SIMPLE' ? 'DETAILED' : 'SIMPLE')}
+                    className="flex items-center gap-3 px-4 py-2 bg-white/5 border border-white/10 hover:border-primary/40 rounded-2xl transition-all cursor-pointer group"
+                    title={tagmeViewMode === 'SIMPLE' ? 'عرض الفئة التفصيلية' : 'عرض الفئة البسيطة'}
+                  >
+                    <span className="text-xs font-bold text-muted group-hover:text-white transition-colors">
+                      {tagmeViewMode === 'SIMPLE' ? 'مود بسيط ⚡' : 'مود تفصيلي 📋'}
+                    </span>
+                    <div className={`w-9 h-5 rounded-full p-0.5 transition-colors duration-300 ${
+                      tagmeViewMode === 'SIMPLE' ? 'bg-primary' : 'bg-purple-600'
+                    }`}>
+                      <div className={`w-4 h-4 rounded-full bg-white transition-transform duration-300 ${
+                        tagmeViewMode === 'SIMPLE' ? 'translate-x-0' : 'translate-x-4'
+                      }`} />
+                    </div>
+                  </button>
+                </>
+              )}
               {!isTagme3at && !isOperations && (
                 <span className="px-5 py-2.5 text-[10px] font-black uppercase tracking-widest text-muted opacity-40">{activeLabel}</span>
               )}
             </div>
           </div>
+
+          {/* Quick Task Jumper Bar when My Tasks Only is active */}
+          {isMyTasksOnly && (
+            <div className="flex items-center gap-2 overflow-x-auto p-3.5 bg-rose-500/10 border border-rose-500/20 rounded-2xl animate-fadeIn" dir="rtl">
+              <span className="text-xs font-black text-rose-400 flex items-center gap-1.5 shrink-0 ml-2">
+                🎯 انقر للانتقال الفوري ({filteredData.length} مهمة):
+              </span>
+              {filteredData.length === 0 ? (
+                <span className="text-xs text-muted font-bold">لا توجد مهام مسندة إليك حالياً في هذه الصفحة</span>
+              ) : (
+                filteredData.map((task: any) => {
+                  const taskId = task.uniqueKey || generateKey(task);
+                  const taskName = task.name || task.filingName || 'مهمة بدون عنوان';
+                  return (
+                    <button
+                      key={taskId}
+                      onClick={() => jumpToTask(taskId)}
+                      className="px-3.5 py-2 rounded-xl bg-white/5 hover:bg-rose-500/25 hover:border-rose-500/50 border border-white/10 text-white text-xs font-bold transition-all cursor-pointer truncate max-w-[220px] shrink-0 shadow-sm flex items-center gap-1.5"
+                      title={`الانتقال إلى: ${taskName}`}
+                    >
+                      <MapPin size={12} className="text-rose-400 shrink-0" />
+                      <span className="truncate">{taskName}</span>
+                    </button>
+                  );
+                })
+              )}
+            </div>
+          )}
 
           {/* Sort & Order Bar */}
           <div className="flex items-center justify-end gap-3 text-xs bg-white/[0.02] border border-white/[0.04] p-3.5 rounded-2xl animate-fadeIn" dir="rtl">
@@ -5452,6 +5912,10 @@ const [activeVeToast, setActiveVeToast] = useState<{ item: any } | null>(null);
             <ReelsAnalytics />
           ) : isAnalyticsTagme ? (
             <TagmeAnalyticsDashboard combinedData={combinedData} tagmeTransfers={tagmeTransfers} loading={loading} taskStatuses={taskStatuses} taskPriorities={taskPriorities} />
+          ) : isDesignAnalytics ? (
+            <DesignAnalytics liveData={liveData} loading={loading} />
+          ) : isDesignersPage ? (
+            <DesignersDashboard liveData={liveData} setLiveData={setLiveData} loading={loading} />
           ) : (
             <div className="table-container">
               <div className="overflow-x-auto">
@@ -5525,6 +5989,107 @@ const [activeVeToast, setActiveVeToast] = useState<{ item: any } | null>(null);
                           </div>
                         </td>
                       </motion.tr>
+                    ) : isOperations && teacherFilter !== 'All' && (yearFilter === 'All' || termFilter === 'All') && !bypassYearTerm && !searchQuery.trim() ? (
+                      <motion.tr initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+                        <td colSpan={colSpan} className="py-12">
+                          <div className="flex flex-col items-center justify-center text-center mb-10 px-8">
+                            <button
+                              onClick={() => setTeacherFilter('All')}
+                              className="mb-4 flex items-center gap-2 px-4 py-2 bg-white/5 border border-white/10 hover:bg-white/10 hover:border-white/20 transition-all rounded-xl text-xs font-bold text-muted hover:text-foreground"
+                            >
+                              <Undo2 size={14} />
+                              رجوع لاختيار المدرس
+                            </button>
+                            <h3 className="text-2xl font-black arabic-text mb-2">اختر السنة الدراسية والترم</h3>
+                            <p className="text-sm text-muted">المدرس الحالي: <span className="text-primary font-bold">{teacherFilter}</span></p>
+                            
+                            <button
+                              onClick={() => setBypassYearTerm(true)}
+                              className="mt-4 px-5 py-2 bg-primary/10 border border-primary/20 hover:bg-primary/20 hover:border-primary/40 transition-all rounded-xl text-xs font-bold text-primary"
+                            >
+                              عرض جميع الصفوف والترمات لـ {teacherFilter}
+                            </button>
+                          </div>
+                          
+                          <div className="space-y-12 px-8">
+                            {/* Term 1 Section */}
+                            <div>
+                              <h4 className="text-lg font-bold arabic-text mb-4 text-right border-r-4 border-primary pr-3">الترم الأول (T1)</h4>
+                              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                                {Object.entries(yearLabels).map(([yearKey, label]) => {
+                                  const count = liveData.filter((i: any) => i.teacher === teacherFilter && i.year === yearKey && i.term === 'T1').length;
+                                  return (
+                                    <button
+                                      key={`T1-${yearKey}`}
+                                      disabled={count === 0}
+                                      onClick={() => {
+                                        setYearFilter(yearKey);
+                                        setTermFilter('T1');
+                                      }}
+                                      className={`p-6 text-center rounded-2xl group transition-all duration-300 border ${
+                                        count === 0 
+                                          ? 'bg-white/5 border-white/10 opacity-40 cursor-not-allowed' 
+                                          : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20 hover:border-emerald-500/50 hover:shadow-lg hover:shadow-emerald-500/10'
+                                      }`}
+                                    >
+                                      <div className={`w-12 h-12 mx-auto rounded-full flex items-center justify-center mb-4 transition-all ${
+                                        count === 0 ? 'bg-white/5 text-muted/30' : 'bg-emerald-500/20 text-emerald-400 group-hover:scale-110'
+                                      }`}>
+                                        <GraduationCap size={24} />
+                                      </div>
+                                      <span className="font-bold arabic-text text-sm block truncate">{label}</span>
+                                      <span className="text-[10px] uppercase font-bold tracking-wider mt-2 block text-emerald-400/80">
+                                        ترم أول (T1)
+                                      </span>
+                                      <span className="text-[10px] text-muted-foreground block mt-1 opacity-70">
+                                        {count} Records
+                                      </span>
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </div>
+
+                            {/* Term 2 Section */}
+                            <div>
+                              <h4 className="text-lg font-bold arabic-text mb-4 text-right border-r-4 border-secondary pr-3">الترم الثاني (T2)</h4>
+                              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                                {Object.entries(yearLabels).map(([yearKey, label]) => {
+                                  const count = liveData.filter((i: any) => i.teacher === teacherFilter && i.year === yearKey && i.term === 'T2').length;
+                                  return (
+                                    <button
+                                      key={`T2-${yearKey}`}
+                                      disabled={count === 0}
+                                      onClick={() => {
+                                        setYearFilter(yearKey);
+                                        setTermFilter('T2');
+                                      }}
+                                      className={`p-6 text-center rounded-2xl group transition-all duration-300 border ${
+                                        count === 0 
+                                          ? 'bg-white/5 border-white/10 opacity-40 cursor-not-allowed' 
+                                          : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20 hover:border-emerald-500/50 hover:shadow-lg hover:shadow-emerald-500/10'
+                                      }`}
+                                    >
+                                      <div className={`w-12 h-12 mx-auto rounded-full flex items-center justify-center mb-4 transition-all ${
+                                        count === 0 ? 'bg-white/5 text-muted/30' : 'bg-emerald-500/20 text-emerald-400 group-hover:scale-110'
+                                      }`}>
+                                        <GraduationCap size={24} />
+                                      </div>
+                                      <span className="font-bold arabic-text text-sm block truncate">{label}</span>
+                                      <span className="text-[10px] uppercase font-bold tracking-wider mt-2 block text-emerald-400/80">
+                                        ترم ثاني (T2)
+                                      </span>
+                                      <span className="text-[10px] text-muted-foreground block mt-1 opacity-70">
+                                        {count} Records
+                                      </span>
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </motion.tr>
                     ) : filteredData.length > 0 ? filteredData.slice(0, visibleRecordsLimit).map((item: any, idx: number) => {
                       const itemKey = item.uniqueKey || generateKey(item);
                       const isGlowing = glowingKeys.includes(itemKey);
@@ -5556,7 +6121,7 @@ const [activeVeToast, setActiveVeToast] = useState<{ item: any } | null>(null);
                         const canRaisePriority = totalPriorityToday < DAILY_PRIORITY_LIMIT;
                         const key = item.uniqueKey || generateKey(item);
                         const isSubscribed = subscribedTasks.includes(key) || (item.editor && item.editor.toLowerCase() === profile?.name?.toLowerCase());
-                        return <TagmeRow key={idx} item={item} index={idx} onUpdateEditor={handleUpdateEditor} editorsList={editorsList} onUpdateEditorNotes={handleUpdateEditorNotes} onUpdateMarketingNotes={handleUpdateMarketingNotes} opSheetsList={opSheetsList} branchesList={branchesList} onUpdateOpSheet={handleUpdateOpSheet} onUpdateBranch={handleUpdateBranch} onUpdateDate={handleUpdateDate} isGlowing={isGlowing} liveData={liveData} canRaisePriority={canRaisePriority || (taskPriorities[key] === true)} priorityLimit={DAILY_PRIORITY_LIMIT} onStatusChange={handleStatusChange} isSubscribed={isSubscribed} onToggleSubscribe={() => toggleSubscribe(key)} priorityOverride={taskPriorities[key]} statusOverride={taskStatuses[key]} onUpdateThumbnailLink={handleUpdateThumbnailLink} onUpdateTime={handleUpdateTime} onUpdateYoutubeLink={handleUpdateYoutubeLink} onUpdateUploaded={handleUpdateUploaded} />;
+                        return <TagmeRow key={idx} item={item} index={idx} isSimple={tagmeViewMode === 'SIMPLE'} onUpdateEditor={handleUpdateEditor} editorsList={editorsList} onUpdateEditorNotes={handleUpdateEditorNotes} onUpdateMarketingNotes={handleUpdateMarketingNotes} opSheetsList={opSheetsList} branchesList={branchesList} onUpdateOpSheet={handleUpdateOpSheet} onUpdateBranch={handleUpdateBranch} onUpdateDate={handleUpdateDate} isGlowing={isGlowing} liveData={liveData} canRaisePriority={canRaisePriority || (taskPriorities[key] === true)} priorityLimit={DAILY_PRIORITY_LIMIT} onStatusChange={handleStatusChange} isSubscribed={isSubscribed} onToggleSubscribe={() => toggleSubscribe(key)} priorityOverride={taskPriorities[key]} statusOverride={taskStatuses[key]} onUpdateThumbnailLink={handleUpdateThumbnailLink} onUpdateTime={handleUpdateTime} onUpdateYoutubeLink={handleUpdateYoutubeLink} onUpdateUploaded={handleUpdateUploaded} />;
                       }
                       if (activeGid === '0') {
                         return <CutsRow 
@@ -5579,7 +6144,7 @@ const [activeVeToast, setActiveVeToast] = useState<{ item: any } | null>(null);
                       if (['1436746012', '1939073164', '798246690'].includes(activeGid)) {
                         return <ShootingRow key={idx} item={item} index={idx} activeGid={activeGid} onToggleFilmed={handleFilmedToggle} loadingFilmedCode={loadingFilmedCode} onUpdateShootingRow={handleUpdateShootingRow} liveData={liveData} optionsLists={{ branches: uniqueBranches, years: uniqueYears, teachers: uniqueTeachers, extraNames: uniqueExtraNames, types: uniqueTypes, formats: uniqueFormats, bys: uniqueBys, storages: uniqueStorages, editors: editorsList }} autofillDrag={autofillDrag} setAutofillDrag={setAutofillDrag} onApplyAutofill={handleApplyAutofill} activeCell={activeCell} setActiveCell={setActiveCell} toast={toast} isSubscribed={subscribedTasks.includes(item.id)} onToggleSubscribe={toggleSubscribe} />;
                       }
-                      return <StageRow key={idx} item={item} index={idx} tagmeTransfers={tagmeTransfers} onTagmeToggle={handleTagmeToggle} activeLabel={activeLabel} isGlowing={isGlowing} />;
+                      return <StageRow key={idx} item={item} index={idx} tagmeTransfers={tagmeTransfers} onTagmeToggle={handleTagmeToggle} activeLabel={activeLabel} isGlowing={isGlowing} onUpdateDate={handleUpdateDate} onUpdateWeek={handleUpdateWeek} />;
                     }) : (
                       <motion.tr initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
                         <td colSpan={colSpan} className="py-40 text-center opacity-30">

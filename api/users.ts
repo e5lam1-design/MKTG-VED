@@ -1,7 +1,7 @@
 // src/api/users.ts – Vercel Serverless Functions for user CRUD
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { getRequesterProfile, handleApiError, supabaseAdminClient } from './_supabase';
-import { assertCanManageTarget } from './resolve-login'; // reuse role validation helper
+import { getRequesterProfile, handleApiError, supabaseAdminClient } from './_supabase.js';
+import { assertCanManageTarget } from './resolve-login.js'; // reuse role validation helper
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   // CORS headers – allow any origin for simplicity (adjust in production)
@@ -72,9 +72,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           email,
           name,
           role,
-          allowed_tabs: role === 'supervisor' ? allowed_tabs : [],
+          allowed_tabs: allowed_tabs || [],
           is_active: true,
           team: req.body.team || '',
+          default_mode: req.body.default_mode || 'operations',
         });
       if (profileError) throw profileError;
 
@@ -83,7 +84,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     // -------------------- PATCH --------------------
     if (req.method === 'PATCH') {
-      const targetId = String(req.query.id || req.params?.id || '');
+      const targetId = String(req.query.id || (req as any).params?.id || '');
       if (!targetId) {
         const err: any = new Error('User ID missing in URL');
         err.status = 400;
@@ -110,12 +111,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (Array.isArray(req.body.allowed_tabs)) updates.allowed_tabs = req.body.allowed_tabs;
       if (typeof req.body.role === 'string') updates.role = req.body.role;
       if (typeof req.body.team === 'string') updates.team = req.body.team;
+      if (typeof req.body.default_mode === 'string') updates.default_mode = req.body.default_mode;
 
       const nextRole = updates.role || target.role;
       // Ensure requester can change to the new role
       assertCanManageTarget(requester, nextRole, target);
-      // If role is not supervisor, clear allowed_tabs to avoid stale data
-      if (updates.role && updates.role !== 'supervisor') updates.allowed_tabs = [];
 
       const { data, error: updateError } = await supabaseAdminClient
         .from('user_profiles')

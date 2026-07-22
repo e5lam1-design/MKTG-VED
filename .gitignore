@@ -64,3 +64,6 @@ read_durations.js
 create-users.mjs
 patch_analytics.cjs
 patch_upsert.cjs
+
+.vercel
+.env*

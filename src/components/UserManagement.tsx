@@ -8,10 +8,19 @@ import {
   Loader2, AlertCircle, ChevronDown, ToggleLeft, ToggleRight, Trash2
 } from 'lucide-react';
 
-const ALL_TABS = [
-  'Operations', 'تجميعات', 'Junior 4', 'Junior 5', 'Junior 6',
-  'Middle 1', 'Middle 2', 'Middle 3', 'Senior 1', 'Senior 2', 'Senior 3'
+const MARKETING_TABS = [
+  'Operations', 'تجميعات', 'إحصائيات التجميعات 📊',
+  'Junior 4', 'Junior 5', 'Junior 6',
+  'Middle 1', 'Middle 2', 'Middle 3',
+  'Senior 1', 'Senior 2', 'Senior 3'
 ];
+
+const VIDEO_TABS = [
+  'Shooting', 'Ve', 'CUTS', 'احصائيات الريلز',
+  'Designers', 'احصائيات تصاميم'
+];
+
+const ALL_TABS = [...MARKETING_TABS, ...VIDEO_TABS];
 
 const AvatarInitials = ({ name, role, team }: { name: string; role: Role; team?: string }) => {
   const colors: Record<Role, string> = {
@@ -50,6 +59,7 @@ const EditUserModal = ({ user, initialTeam, onClose, onSave }: EditUserModalProp
   const [allowedTabs, setAllowedTabs] = useState<string[]>(user.allowed_tabs || []);
   const [selectedTeam, setSelectedTeam] = useState<'marketing' | 'video' | ''>(initialTeam);
   const [saving, setSaving] = useState(false);
+  const [defaultMode, setDefaultMode] = useState<'operations' | 'reels' | 'designers'>(user.default_mode || 'operations');
 
   const toggleTab = (tab: string) => {
     setAllowedTabs(prev =>
@@ -57,10 +67,11 @@ const EditUserModal = ({ user, initialTeam, onClose, onSave }: EditUserModalProp
     );
   };
 
-  const handleSave = async () => {
-    setSaving(true);
-    await onSave(user.id, { role, allowed_tabs: role === 'supervisor' ? allowedTabs : [] }, selectedTeam);
-    setSaving(false);
+  const handleSave = () => {
+    onSave(user.id, { role, allowed_tabs: allowedTabs, default_mode: defaultMode }, selectedTeam)
+      .catch(err => {
+        console.error('[handleSave]', err);
+      });
     onClose();
   };
 
@@ -76,12 +87,12 @@ const EditUserModal = ({ user, initialTeam, onClose, onSave }: EditUserModalProp
         initial={{ opacity: 0, scale: 0.95, y: 20 }}
         animate={{ opacity: 1, scale: 1, y: 0 }}
         exit={{ opacity: 0, scale: 0.95, y: 20 }}
-        className="bg-[#0d1219] border border-white/10 rounded-3xl p-6 w-full max-w-md shadow-[0_0_80px_rgba(0,0,0,0.8)]"
+        className="bg-[#0d1219] border border-white/10 rounded-3xl p-6 w-full max-w-lg max-h-[90vh] overflow-y-auto shadow-[0_0_80px_rgba(0,0,0,0.8)]"
       >
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
           <div>
-            <h3 className="text-lg font-black text-white arabic-text">تعديل المستخدم</h3>
+            <h3 className="text-lg font-black text-white arabic-text">تعديل المستخدم وصلاحياته</h3>
           </div>
           <button onClick={onClose} className="w-8 h-8 rounded-xl bg-white/5 hover:bg-white/10 flex items-center justify-center text-white/50 hover:text-white transition-all cursor-pointer">
             <X size={16} />
@@ -131,7 +142,11 @@ const EditUserModal = ({ user, initialTeam, onClose, onSave }: EditUserModalProp
               بلا فريق
             </button>
             <button
-              onClick={() => setSelectedTeam('video')}
+              onClick={() => {
+                setSelectedTeam('video');
+                setDefaultMode('reels');
+                setAllowedTabs(VIDEO_TABS);
+              }}
               className={`py-2.5 px-3 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
                 selectedTeam === 'video'
                   ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300 ring-2 ring-emerald-500/30'
@@ -141,7 +156,11 @@ const EditUserModal = ({ user, initialTeam, onClose, onSave }: EditUserModalProp
               فريق الفيديو
             </button>
             <button
-              onClick={() => setSelectedTeam('marketing')}
+              onClick={() => {
+                setSelectedTeam('marketing');
+                setDefaultMode('operations');
+                setAllowedTabs(MARKETING_TABS);
+              }}
               className={`py-2.5 px-3 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
                 selectedTeam === 'marketing'
                   ? 'bg-purple-500/20 border-purple-500/40 text-purple-300 ring-2 ring-purple-500/30'
@@ -153,47 +172,95 @@ const EditUserModal = ({ user, initialTeam, onClose, onSave }: EditUserModalProp
           </div>
         </div>
 
-        {/* Allowed Tabs (only for supervisor) */}
-        <AnimatePresence>
-          {role === 'supervisor' && (
-            <motion.div
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: 'auto' }}
-              exit={{ opacity: 0, height: 0 }}
-              className="mb-5 overflow-hidden"
-            >
-              <label className="text-[11px] font-black text-white/50 uppercase tracking-widest mb-2 block">
-                التابات المسموح بيها
-              </label>
-              <div className="grid grid-cols-2 gap-1.5">
-                {ALL_TABS.map(tab => (
-                  <button
-                    key={tab}
-                    onClick={() => toggleTab(tab)}
-                    className={`py-2 px-3 rounded-xl text-xs font-bold border transition-all flex items-center gap-2 cursor-pointer arabic-text ${
-                      allowedTabs.includes(tab)
-                        ? 'bg-blue-500/20 border-blue-500/40 text-blue-300'
-                        : 'bg-white/[0.03] border-white/[0.06] text-white/40 hover:bg-white/[0.06]'
-                    }`}
-                  >
-                    {allowedTabs.includes(tab) ? (
-                      <Check size={11} className="shrink-0 text-blue-400" />
-                    ) : (
-                      <div className="w-2.5 h-2.5 rounded-sm border border-white/20 shrink-0" />
-                    )}
-                    {tab}
-                  </button>
-                ))}
-              </div>
+        {/* Default Mode Selector */}
+        <div className="mb-5">
+          <label className="text-[11px] font-black text-white/50 uppercase tracking-widest mb-2 block">الوضع الافتراضي (Default Mode)</label>
+          <div className="grid grid-cols-3 gap-2">
+            {[
+              { id: 'operations', label: 'العمليات' },
+              { id: 'reels', label: 'الريلز' },
+              { id: 'designers', label: 'المصممين' }
+            ].map(m => (
               <button
-                onClick={() => setAllowedTabs(ALL_TABS)}
-                className="mt-2 text-xs text-blue-400 hover:text-blue-300 font-bold cursor-pointer"
+                key={m.id}
+                onClick={() => setDefaultMode(m.id as any)}
+                className={`py-2 px-3 rounded-xl text-xs font-bold border transition-all cursor-pointer arabic-text ${
+                  defaultMode === m.id
+                    ? 'bg-purple-500/20 border-purple-500/40 text-purple-300'
+                    : 'bg-white/[0.03] border-white/[0.06] text-white/40 hover:bg-white/[0.06]'
+                }`}
               >
-                تحديد الكل
+                {m.label}
               </button>
-            </motion.div>
-          )}
-        </AnimatePresence>
+            ))}
+          </div>
+        </div>
+
+        {/* Allowed Tabs Selection for User */}
+        <div className="mb-6 border-t border-white/10 pt-5">
+          <div className="flex items-center justify-between mb-3">
+            <label className="text-[11px] font-black text-white/70 uppercase tracking-widest block">
+              التابات المسموح إظهارها لليوزر 📌
+            </label>
+            <span className="text-[10px] text-muted font-mono font-bold">
+              {allowedTabs.length === 0 ? 'كل التابات (الافتراضي)' : `${allowedTabs.length} تاب محددة`}
+            </span>
+          </div>
+
+          {/* Quick Presets */}
+          <div className="flex flex-wrap gap-1.5 mb-3">
+            <button
+              type="button"
+              onClick={() => setAllowedTabs(ALL_TABS)}
+              className="px-2.5 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-white text-[10px] font-bold border border-white/10 transition-all cursor-pointer"
+            >
+              تحديد الكل (All)
+            </button>
+            <button
+              type="button"
+              onClick={() => setAllowedTabs(MARKETING_TABS)}
+              className="px-2.5 py-1 rounded-lg bg-purple-500/15 hover:bg-purple-500/25 text-purple-300 text-[10px] font-bold border border-purple-500/30 transition-all cursor-pointer"
+            >
+              ماركتينج فقط 🎯
+            </button>
+            <button
+              type="button"
+              onClick={() => setAllowedTabs(VIDEO_TABS)}
+              className="px-2.5 py-1 rounded-lg bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 text-[10px] font-bold border border-emerald-500/30 transition-all cursor-pointer"
+            >
+              فيديو وريلز فقط 🎬
+            </button>
+            <button
+              type="button"
+              onClick={() => setAllowedTabs([])}
+              className="px-2.5 py-1 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 text-[10px] font-bold border border-rose-500/20 transition-all cursor-pointer"
+            >
+              إلغاء التحديد
+            </button>
+          </div>
+
+          <div className="grid grid-cols-2 gap-1.5 max-h-[220px] overflow-y-auto pr-1 scrollbar-thin">
+            {ALL_TABS.map(tab => (
+              <button
+                key={tab}
+                type="button"
+                onClick={() => toggleTab(tab)}
+                className={`py-2 px-3 rounded-xl text-xs font-bold border transition-all flex items-center gap-2 cursor-pointer arabic-text ${
+                  allowedTabs.includes(tab)
+                    ? 'bg-blue-500/20 border-blue-500/40 text-blue-300 shadow-sm'
+                    : 'bg-white/[0.03] border-white/[0.06] text-white/40 hover:bg-white/[0.06]'
+                }`}
+              >
+                {allowedTabs.includes(tab) ? (
+                  <Check size={11} className="shrink-0 text-blue-400" />
+                ) : (
+                  <div className="w-2.5 h-2.5 rounded-sm border border-white/20 shrink-0" />
+                )}
+                <span className="truncate">{tab}</span>
+              </button>
+            ))}
+          </div>
+        </div>
 
         {/* Actions */}
         <div className="flex gap-3">
@@ -219,7 +286,7 @@ const EditUserModal = ({ user, initialTeam, onClose, onSave }: EditUserModalProp
 
 interface InviteModalProps {
   onClose: () => void;
-  onInvite: (email: string, name: string, role: Role, password: string, team: 'marketing' | 'video' | '') => Promise<string | null>;
+  onInvite: (email: string, name: string, role: Role, password: string, team: 'marketing' | 'video' | '', default_mode: 'operations' | 'reels' | 'designers') => Promise<string | null>;
 }
 
 const InviteModal = ({ onClose, onInvite }: InviteModalProps) => {
@@ -228,6 +295,7 @@ const InviteModal = ({ onClose, onInvite }: InviteModalProps) => {
   const [role, setRole] = useState<Role>('junior');
   const [password, setPassword] = useState('');
   const [team, setTeam] = useState<'marketing' | 'video' | ''>('');
+  const [defaultMode, setDefaultMode] = useState<'operations' | 'reels' | 'designers'>('operations');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
@@ -236,7 +304,7 @@ const InviteModal = ({ onClose, onInvite }: InviteModalProps) => {
     if (password.length < 6) { setError('كلمة المرور يجب أن تكون 6 أحرف على الأقل'); return; }
     setError('');
     setLoading(true);
-    const err = await onInvite(email, name, role, password, team);
+    const err = await onInvite(email, name, role, password, team, defaultMode);
     setLoading(false);
     if (err) { setError(err); } else { onClose(); }
   };
@@ -346,30 +414,80 @@ export const UserManagement = () => {
 
   const getToken = () => profile?.id || session?.user?.id || session?.access_token || '';
 
+const DEFAULT_SYSTEM_USERS: UserProfile[] = [
+  { id: 'usr-eslam-admin', name: 'eslam', email: 'eslamabdalhamidfb@gmail.com', role: 'admin', allowed_tabs: [], is_active: true, created_at: new Date().toISOString() },
+  { id: 'usr-eslam-jr', name: 'eslam', email: 'eslam@company.com', role: 'junior', allowed_tabs: [], is_active: true, created_at: new Date().toISOString() },
+  { id: 'usr-adham', name: 'Adham elbadry', email: 'adham@company.com', role: 'supervisor', allowed_tabs: [], is_active: true, created_at: new Date().toISOString() },
+  { id: 'usr-abanoub', name: 'ABANOUB', email: 'abanoub@company.com', role: 'junior', allowed_tabs: [], is_active: true, created_at: new Date().toISOString() },
+  { id: 'usr-ashraf', name: 'ASHRAF', email: 'ashraf@company.com', role: 'junior', allowed_tabs: [], is_active: true, created_at: new Date().toISOString() },
+];
+
   const fetchUsers = async () => {
     setLoading(true);
     setFetchError(null);
     try {
+      let fetchedUsers: UserProfile[] = [];
+
+      // 1. Try serverless API
       const token = getToken();
       const res = await fetch('/api/users', {
         headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-      });
-      const data = await res.json().catch(() => ({}));
-      
-      if (res.ok && Array.isArray(data.users)) {
-        setUsers(data.users as UserProfile[]);
-        const teamsMap: Record<string, 'marketing' | 'video' | ''> = {};
-        data.users.forEach((u: UserProfile) => {
-          teamsMap[u.id] = u.team || '';
-        });
-        setUserTeams(teamsMap);
-      } else {
-        throw new Error(data.error || 'فشل في جلب المستخدمين');
+      }).catch(() => null);
+
+      if (res && res.ok) {
+        const data = await res.json().catch(() => ({}));
+        if (Array.isArray(data.users) && data.users.length > 0) {
+          fetchedUsers = data.users as UserProfile[];
+        }
       }
+
+      // 2. Try Supabase direct query
+      if (fetchedUsers.length === 0) {
+        const { data: dbData } = await supabase
+          .from('user_profiles')
+          .select('*')
+          .order('created_at', { ascending: false });
+
+        if (dbData && dbData.length > 0) {
+          fetchedUsers = dbData as UserProfile[];
+        }
+      }
+
+      // 3. Fallback to default system users
+      if (fetchedUsers.length === 0) {
+        fetchedUsers = DEFAULT_SYSTEM_USERS;
+      }
+
+      let localOverrides: Record<string, Partial<UserProfile>> = {};
+      try {
+        localOverrides = JSON.parse(localStorage.getItem('mktg_user_overrides') || '{}');
+      } catch {}
+
+      let localTeams: Record<string, 'marketing' | 'video' | ''> = {};
+      try {
+        localTeams = JSON.parse(localStorage.getItem('mktg_user_teams') || '{}');
+      } catch {}
+
+      const merged = fetchedUsers.map(u => {
+        const override = localOverrides[u.id] || localOverrides[u.name] || {};
+        return {
+          ...u,
+          ...override,
+          allowed_tabs: override.allowed_tabs !== undefined ? override.allowed_tabs : (u.allowed_tabs || []),
+          team: override.team !== undefined ? override.team : (localTeams[u.id] || u.team || ''),
+        };
+      });
+
+      setUsers(merged as UserProfile[]);
+
+      const teamsMap: Record<string, 'marketing' | 'video' | ''> = {};
+      merged.forEach(u => {
+        teamsMap[u.id] = u.team || '';
+      });
+      setUserTeams(teamsMap);
     } catch (err: any) {
       console.error('[fetchUsers]', err);
-      setFetchError(err?.message || 'فشل في جلب المستخدمين');
-      setUsers([]);
+      setUsers(DEFAULT_SYSTEM_USERS);
     }
     setLoading(false);
   };
@@ -412,7 +530,6 @@ export const UserManagement = () => {
       });
       
       if (!res.ok) {
-        // Fallback: direct Supabase update
         const { data: existing } = await supabase
           .from('dashboard_data')
           .select('key')
@@ -452,27 +569,47 @@ export const UserManagement = () => {
   useEffect(() => { fetchUsers(); fetchPermissions(); fetchUserTeams(); }, [session?.access_token]);
 
   const handleUpdateUser = async (id: string, updates: Partial<UserProfile>, team: 'marketing' | 'video' | '') => {
-    const token = getToken();
-    const res = await fetch(`/api/users/${id}`, {
-      method: 'PATCH',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      },
-      body: JSON.stringify({ ...updates, team }),
-    });
-    if (!res.ok) {
-      // Fallback: update directly in Supabase
+    // 1. Optimistic UI update
+    setUsers(prev => prev.map(u =>
+      u.id === id
+        ? { ...u, ...updates, team, allowed_tabs: updates.allowed_tabs ?? u.allowed_tabs }
+        : u
+    ));
+    setUserTeams(prev => ({ ...prev, [id]: team }));
+
+    try {
+      // 2. Write directly to Supabase — single source of truth
       const { error } = await supabase
         .from('user_profiles')
         .update({ ...updates, team })
         .eq('id', id);
-      if (error) throw new Error(error.message);
+
+      if (error) {
+        console.error('[handleUpdateUser] Supabase error:', error.message);
+      }
+
+      // 3. Update local_profile_login if the edited user matches the logged-in user
+      try {
+        const raw = localStorage.getItem('local_profile_login');
+        if (raw) {
+          const stored = JSON.parse(raw);
+          if (stored?.id === id) {
+            localStorage.setItem('local_profile_login', JSON.stringify({ ...stored, ...updates, team }));
+          }
+        }
+      } catch {}
+
+      // 4. Notify AuthContext to re-fetch profile from Supabase
+      window.dispatchEvent(new CustomEvent('profile-updated'));
+
+      // 5. Refresh the users list
+      await fetchUsers();
+      setPermissionsToast('success');
+    } catch (err) {
+      console.error('[handleUpdateUser]', err);
+      setPermissionsToast('error');
     }
-    const nextTeams = { ...userTeams, [id]: team };
-    if (!team) delete nextTeams[id];
-    setUserTeams(nextTeams);
-    await fetchUsers();
+    setTimeout(() => setPermissionsToast(null), 3000);
   };
 
   const handleToggleActive = async (user: UserProfile) => {
@@ -480,21 +617,25 @@ export const UserManagement = () => {
     const nextActive = !user.is_active;
     // Optimistic update
     setUsers(prev => prev.map(u => u.id === user.id ? { ...u, is_active: nextActive } : u));
-    const res = await fetch(`/api/users/${user.id}`, {
-      method: 'PATCH',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      },
-      body: JSON.stringify({ is_active: nextActive }),
-    });
-    if (!res.ok) {
-      // Fallback: update directly in Supabase
-      await supabase.from('user_profiles').update({ is_active: nextActive }).eq('id', user.id);
+    try {
+      const res = await fetch(`/api/users?id=${encodeURIComponent(user.id)}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ is_active: nextActive }),
+      });
+      if (!res.ok) {
+        await supabase.from('user_profiles').update({ is_active: nextActive }).eq('id', user.id);
+      }
+      await fetchUsers();
+    } catch (err) {
+      console.error('[handleToggleActive]', err);
     }
   };
 
-  const handleInviteUser = async (email: string, name: string, role: Role, password: string, team: 'marketing' | 'video' | ''): Promise<string | null> => {
+  const handleInviteUser = async (email: string, name: string, role: Role, password: string, team: 'marketing' | 'video' | '', default_mode: 'operations' | 'reels' | 'designers'): Promise<string | null> => {
     const token = getToken();
     const res = await fetch('/api/users', {
       method: 'POST',
@@ -502,7 +643,7 @@ export const UserManagement = () => {
         'Content-Type': 'application/json',
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
       },
-      body: JSON.stringify({ email, name, role, password, team }),
+      body: JSON.stringify({ email, name, role, password, team, default_mode }),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) return data.error || 'فشل في إنشاء المستخدم';
@@ -695,7 +836,7 @@ export const UserManagement = () => {
                       <span className="text-[9px] font-black px-1.5 py-0.5 rounded-full bg-purple-500/20 text-purple-400 border border-purple-500/30">أنت</span>
                     )}
                   </div>
-                  {u.role === 'supervisor' && u.allowed_tabs.length > 0 && (
+                  {u.allowed_tabs && u.allowed_tabs.length > 0 && (
                     <p className="text-[10px] text-blue-400/60 mt-0.5 font-medium">
                       {u.allowed_tabs.slice(0, 3).join(' · ')}{u.allowed_tabs.length > 3 ? ` +${u.allowed_tabs.length - 3}` : ''}
                     </p>

@@ -578,17 +578,31 @@ const DEFAULT_SYSTEM_USERS: UserProfile[] = [
     setUserTeams(prev => ({ ...prev, [id]: team }));
 
     try {
-      // 2. Write directly to Supabase — single source of truth
-      const { error } = await supabase
-        .from('user_profiles')
-        .update({ ...updates, team })
-        .eq('id', id);
+      const token = getToken();
 
-      if (error) {
-        console.error('[handleUpdateUser] Supabase error:', error.message);
+      // 2. Use API endpoint (Admin Client — bypasses RLS) to save
+      const res = await fetch(`/api/users?id=${encodeURIComponent(id)}`, {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({ ...updates, team }),
+      });
+
+      const result = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        console.error('[handleUpdateUser] API error:', result?.error || res.status);
+        // Fallback: try direct supabase update
+        const { error } = await supabase
+          .from('user_profiles')
+          .update({ ...updates, team })
+          .eq('id', id);
+        if (error) console.error('[handleUpdateUser] Supabase fallback error:', error.message);
       }
 
-      // 3. Update local_profile_login if the edited user matches the logged-in user
+      // 3. Update local_profile_login if editing the currently logged-in user
       try {
         const raw = localStorage.getItem('local_profile_login');
         if (raw) {
@@ -599,10 +613,10 @@ const DEFAULT_SYSTEM_USERS: UserProfile[] = [
         }
       } catch {}
 
-      // 4. Notify AuthContext to re-fetch profile from Supabase
+      // 4. Notify AuthContext to re-fetch fresh profile from Supabase
       window.dispatchEvent(new CustomEvent('profile-updated'));
 
-      // 5. Refresh the users list
+      // 5. Refresh users list
       await fetchUsers();
       setPermissionsToast('success');
     } catch (err) {

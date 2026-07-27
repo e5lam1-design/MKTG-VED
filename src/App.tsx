@@ -4899,16 +4899,20 @@ const [activeVeToast, setActiveVeToast] = useState<{ item: any } | null>(null);
   // Column Filter Component
   const ColFilter = ({ colKey, label }: { colKey: string, label: string }) => {
     const options = useMemo(() => {
-      const set = new Set(liveData.map(i => String(i[colKey] || '')).filter(v => v !== 'false' && v !== 'true' && v.trim() !== ''));
+      const source = Array.isArray(combinedData) && combinedData.length > 0 ? combinedData : liveData;
+      const set = new Set(source.map(i => String(i[colKey] || '').trim()).filter(v => v !== '' && v !== 'false' && v !== 'true' && v !== 'undefined' && v !== 'null'));
       if (colKey === 'branch' || colKey === 'extra') {
         set.add('القاهرة');
         set.add('اسكندرية');
         set.add('دسوق');
       }
       return Array.from(set).sort();
-    }, [liveData, colKey]);
+    }, [combinedData, liveData, colKey]);
 
     const handleSelectChange = (val: string) => {
+      if (colKey === 'teacher') {
+        setTeacherFilter(val);
+      }
       setColFilters(p => {
         const updated = { ...p };
         if (val === 'All') delete updated[colKey];
@@ -4917,19 +4921,17 @@ const [activeVeToast, setActiveVeToast] = useState<{ item: any } | null>(null);
       });
     };
 
+    const currentValue = colKey === 'teacher' && teacherFilter !== 'All' ? teacherFilter : (colFilters[colKey] || 'All');
+
     return (
       <div className="flex flex-col items-center justify-center my-1 relative min-h-[30px]">
-        {options.length > 0 && options.length < 50 ? (
-          <CustomSelect
-            value={colFilters[colKey] || 'All'}
-            onChange={handleSelectChange}
-            options={options}
-            placeholder={label}
-            isColumn={true}
-          />
-        ) : (
-          <span className="text-[10px] font-black uppercase tracking-wider text-white/50">{label}</span>
-        )}
+        <CustomSelect
+          value={currentValue}
+          onChange={handleSelectChange}
+          options={options}
+          placeholder={label}
+          isColumn={true}
+        />
       </div>
     );
   };

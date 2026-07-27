@@ -53,16 +53,13 @@ export const PERMISSIONS = {
   canEditEditors: (role: Role) => rolePerm(role).editEditors,
   canEditNotes: (role: Role) => rolePerm(role).editNotes,
   canEditBunnyLinks: (role: Role) => rolePerm(role).editBunnyLinks,
-  canViewTab: (role: Role, tab: string, allowedTabs: string[] = []) => {
-    // If allowed_tabs array is defined on the user profile:
-    if (Array.isArray(allowedTabs)) {
-      if (allowedTabs.length === 0) {
-        // If explicitly empty or not specified, fall back to role default (or viewAllTabs)
-        return rolePerm(role)?.viewAllTabs ?? true;
-      }
+  canViewTab: (role: Role, tab: string, allowedTabs?: string[]) => {
+    // If user has custom allowed_tabs configured (non-empty array)
+    if (Array.isArray(allowedTabs) && allowedTabs.length > 0) {
       if (allowedTabs.includes('all') || allowedTabs.includes('*')) return true;
       return allowedTabs.some(t => String(t).trim().toLowerCase() === String(tab).trim().toLowerCase());
     }
+    // Otherwise fallback to role-based permission
     return rolePerm(role)?.viewAllTabs ?? true;
   },
 };

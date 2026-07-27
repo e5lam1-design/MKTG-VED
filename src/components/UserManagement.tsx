@@ -602,12 +602,24 @@ const DEFAULT_SYSTEM_USERS: UserProfile[] = [
         if (error) console.error('[handleUpdateUser] Supabase fallback error:', error.message);
       }
 
+      // Save to localStorage overrides so local mode & fallback reflect changes immediately
+      try {
+        const overrides = JSON.parse(localStorage.getItem('mktg_user_overrides') || '{}');
+        const existing = overrides[id] || {};
+        const currentUser = users.find(u => u.id === id);
+        const updatedProfile = { ...(currentUser || {}), ...existing, ...updates, team };
+        overrides[id] = updatedProfile;
+        if (currentUser?.email) overrides[currentUser.email.toLowerCase().trim()] = updatedProfile;
+        if (currentUser?.name) overrides[currentUser.name.toLowerCase().trim()] = updatedProfile;
+        localStorage.setItem('mktg_user_overrides', JSON.stringify(overrides));
+      } catch (e) {}
+
       // 3. Update local_profile_login if editing the currently logged-in user
       try {
         const raw = localStorage.getItem('local_profile_login');
         if (raw) {
           const stored = JSON.parse(raw);
-          if (stored?.id === id) {
+          if (stored?.id === id || stored?.name === users.find(u => u.id === id)?.name) {
             localStorage.setItem('local_profile_login', JSON.stringify({ ...stored, ...updates, team }));
           }
         }

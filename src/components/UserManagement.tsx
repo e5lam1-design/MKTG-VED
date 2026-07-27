@@ -458,30 +458,13 @@ const DEFAULT_SYSTEM_USERS: UserProfile[] = [
         fetchedUsers = DEFAULT_SYSTEM_USERS;
       }
 
-      let localOverrides: Record<string, Partial<UserProfile>> = {};
-      try {
-        localOverrides = JSON.parse(localStorage.getItem('mktg_user_overrides') || '{}');
-      } catch {}
-
-      let localTeams: Record<string, 'marketing' | 'video' | ''> = {};
-      try {
-        localTeams = JSON.parse(localStorage.getItem('mktg_user_teams') || '{}');
-      } catch {}
-
-      const merged = fetchedUsers.map(u => {
-        const override = localOverrides[u.id] || localOverrides[u.name] || {};
-        return {
-          ...u,
-          ...override,
-          allowed_tabs: override.allowed_tabs !== undefined ? override.allowed_tabs : (u.allowed_tabs || []),
-          team: override.team !== undefined ? override.team : (localTeams[u.id] || u.team || ''),
-        };
-      });
-
-      setUsers(merged as UserProfile[]);
+      setUsers(fetchedUsers.map(u => ({
+        ...u,
+        allowed_tabs: Array.isArray(u.allowed_tabs) ? u.allowed_tabs : []
+      })));
 
       const teamsMap: Record<string, 'marketing' | 'video' | ''> = {};
-      merged.forEach(u => {
+      fetchedUsers.forEach(u => {
         teamsMap[u.id] = u.team || '';
       });
       setUserTeams(teamsMap);
@@ -599,18 +582,6 @@ const DEFAULT_SYSTEM_USERS: UserProfile[] = [
         },
         body: JSON.stringify({ ...updates, team }),
       }).catch(err => console.error('[handleUpdateUser] API error:', err));
-
-      // Save to localStorage overrides so local mode & fallback reflect changes immediately
-      try {
-        const overrides = JSON.parse(localStorage.getItem('mktg_user_overrides') || '{}');
-        const existing = overrides[id] || {};
-        const currentUser = users.find(u => u.id === id);
-        const updatedProfile = { ...(currentUser || {}), ...existing, ...updates, team };
-        overrides[id] = updatedProfile;
-        if (currentUser?.email) overrides[currentUser.email.toLowerCase().trim()] = updatedProfile;
-        if (currentUser?.name) overrides[currentUser.name.toLowerCase().trim()] = updatedProfile;
-        localStorage.setItem('mktg_user_overrides', JSON.stringify(overrides));
-      } catch (e) {}
 
       // 3. Update local_profile_login if editing the currently logged-in user
       try {

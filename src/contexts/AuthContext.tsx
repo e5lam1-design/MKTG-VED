@@ -80,32 +80,11 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     return null;
   };
 
-  // Helper to retrieve local override for user
-  const getLocalOverride = (id: string, nameStr?: string, emailStr?: string) => {
-    try {
-      const overrides = JSON.parse(localStorage.getItem('mktg_user_overrides') || '{}');
-      const sEmail = (emailStr || '').toLowerCase().trim();
-      const sName = (nameStr || '').toLowerCase().trim();
-      return (
-        overrides[id] ||
-        (sEmail ? overrides[sEmail] : null) ||
-        (sName ? overrides[sName] : null) ||
-        null
-      );
-    } catch { return null; }
-  };
-
   const applyProfile = (p: UserProfile) => {
-    // DB values take ultimate precedence for allowed_tabs
     const dbTabs = parseAllowedTabs(p.allowed_tabs);
-    const override = getLocalOverride(p.id, p.name, p.email);
-    const finalTabs = (dbTabs && dbTabs.length > 0) 
-      ? dbTabs 
-      : (override?.allowed_tabs !== undefined ? parseAllowedTabs(override.allowed_tabs) : dbTabs);
-
     const normalized = { 
       ...p,
-      allowed_tabs: finalTabs 
+      allowed_tabs: dbTabs 
     };
     setProfile(normalized);
     localStorage.setItem(LOCAL_LOGIN_KEY, JSON.stringify(normalized));

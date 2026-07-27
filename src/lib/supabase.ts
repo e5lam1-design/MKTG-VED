@@ -54,7 +54,12 @@ export const PERMISSIONS = {
   canEditNotes: (role: Role) => rolePerm(role).editNotes,
   canEditBunnyLinks: (role: Role) => rolePerm(role).editBunnyLinks,
   canViewTab: (role: Role, tab: string, allowedTabs: string[] = []) => {
-    if (Array.isArray(allowedTabs) && allowedTabs.length > 0) {
+    // If allowed_tabs array is defined on the user profile:
+    if (Array.isArray(allowedTabs)) {
+      if (allowedTabs.length === 0) {
+        // If explicitly empty or not specified, fall back to role default (or viewAllTabs)
+        return rolePerm(role)?.viewAllTabs ?? true;
+      }
       if (allowedTabs.includes('all') || allowedTabs.includes('*')) return true;
       return allowedTabs.some(t => String(t).trim().toLowerCase() === String(tab).trim().toLowerCase());
     }

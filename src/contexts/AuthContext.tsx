@@ -96,12 +96,16 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   };
 
   const applyProfile = (p: UserProfile) => {
+    // DB values take ultimate precedence for allowed_tabs
+    const dbTabs = parseAllowedTabs(p.allowed_tabs);
     const override = getLocalOverride(p.id, p.name, p.email);
-    const mergedTabs = override?.allowed_tabs !== undefined ? parseAllowedTabs(override.allowed_tabs) : parseAllowedTabs(p.allowed_tabs);
+    const finalTabs = (dbTabs && dbTabs.length > 0) 
+      ? dbTabs 
+      : (override?.allowed_tabs !== undefined ? parseAllowedTabs(override.allowed_tabs) : dbTabs);
+
     const normalized = { 
-      ...p, 
-      ...(override || {}),
-      allowed_tabs: mergedTabs 
+      ...p,
+      allowed_tabs: finalTabs 
     };
     setProfile(normalized);
     localStorage.setItem(LOCAL_LOGIN_KEY, JSON.stringify(normalized));

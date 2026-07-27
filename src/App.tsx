@@ -383,9 +383,14 @@ const InlineCombobox = ({ value, onChange, options, placeholder }: any) => {
 
 const CustomSelect = ({ value, onChange, options, placeholder, isColumn = false }: any) => {
   const [isOpen, setIsOpen] = useState(false);
+  const [searchFilter, setSearchFilter] = useState('');
   const containerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    if (!isOpen) {
+      setSearchFilter('');
+      return;
+    }
     const handleClickOutside = (event: MouseEvent) => {
       if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
         setIsOpen(false);
@@ -393,7 +398,12 @@ const CustomSelect = ({ value, onChange, options, placeholder, isColumn = false 
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
+  }, [isOpen]);
+
+  const filteredOptions = useMemo(() => {
+    if (!searchFilter.trim()) return options;
+    return options.filter((o: string) => String(o).toLowerCase().includes(searchFilter.trim().toLowerCase()));
+  }, [options, searchFilter]);
 
   const displayVal = value === 'All' ? placeholder : value;
   const chipColors = getChipColor(value === 'All' ? '' : value);
@@ -418,28 +428,45 @@ const CustomSelect = ({ value, onChange, options, placeholder, isColumn = false 
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: -5, scale: 0.95 }}
             transition={{ duration: 0.15 }}
-            className={`absolute top-full mt-2 bg-[#0a0e16]/95 border border-white/10 rounded-2xl shadow-[0_10px_40px_rgba(0,0,0,0.5)] py-2 z-[250] scrollbar-hide backdrop-blur-xl w-max min-w-[140px] max-w-[200px] max-h-48 overflow-y-auto left-1/2 -translate-x-1/2`}
+            className={`absolute top-full mt-2 bg-[#0a0e16]/95 border border-white/10 rounded-2xl shadow-[0_10px_40px_rgba(0,0,0,0.5)] py-2 z-[250] backdrop-blur-xl w-max min-w-[160px] max-w-[220px] max-h-64 flex flex-col left-1/2 -translate-x-1/2`}
           >
-            <button
-              onClick={() => { onChange('All'); setIsOpen(false); }}
-              className={`w-full text-right px-4 py-2.5 text-[10px] font-bold block transition-all text-muted hover:bg-white/5 hover:text-white ${value === 'All' ? 'text-primary bg-primary/5 font-black border-r-2 border-primary' : ''}`}
-            >
-              الكل
-            </button>
-            {options.map((o: string) => {
-              const optColors = getChipColor(o);
-              return (
-                <button
-                  key={o}
-                  onClick={() => { onChange(o); setIsOpen(false); }}
-                  className={`w-full flex items-center justify-center px-3 py-1.5 transition-all hover:bg-white/5 ${value === o ? 'bg-primary/5 border-r-2 border-primary' : ''}`}
-                >
-                  <span className={`px-3 py-1 rounded-full text-[10px] border font-black text-center inline-block max-w-[90%] truncate shadow-sm transition-all ${optColors.bg} ${optColors.text} ${optColors.border} hover:brightness-110`}>
-                    {o}
-                  </span>
-                </button>
-              );
-            })}
+            {/* Search Input Box */}
+            <div className="px-2 pb-2 border-b border-white/10 sticky top-0 bg-[#0a0e16]/95 z-10">
+              <input
+                type="text"
+                placeholder="بحث..."
+                value={searchFilter}
+                onChange={e => setSearchFilter(e.target.value)}
+                className="w-full bg-white/5 border border-white/10 rounded-lg px-2.5 py-1 text-[10px] font-bold text-white outline-none focus:border-primary transition-all arabic-text"
+                autoFocus
+              />
+            </div>
+
+            <div className="overflow-y-auto scrollbar-thin max-h-48 pt-1">
+              <button
+                onClick={() => { onChange('All'); setIsOpen(false); }}
+                className={`w-full text-right px-4 py-1.5 text-[10px] font-bold block transition-all text-muted hover:bg-white/5 hover:text-white ${value === 'All' ? 'text-primary bg-primary/5 font-black border-r-2 border-primary' : ''}`}
+              >
+                الكل
+              </button>
+              {filteredOptions.map((o: string) => {
+                const optColors = getChipColor(o);
+                return (
+                  <button
+                    key={o}
+                    onClick={() => { onChange(o); setIsOpen(false); }}
+                    className={`w-full flex items-center justify-center px-3 py-1.5 transition-all hover:bg-white/5 ${value === o ? 'bg-primary/5 border-r-2 border-primary' : ''}`}
+                  >
+                    <span className={`px-3 py-1 rounded-full text-[10px] border font-black text-center inline-block max-w-[90%] truncate shadow-sm transition-all ${optColors.bg} ${optColors.text} ${optColors.border} hover:brightness-110`}>
+                      {o}
+                    </span>
+                  </button>
+                );
+              })}
+              {filteredOptions.length === 0 && (
+                <div className="px-3 py-2 text-center text-[10px] text-white/40 font-bold">لا يوجد نتائج</div>
+              )}
+            </div>
           </motion.div>
         )}
       </AnimatePresence>
@@ -4975,7 +5002,7 @@ const [activeVeToast, setActiveVeToast] = useState<{ item: any } | null>(null);
         <th className="px-3 py-4 text-center th-style"><ColFilter colKey="branch" label="Branch" /></th>
         <th className="px-3 py-4 text-center th-style"><ColFilter colKey="year" label="السنة" /></th>
         <th className="px-4 py-4 text-center th-style"><ColFilter colKey="teacher" label="المدرس" /></th>
-        <th className="px-4 py-4 text-center th-style"><ColFilter colKey="extraName" label="Column 5" /></th>
+        <th className="px-4 py-4 text-center th-style"><ColFilter colKey="extraName" label="Creator" /></th>
         <th className="px-4 py-4 text-center th-style">code</th>
         <th className="px-8 py-4 text-right th-style">السكريبت</th>
         <th className="px-3 py-4 text-center th-style"><ColFilter colKey="type" label="النوع" /></th>

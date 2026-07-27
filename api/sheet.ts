@@ -1,5 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { google } from 'googleapis';
+import { createClient } from '@supabase/supabase-js';
 
 const getSpreadsheetId = (gid: any) => {
   const g = String(gid || '');

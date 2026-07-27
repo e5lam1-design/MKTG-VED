@@ -38,20 +38,22 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const fetchProfileFromDB = async (userId: string, email?: string | null): Promise<UserProfile | null> => {
     const normalizedEmail = (email || '').toLowerCase().trim();
 
-    // 1. Try by Supabase Auth ID
-    const { data: byId } = await supabase
-      .from('user_profiles')
-      .select('*')
-      .eq('id', userId)
-      .maybeSingle();
-    if (byId) return { ...byId, allowed_tabs: parseAllowedTabs(byId.allowed_tabs) } as UserProfile;
+    // 1. Try by Supabase Auth ID / User ID
+    if (userId) {
+      const { data: byId } = await supabase
+        .from('user_profiles')
+        .select('*')
+        .eq('id', userId)
+        .maybeSingle();
+      if (byId) return { ...byId, allowed_tabs: parseAllowedTabs(byId.allowed_tabs) } as UserProfile;
+    }
 
     // 2. Try by email
     if (normalizedEmail) {
       const { data: byEmail } = await supabase
         .from('user_profiles')
         .select('*')
-        .eq('email', normalizedEmail)
+        .ilike('email', normalizedEmail)
         .maybeSingle();
       if (byEmail) return { ...byEmail, allowed_tabs: parseAllowedTabs(byEmail.allowed_tabs) } as UserProfile;
 
@@ -113,8 +115,15 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
   // ─── Subscribe to Realtime changes on user_profiles ────────────────────────
   const subscribeToProfileChanges = (profileId: string) => {
+    const channelName = `profile-${profileId}`;
+    // Remove existing channel if already created to avoid error
+    const existing = supabase.getChannels().find(ch => ch.name === channelName);
+    if (existing) {
+      supabase.removeChannel(existing);
+    }
+
     const channel = supabase
-      .channel(`profile-${profileId}`)
+      .channel(channelName)
       .on(
         'postgres_changes',
         {
@@ -128,9 +137,9 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
           const updated = payload.new as UserProfile;
           applyProfile({ ...updated, allowed_tabs: parseAllowedTabs(updated.allowed_tabs) });
         }
-      )
-      .subscribe();
+      );
 
+    channel.subscribe();
     return channel;
   };
 

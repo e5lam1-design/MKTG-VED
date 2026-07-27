@@ -77,6 +77,28 @@ const parseCsv = (text: string): string[][] => {
   return rows;
 };
 
+const GID_TO_TAB: Record<string, string> = {
+  '1476192399': 'Operations',
+  '1535230545': 'تجميعات',
+  '497207661': 'Junior 4',
+  '96752860': 'Junior 5',
+  '346788121': 'Junior 6',
+  '458352282': 'Middle 1',
+  '2113852114': 'Middle 2',
+  '2089699920': 'Middle 3',
+  '1640460225': 'Senior 1',
+  '595027661': 'Senior 2',
+  '286303232': 'Senior 3',
+  '501319673': 'Designers',
+  '1436746012': 'Shooting',
+  '1939073164': 'Ve',
+  '0': 'CUTS',
+};
+
+const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || '';
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY || '';
+const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   // Allow CORS for local dev
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -85,6 +107,49 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const { gid } = req.query;
   if (!gid) {
     return res.status(400).json({ error: 'Missing GID parameter' });
+  }
+
+  // 🔒 1. Extract Bearer Authorization Token
+  const authHeader = req.headers.authorization;
+  const token = authHeader?.replace('Bearer ', '');
+
+  if (token) {
+    let userId: string | null = null;
+
+    // Try Supabase auth token verification
+    const { data: userData } = await supabaseAdmin.auth.getUser(token);
+    if (userData?.user) {
+      userId = userData.user.id;
+    } else {
+      // Fallback for custom user profile ID (local token login)
+      userId = token;
+    }
+
+    if (userId) {
+      const { data: profile } = await supabaseAdmin
+        .from('user_profiles')
+        .select('role, allowed_tabs, is_active')
+        .eq('id', userId)
+        .maybeSingle();
+
+      if (profile && profile.is_active !== false) {
+        // Admins and Managers have full access to all tabs
+        if (profile.role !== 'admin' && profile.role !== 'manager') {
+          const allowedTabs: string[] = profile.allowed_tabs || [];
+          const requestedTab = GID_TO_TAB[String(gid)];
+
+          // If custom allowed_tabs array is defined and non-empty, strictly check against requested tab
+          if (allowedTabs.length > 0 && requestedTab) {
+            const isAllowed = allowedTabs.some(
+              t => t.trim().toLowerCase() === requestedTab.trim().toLowerCase()
+            );
+            if (!isAllowed) {
+              return res.status(403).json({ error: 'Forbidden: No access to this tab' });
+            }
+          }
+        }
+      }
+    }
   }
 
   try {

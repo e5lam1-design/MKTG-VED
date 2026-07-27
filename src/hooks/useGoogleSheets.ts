@@ -193,7 +193,14 @@ export function useGoogleSheets(gid: string, customDocId?: string) {
       const proxyGids = [OPERATIONS_GID, '1535230545', '2086331904', '501319673', ...reelsGids];
       if (proxyGids.includes(targetGid)) {
         try {
-          const res = await fetch(`/api/sheet?gid=${targetGid}&t=${Date.now()}`);
+          const rawLogin = localStorage.getItem('local_profile_login');
+          let token = '';
+          if (rawLogin) {
+            try { token = JSON.parse(rawLogin)?.id || ''; } catch {}
+          }
+          const res = await fetch(`/api/sheet?gid=${targetGid}&t=${Date.now()}`, {
+            headers: token ? { 'Authorization': `Bearer ${token}` } : {}
+          });
           if (!res.ok) throw new Error(`API error: ${res.status}`);
           const text = await res.text();
           try {

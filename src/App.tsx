@@ -47,6 +47,7 @@ import { UserManagement } from './components/UserManagement';
 import { ReelsAnalytics } from './components/ReelsAnalytics';
 import DesignersDashboard from './components/DesignersDashboard';
 import { DesignAnalytics } from './components/DesignAnalytics';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { supabase, PERMISSIONS, ROLE_LABELS, ROLE_COLORS, DEFAULT_ROLE_PERMISSIONS, setRuntimeRolePermissions } from './lib/supabase';
 
 
@@ -687,20 +688,29 @@ export const calculateTotalDuration = (items: any[]) => {
   let totalSeconds = 0;
   
   items.forEach(item => {
+    // 1. Check time column or assignedTimes
+    const timeStr = String(item.time || item.exactDuration || '').trim();
     const finalM = (item.finalMinutes && String(item.finalMinutes).trim() !== '0') ? item.finalMinutes : item.rawMinutes;
-    const durStr = String(item.exactDuration || formatDuration(finalM) || '');
+    const durStr = timeStr || String(formatDuration(finalM) || '');
     
     if (durStr) {
-      const parts = durStr.split(':').map(n => parseInt(n) || 0);
-      if (parts.length === 3) {
-        totalSeconds += parts[0] * 3600 + parts[1] * 60 + parts[2];
-      } else if (parts.length === 2) {
-        totalSeconds += parts[0] * 60 + parts[1];
+      // Parse hh:mm:ss or mm:ss or text containing numbers
+      let clean = durStr.replace(/[^\d:]/g, '');
+      if (clean.includes(':')) {
+        const parts = clean.split(':').map(n => parseInt(n, 10)).filter(n => !isNaN(n));
+        if (parts.length === 3) {
+          totalSeconds += parts[0] * 3600 + parts[1] * 60 + parts[2];
+        } else if (parts.length === 2) {
+          totalSeconds += parts[0] * 60 + parts[1];
+        }
+      } else {
+        const num = parseInt(clean, 10);
+        if (!isNaN(num)) totalSeconds += num * 60; // minutes fallback
       }
     }
   });
 
-  if (totalSeconds === 0) return '';
+  if (totalSeconds === 0) return '⏱️ إجمالي الوقت: --:--';
 
   const h = Math.floor(totalSeconds / 3600);
   const m = Math.floor((totalSeconds % 3600) / 60);
@@ -1138,164 +1148,12 @@ const TagmeRow = ({
             <AlertCircle size={20} />
           </button>
       </td>
-      {!isSimple && (
-        <td className="px-3 py-6 text-center">
-          <div className="flex items-center justify-center gap-1.5">
-            {isEditingThumbnail ? (
-              <input 
-                autoFocus
-                type="text" 
-                value={thumbnailVal} 
-                onChange={e => setThumbnailVal(e.target.value)}
-                onBlur={() => {
-                  setIsEditingThumbnail(false);
-                  if (thumbnailVal !== item.thumbnailLink) {
-                    onUpdateThumbnailLink(item.uniqueKey || generateKey(item), thumbnailVal);
-                  }
-                }}
-                onKeyDown={e => {
-                  if (e.key === 'Enter') {
-                    e.currentTarget.blur();
-                  }
-                }}
-                className="w-full max-w-[120px] bg-white/5 border border-white/10 hover:bg-white/10 rounded-xl px-2 py-1 text-xs font-bold text-center text-white/90 outline-none transition-all focus:bg-[#0b1019] focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/30 text-left" 
-                placeholder="Paste link..."
-              />
-            ) : (
-              <div className="flex items-center justify-center gap-1.5">
-                {item.thumbnailLink ? (
-                  (() => {
-                    const parsed = parseDriveLink(item.thumbnailLink);
-                    return (
-                      <div className="flex flex-col items-center gap-1.5">
-                        <a 
-                          href={parsed.url} 
-                          target="_blank" 
-                          rel="noopener noreferrer" 
-                          className="px-2 py-1 rounded-lg bg-blue-500/15 text-blue-400 font-mono text-[10px] underline cursor-pointer shadow-sm truncate max-w-[110px]"
-                          title={parsed.url}
-                        >
-                          {parsed.url}
-                        </a>
-                        <div 
-                          onClick={() => parsed.url && window.open(parsed.url, '_blank')}
-                          className="relative group/preview mt-1.5 w-32 h-20 rounded-xl overflow-hidden border border-white/10 hover:border-blue-500/50 shadow-md bg-white/5 transition-all hover:scale-105 active:scale-95 cursor-pointer flex items-center justify-center"
-                          title="عرض الملف"
-                        >
-                          <PreviewImage url={item.thumbnailLink} />
-                        </div>
-                      </div>
-                    );
-                  })()
-                ) : (
-                  <span className="text-muted/40 text-xs px-2 shrink-0">---</span>
-                )}
-                <button 
-                  onClick={() => setIsEditingThumbnail(true)} 
-                  className="p-1 rounded-full bg-white/5 hover:bg-white/15 text-muted hover:text-white transition-all scale-90 cursor-pointer shrink-0" 
-                  title="تعديل الثمنيل"
-                >
-                  <Pencil size={9} />
-                </button>
-              </div>
-            )}
-          </div>
-        </td>
-      )}
-      {!isSimple && (
-        <td className="px-3 py-6 text-center">
-          <input
-            type="datetime-local"
-            value={timeVal}
-            onChange={e => setTimeVal(e.target.value)}
-            onBlur={() => {
-              if (timeVal !== item.time) {
-                onUpdateTime(item.uniqueKey || generateKey(item), timeVal);
-              }
-            }}
-            style={{ colorScheme: 'dark' }}
-            className="bg-white/5 border border-white/10 hover:border-emerald-500/50 rounded-xl px-2 py-1 text-xs font-bold text-white text-center outline-none focus:bg-[#0b1019] focus:border-emerald-500/50 focus:ring-2 focus:ring-emerald-500/50 transition-all shadow-inner font-mono max-w-[190px]"
-          />
-        </td>
-      )}
-      {!isSimple && (
-        <td className="px-3 py-6 text-center">
-          <div className="flex items-center justify-center gap-1.5">
-            {isEditingYoutube ? (
-              <input 
-                autoFocus
-                type="text" 
-                value={youtubeVal} 
-                onChange={e => setYoutubeVal(e.target.value)}
-                onBlur={() => {
-                  setIsEditingYoutube(false);
-                  if (youtubeVal !== item.youtubeLink) {
-                    onUpdateYoutubeLink(item.uniqueKey || generateKey(item), youtubeVal);
-                  }
-                }}
-                onKeyDown={e => {
-                  if (e.key === 'Enter') {
-                    e.currentTarget.blur();
-                  }
-                }}
-                className="w-full max-w-[120px] bg-white/5 border border-white/10 hover:bg-white/10 rounded-xl px-2 py-1 text-xs font-bold text-center text-white/90 outline-none transition-all focus:bg-[#0b1019] focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/30 text-left" 
-                placeholder="Paste Youtube..."
-              />
-            ) : (
-              <div className="flex items-center justify-center gap-1.5">
-                {item.youtubeLink ? (
-                  (() => {
-                    const parsed = parseDriveLink(item.youtubeLink);
-                    return (
-                      <a 
-                        href={parsed.url} 
-                        target="_blank" 
-                        rel="noopener noreferrer" 
-                        className="px-2 py-1 rounded-lg bg-red-500/15 text-red-400 font-mono text-[10px] underline cursor-pointer shadow-sm truncate max-w-[110px]"
-                        title={parsed.url}
-                      >
-                        {parsed.url}
-                      </a>
-                    );
-                  })()
-                ) : (
-                  <span className="text-muted/40 text-xs px-2 shrink-0">---</span>
-                )}
-                <button 
-                  onClick={() => setIsEditingYoutube(true)} 
-                  className="p-1 rounded-full bg-white/5 hover:bg-white/15 text-muted hover:text-white transition-all scale-90 cursor-pointer shrink-0" 
-                  title="تعديل رابط اليوتيوب"
-                >
-                  <Pencil size={9} />
-                </button>
-              </div>
-            )}
-          </div>
-        </td>
-      )}
-      {!isSimple && (
-        <td className="px-3 py-6 text-center">
-          <button
-            onClick={() => {
-              const nextVal = !isUploaded;
-              setIsUploaded(nextVal);
-              onUpdateUploaded(item.uniqueKey || generateKey(item), nextVal);
-            }}
-            className={`w-6 h-6 rounded-md flex items-center justify-center mx-auto transition-all duration-300 cursor-pointer ${
-              isUploaded ? 'bg-emerald-500 text-white shadow-[0_0_10px_rgba(16,185,129,0.5)]' : 'bg-white/10 text-muted hover:bg-emerald-500/30 hover:text-emerald-300'
-            }`}
-            title="تم الرفع؟"
-          >
-            {isUploaded && <CheckCircle2 size={14} />}
-          </button>
-        </td>
-      )}
     </motion.tr>
   );
 };
 
 // ─── Stage Row (Junior/Middle/Senior) ─────────────────────────────────────────
-const StageRow = ({ item, index, tagmeTransfers, onTagmeToggle, activeLabel, isGlowing, onUpdateDate, onUpdateWeek }: any) => {
+const StageRow = ({ item, index, tagmeTransfers, onTagmeToggle, activeLabel, isGlowing, onUpdateDate, onUpdateWeek, onUpdateThumbnailLink, onUpdateTime, onUpdateYoutubeLink, onUpdateUploaded }: any) => {
   const { profile } = useAuth();
   const rowKey = item.uniqueKey || generateKey(item);
   const itemKey = 'tgm-' + rowKey;
@@ -1303,6 +1161,28 @@ const StageRow = ({ item, index, tagmeTransfers, onTagmeToggle, activeLabel, isG
   const [received, setReceived] = useState(item.check2);
   const [weekVal, setWeekVal] = useState(item.week || '');
   const [dateVal, setDateVal] = useState(item.date || item.id || '');
+  const [thumbnailVal, setThumbnailVal] = useState(item.thumbnailLink || '');
+  const [isEditingThumbnail, setIsEditingThumbnail] = useState(false);
+  const [timeVal, setTimeVal] = useState(item.time || '');
+  const [youtubeVal, setYoutubeVal] = useState(item.youtubeLink || '');
+  const [isEditingYoutube, setIsEditingYoutube] = useState(false);
+  const [isUploaded, setIsUploaded] = useState(item.uploaded === true || item.uploaded === 'true' || item.uploaded === 'TRUE');
+
+  useEffect(() => {
+    setThumbnailVal(item.thumbnailLink || '');
+  }, [item.thumbnailLink]);
+
+  useEffect(() => {
+    setTimeVal(item.time || '');
+  }, [item.time]);
+
+  useEffect(() => {
+    setYoutubeVal(item.youtubeLink || '');
+  }, [item.youtubeLink]);
+
+  useEffect(() => {
+    setIsUploaded(item.uploaded === true || item.uploaded === 'true' || item.uploaded === 'TRUE');
+  }, [item.uploaded]);
 
   useEffect(() => {
     setWeekVal(item.week || '');
@@ -1366,19 +1246,27 @@ const StageRow = ({ item, index, tagmeTransfers, onTagmeToggle, activeLabel, isG
       }`}
     >
       <td className="px-4 py-5 text-center">
-        <input
-          type="text"
+        <select
           value={weekVal}
-          onChange={(e) => setWeekVal(e.target.value)}
-          onBlur={() => {
-            if (onUpdateWeek && weekVal !== item.week) {
-              onUpdateWeek(rowKey, weekVal);
+          onChange={(e) => {
+            const newVal = e.target.value;
+            setWeekVal(newVal);
+            if (onUpdateWeek && newVal !== item.week) {
+              onUpdateWeek(rowKey, newVal);
             }
           }}
           disabled={!(profile?.role && PERMISSIONS.canEditEditors(profile.role))}
-          placeholder="الأسبوع..."
-          className={`px-3 py-1.5 rounded-xl border text-xs font-bold font-mono text-center outline-none focus:ring-2 focus:ring-primary/50 transition-all max-w-[105px] ${getWeekColor(weekVal)} ${profile?.role && PERMISSIONS.canEditEditors(profile.role) ? 'cursor-pointer' : 'cursor-not-allowed opacity-70'}`}
-        />
+          className={`px-3 py-1.5 rounded-xl border text-xs font-bold arabic-text text-center outline-none focus:ring-2 focus:ring-primary/50 transition-all max-w-[140px] cursor-pointer ${getWeekColor(weekVal)} ${profile?.role && PERMISSIONS.canEditEditors(profile.role) ? 'hover:bg-white/10' : 'cursor-not-allowed opacity-70'}`}
+        >
+          <option value="" className="bg-[#0b1019] text-muted">اختر الأسبوع...</option>
+          {Array.from({ length: 12 }, (_, i) => `أسبوع ${i + 1}`).map((w) => (
+            <option key={w} value={w} className="bg-[#0b1019] text-white font-bold">{w}</option>
+          ))}
+          <option value="مراجعة شهر أول" className="bg-[#0b1019] text-amber-400 font-bold">مراجعة شهر أول</option>
+          <option value="مراجعة شهر تاني" className="bg-[#0b1019] text-amber-400 font-bold">مراجعة شهر تاني</option>
+          <option value="مراجعة شهر تالت" className="bg-[#0b1019] text-amber-400 font-bold">مراجعة شهر تالت</option>
+          <option value="مراجعات نهائية" className="bg-[#0b1019] text-purple-400 font-bold">مراجعات نهائية</option>
+        </select>
       </td>
       <td className="px-4 py-5 text-center">
         <input
@@ -1396,11 +1284,11 @@ const StageRow = ({ item, index, tagmeTransfers, onTagmeToggle, activeLabel, isG
           className={`bg-white/5 border border-white/10 hover:border-emerald-500/50 rounded-xl px-2.5 py-1.5 text-xs font-bold text-blue-400 text-center outline-none focus:bg-[#0b1019] focus:border-emerald-500/50 focus:ring-2 focus:ring-emerald-500/50 transition-all shadow-inner font-mono max-w-[135px] ${profile?.role && PERMISSIONS.canEditEditors(profile.role) ? 'cursor-pointer' : 'cursor-not-allowed opacity-70'}`}
         />
       </td>
-      <td className="px-8 py-5" dir="rtl">
-        <div className="flex flex-col text-right">
-          <span className="text-sm font-bold arabic-text mb-1 whitespace-pre-wrap leading-relaxed tracking-wide text-white/95">{item.name}</span>
+      <td className="px-6 py-5" dir="rtl">
+        <div className="flex flex-col text-right min-w-[280px] max-w-[480px]">
+          <span className="text-sm font-bold arabic-text mb-1 whitespace-pre-wrap leading-relaxed tracking-wide text-white/95 break-words">{item.name}</span>
           {item.filingName && item.filingName !== item.name && (
-            <span className="text-[10px] text-muted font-black opacity-40 uppercase tracking-[0.15em]">{item.filingName}</span>
+            <span className="text-[10px] text-muted font-black opacity-40 uppercase tracking-[0.15em] break-words">{item.filingName}</span>
           )}
         </div>
       </td>
@@ -1423,6 +1311,150 @@ const StageRow = ({ item, index, tagmeTransfers, onTagmeToggle, activeLabel, isG
           className={`w-10 h-10 rounded-xl flex items-center justify-center mx-auto transition-all duration-300 ${received ? 'bg-blue-500 text-white shadow-lg shadow-blue-500/20' : 'bg-white/5 text-muted hover:bg-blue-500/10 hover:text-blue-400'} ${!(profile?.role && PERMISSIONS.canAddEntry(profile.role)) && 'opacity-50 cursor-not-allowed'}`}
         >
           <CheckCircle2 size={18} />
+        </button>
+      </td>
+      <td className="px-3 py-5 text-center">
+        <div className="flex items-center justify-center gap-1.5">
+          {isEditingThumbnail ? (
+            <input 
+              autoFocus
+              type="text" 
+              value={thumbnailVal} 
+              onChange={e => setThumbnailVal(e.target.value)}
+              onBlur={() => {
+                setIsEditingThumbnail(false);
+                if (thumbnailVal !== item.thumbnailLink && onUpdateThumbnailLink) {
+                  onUpdateThumbnailLink(rowKey, thumbnailVal);
+                }
+              }}
+              onKeyDown={e => {
+                if (e.key === 'Enter') {
+                  e.currentTarget.blur();
+                }
+              }}
+              className="w-full max-w-[120px] bg-white/5 border border-white/10 hover:bg-white/10 rounded-xl px-2 py-1 text-xs font-bold text-center text-white/90 outline-none transition-all focus:bg-[#0b1019] focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/30 text-left" 
+              placeholder="Paste link..."
+            />
+          ) : (
+            <div className="flex items-center justify-center gap-1.5">
+              {item.thumbnailLink ? (
+                (() => {
+                  const parsed = parseDriveLink(item.thumbnailLink);
+                  return (
+                    <div className="flex flex-col items-center gap-1.5">
+                      <a 
+                        href={parsed.url} 
+                        target="_blank" 
+                        rel="noopener noreferrer" 
+                        className="px-2 py-1 rounded-lg bg-blue-500/15 text-blue-400 font-mono text-[10px] underline cursor-pointer shadow-sm truncate max-w-[110px]"
+                        title={parsed.url}
+                      >
+                        {parsed.url}
+                      </a>
+                      <div 
+                        onClick={() => parsed.url && window.open(parsed.url, '_blank')}
+                        className="relative group/preview mt-1.5 w-32 h-20 rounded-xl overflow-hidden border border-white/10 hover:border-blue-500/50 shadow-md bg-white/5 transition-all hover:scale-105 active:scale-95 cursor-pointer flex items-center justify-center"
+                        title="عرض الملف"
+                      >
+                        <PreviewImage url={item.thumbnailLink} />
+                      </div>
+                    </div>
+                  );
+                })()
+              ) : (
+                <span className="text-muted/40 text-xs px-2 shrink-0">---</span>
+              )}
+              <button 
+                onClick={() => setIsEditingThumbnail(true)} 
+                className="p-1 rounded-full bg-white/5 hover:bg-white/15 text-muted hover:text-white transition-all scale-90 cursor-pointer shrink-0" 
+                title="تعديل الثمنيل"
+              >
+                <Pencil size={9} />
+              </button>
+            </div>
+          )}
+        </div>
+      </td>
+      <td className="px-3 py-5 text-center">
+        <input
+          type="text"
+          value={timeVal}
+          onChange={e => setTimeVal(e.target.value)}
+          onBlur={() => {
+            if (timeVal !== item.time && onUpdateTime) {
+              onUpdateTime(rowKey, timeVal);
+            }
+          }}
+          placeholder="0:00:00"
+          className="bg-white/5 border border-white/10 hover:border-emerald-500/50 rounded-xl px-2 py-1 text-xs font-bold text-emerald-400 text-center outline-none focus:bg-[#0b1019] focus:border-emerald-500/50 focus:ring-2 focus:ring-emerald-500/50 transition-all shadow-inner font-mono w-24"
+        />
+      </td>
+      <td className="px-3 py-5 text-center">
+        <div className="flex items-center justify-center gap-1.5">
+          {isEditingYoutube ? (
+            <input 
+              autoFocus
+              type="text" 
+              value={youtubeVal} 
+              onChange={e => setYoutubeVal(e.target.value)}
+              onBlur={() => {
+                setIsEditingYoutube(false);
+                if (youtubeVal !== item.youtubeLink && onUpdateYoutubeLink) {
+                  onUpdateYoutubeLink(rowKey, youtubeVal);
+                }
+              }}
+              onKeyDown={e => {
+                if (e.key === 'Enter') {
+                  e.currentTarget.blur();
+                }
+              }}
+              className="w-full max-w-[120px] bg-white/5 border border-white/10 hover:bg-white/10 rounded-xl px-2 py-1 text-xs font-bold text-center text-white/90 outline-none transition-all focus:bg-[#0b1019] focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/30 text-left" 
+              placeholder="Paste Youtube..."
+            />
+          ) : (
+            <div className="flex items-center justify-center gap-1.5">
+              {item.youtubeLink ? (
+                (() => {
+                  const parsed = parseDriveLink(item.youtubeLink);
+                  return (
+                    <a 
+                      href={parsed.url} 
+                      target="_blank" 
+                      rel="noopener noreferrer" 
+                      className="px-2 py-1 rounded-lg bg-red-500/15 text-red-400 font-mono text-[10px] underline cursor-pointer shadow-sm truncate max-w-[110px]"
+                      title={parsed.url}
+                    >
+                      {parsed.url}
+                    </a>
+                  );
+                })()
+              ) : (
+                <span className="text-muted/40 text-xs px-2 shrink-0">---</span>
+              )}
+              <button 
+                onClick={() => setIsEditingYoutube(true)} 
+                className="p-1 rounded-full bg-white/5 hover:bg-white/15 text-muted hover:text-white transition-all scale-90 cursor-pointer shrink-0" 
+                title="تعديل رابط اليوتيوب"
+              >
+                <Pencil size={9} />
+              </button>
+            </div>
+          )}
+        </div>
+      </td>
+      <td className="px-3 py-5 text-center">
+        <button
+          onClick={() => {
+            const nextVal = !isUploaded;
+            setIsUploaded(nextVal);
+            onUpdateUploaded && onUpdateUploaded(rowKey, nextVal);
+          }}
+          className={`w-6 h-6 rounded-md flex items-center justify-center mx-auto transition-all duration-300 cursor-pointer ${
+            isUploaded ? 'bg-emerald-500 text-white shadow-[0_0_10px_rgba(16,185,129,0.5)]' : 'bg-white/10 text-muted hover:bg-emerald-500/30 hover:text-emerald-300'
+          }`}
+          title="تم الرفع؟"
+        >
+          {isUploaded && <CheckCircle2 size={14} />}
         </button>
       </td>
     </motion.tr>
@@ -1829,20 +1861,29 @@ const ShootingRow = ({ item, index, activeGid, onToggleFilmed, loadingFilmedCode
   const isCanceled = item.canceled === true || item.canceled === 'TRUE';
   const isMissing = item.missingDetails === true || item.missingDetails === 'TRUE';
   const isDone = item.done === true || item.done === 'TRUE';
+  const isFilmed = item.filmed === true || item.filmed === 'TRUE';
+  const isGreenRow = isFilmed || isDone;
 
   return (
     <motion.tr
       initial={{ opacity: 0, y: 10 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay: index * 0.01 }}
+      style={
+        isGlowing
+          ? {}
+          : isGreenRow
+            ? { background: 'rgba(16, 185, 129, 0.10)', borderLeft: '3px solid rgba(16,185,129,0.35)' }
+            : isCanceled
+              ? { background: 'rgba(239, 68, 68, 0.08)' }
+              : isMissing
+                ? { background: 'rgba(245, 158, 11, 0.08)' }
+                : {}
+      }
       className={`transition-all duration-300 border-b border-white/[0.03] row-hover ${
-        isCanceled 
-          ? 'bg-rose-500/[0.06] hover:bg-rose-500/[0.12] border-rose-500/20 text-rose-100/90' 
-          : isMissing 
-            ? 'bg-amber-500/[0.06] hover:bg-amber-500/[0.12] border-amber-500/20 text-amber-100/90' 
-            : isDone 
-              ? 'bg-emerald-500/[0.06] hover:bg-emerald-500/[0.12] border-emerald-500/20 text-emerald-100/90' 
-              : ''
+        isCanceled ? 'text-rose-100/90' 
+        : isMissing ? 'text-amber-100/90' 
+        : ''
       } ${isGlowing ? 'bg-emerald-500/20 shadow-[inset_0_0_25px_rgba(16,185,129,0.4)] ring-2 ring-emerald-500/50 border-emerald-500/50 animate-pulse relative z-10' : ''}`}
     >
       <td className="px-4 py-5 text-center"><span className="px-3 py-1.5 rounded-xl bg-white/5 border border-white/10 text-xs font-mono font-bold text-blue-400 shrink-0">{item.date || '---'}</span></td>
@@ -1962,7 +2003,36 @@ const ShootingRow = ({ item, index, activeGid, onToggleFilmed, loadingFilmedCode
         <button
           onClick={() => {
             if (activeGid === '1939073164') return;
-            onToggleFilmed && onToggleFilmed(item, !item.filmed);
+            const nextFilmed = !item.filmed;
+            const todayStr = new Date().toLocaleDateString('en-US');
+            const targetFilmingDate = (nextFilmed && !item.filmingDate) ? todayStr : item.filmingDate;
+            if (onUpdateShootingRow) {
+              const rowData = [
+                item.date,
+                editForm.branch,
+                editForm.year,
+                editForm.teacher,
+                editForm.extraName,
+                item.id,
+                editForm.script,
+                editForm.type,
+                editForm.format,
+                nextFilmed ? 'TRUE' : 'FALSE',
+                targetFilmingDate || '',
+                editForm.by,
+                editForm.storage,
+                editForm.notes,
+                editForm.driveRaw,
+                editForm.editorCol,
+                item.done ? 'TRUE' : 'FALSE',
+                editForm.driveFinal,
+                item.canceled ? 'TRUE' : 'FALSE',
+                item.missingDetails ? 'TRUE' : 'FALSE'
+              ];
+              onUpdateShootingRow(item.id, rowData);
+            } else {
+              onToggleFilmed && onToggleFilmed(item, nextFilmed);
+            }
           }}
           className={`w-6 h-6 rounded-md flex items-center justify-center mx-auto transition-all duration-300 ${activeGid === '1939073164' ? 'cursor-default' : 'cursor-pointer'} ${loadingFilmedCode === item.id && activeGid !== '1939073164' ? 'opacity-50 pointer-events-none' : ''} ${
             (item.filmed || activeGid === '1939073164') ? 'bg-emerald-500 text-white shadow-[0_0_10px_rgba(16,185,129,0.5)]' : 'bg-white/10 text-muted hover:bg-emerald-500/30 hover:text-emerald-300'
@@ -1975,7 +2045,40 @@ const ShootingRow = ({ item, index, activeGid, onToggleFilmed, loadingFilmedCode
           ) : null}
         </button>
       </td>
-      <td className="px-4 py-5 text-center text-xs text-muted">{item.filmingDate || '---'}</td>
+      <td className="px-4 py-5 text-center text-xs">
+        <input
+          type="text"
+          value={item.filmingDate || ''}
+          onChange={(e) => {
+            const newDate = e.target.value;
+            const rowData = [
+              item.date,
+              editForm.branch,
+              editForm.year,
+              editForm.teacher,
+              editForm.extraName,
+              item.id,
+              editForm.script,
+              editForm.type,
+              editForm.format,
+              item.filmed ? 'TRUE' : 'FALSE',
+              newDate,
+              editForm.by,
+              editForm.storage,
+              editForm.notes,
+              editForm.driveRaw,
+              editForm.editorCol,
+              item.done ? 'TRUE' : 'FALSE',
+              editForm.driveFinal,
+              item.canceled ? 'TRUE' : 'FALSE',
+              item.missingDetails ? 'TRUE' : 'FALSE'
+            ];
+            onUpdateShootingRow && onUpdateShootingRow(item.id, rowData);
+          }}
+          placeholder="M/D/YYYY"
+          className="w-24 bg-white/5 border border-white/10 hover:bg-white/10 rounded-xl px-2 py-1 text-xs font-mono font-bold text-center text-blue-300 outline-none focus:border-emerald-500 transition-all"
+        />
+      </td>
       <AutofillCell colKey="by" rowIndex={index} value={editForm.by} autofillDrag={autofillDrag} setAutofillDrag={setAutofillDrag} onApply={onApplyAutofill} activeCell={activeCell} setActiveCell={setActiveCell} liveDataLength={liveData?.length}>
         <InlineCombobox options={optionsLists?.bys} value={editForm.by} onChange={(val: string) => handleFieldChange('by', val)} />
       </AutofillCell>
@@ -3120,9 +3223,38 @@ const TagmeAnalyticsDashboard = ({ combinedData, tagmeTransfers, loading, taskSt
 function App() {
   const { profile, signOut, session } = useAuth();
   const [rolePermissions, setRolePermissions] = useState<any>(DEFAULT_ROLE_PERMISSIONS);
-  const [activeGid, setActiveGid] = useState('1476192399');
-  const [activeLabel, setActiveLabel] = useState('Operations');
-  const [appMode, setAppMode] = useState<'OP' | 'REELS' | 'DESIGNERS'>('OP');
+
+  // Determine initial mode from profile.default_mode
+  const getInitialMode = (): 'OP' | 'REELS' | 'DESIGNERS' => {
+    const m = profile?.default_mode;
+    if (m === 'reels') return 'REELS';
+    if (m === 'designers') return 'DESIGNERS';
+    return 'OP';
+  };
+  const getInitialGid = (mode: 'OP' | 'REELS' | 'DESIGNERS') => {
+    if (mode === 'REELS') return '1436746012';
+    if (mode === 'DESIGNERS') return '501319673';
+    return '1476192399';
+  };
+  const getInitialLabel = (mode: 'OP' | 'REELS' | 'DESIGNERS') => {
+    if (mode === 'REELS') return 'Shooting';
+    if (mode === 'DESIGNERS') return 'Designers';
+    return 'Operations';
+  };
+
+  const initialMode = getInitialMode();
+  const [activeGid, setActiveGid] = useState(() => getInitialGid(initialMode));
+  const [activeLabel, setActiveLabel] = useState(() => getInitialLabel(initialMode));
+  const [appMode, setAppMode] = useState<'OP' | 'REELS' | 'DESIGNERS'>(initialMode);
+
+  // Re-apply default_mode whenever profile loads/changes (handles async profile load)
+  useEffect(() => {
+    if (!profile) return;
+    const mode = getInitialMode();
+    setAppMode(mode);
+    setActiveGid(getInitialGid(mode));
+    setActiveLabel(getInitialLabel(mode));
+  }, [profile?.id]); // only run when user changes (login/logout)
   const isUsersPage = activeGid === '__users__';
 
   const isOperations = activeGid === '1476192399';
@@ -4428,6 +4560,8 @@ const [activeVeToast, setActiveVeToast] = useState<{ item: any } | null>(null);
     const combinedNames = selectedForMerge.map(i => i.name).join(' | ');
     const uniqueKey = 'merge-' + Date.now();
 
+    const totalDurationStr = calculateTotalDuration(selectedForMerge).replace('⏱️ إجمالي الوقت: ', '').trim();
+
     const mergedItem = {
       name: combinedCodes,
       filingName: combinedNames,
@@ -4439,7 +4573,8 @@ const [activeVeToast, setActiveVeToast] = useState<{ item: any } | null>(null);
       check1: false,
       check2: false,
       uniqueKey: uniqueKey,
-      isYoutubeTransfer: true
+      isYoutubeTransfer: true,
+      time: totalDurationStr !== '--:--' ? totalDurationStr : ''
     };
 
     setYoutubeItems(prev => {
@@ -4474,6 +4609,7 @@ const [activeVeToast, setActiveVeToast] = useState<{ item: any } | null>(null);
       const currentList = prev[stage.gid] || [];
       let updatedList;
       if (isChecked) {
+        const itemDuration = item.exactDuration || formatDuration((item.finalMinutes && String(item.finalMinutes).trim() !== '0') ? item.finalMinutes : item.rawMinutes) || item.time || '';
         const newItem = {
           name: `[يوتيوب] ${item.filingName || item.name}`,
           filingName: item.name,
@@ -4485,7 +4621,8 @@ const [activeVeToast, setActiveVeToast] = useState<{ item: any } | null>(null);
           check1: false,
           check2: false,
           uniqueKey: uniqueKey,
-          isYoutubeTransfer: true
+          isYoutubeTransfer: true,
+          time: itemDuration
         };
         if (!currentList.some(i => i.uniqueKey === uniqueKey)) {
           updatedList = [newItem, ...currentList];
@@ -4969,10 +5106,6 @@ const [activeVeToast, setActiveVeToast] = useState<{ item: any } | null>(null);
           <th className="px-3 py-4 text-center th-style">Status</th>
           {!isSimple && <th className="px-3 py-4 text-center th-style">Editor Notes</th>}
           <th className="px-8 py-4 text-center th-style text-purple-400 font-bold">Priority</th>
-          {!isSimple && <th className="px-4 py-4 text-center th-style text-purple-400 font-bold">thumbnail LINK</th>}
-          {!isSimple && <th className="px-4 py-4 text-center th-style text-purple-400 font-bold">time</th>}
-          {!isSimple && <th className="px-4 py-4 text-center th-style text-purple-400 font-bold">لينك اليوتيوب</th>}
-          {!isSimple && <th className="px-4 py-4 text-center th-style text-purple-400 font-bold">UPLOADED?</th>}
         </>
       );
     }
@@ -5026,7 +5159,7 @@ const [activeVeToast, setActiveVeToast] = useState<{ item: any } | null>(null);
         <th className="px-4 py-4 text-center th-style">Drive Link (Final)</th>
       </>
     );
-    // Stage tabs
+    // Stage tabs (Junior 4 .. Senior 3)
     return (
       <>
         <th className="px-4 py-4 text-center th-style w-28"><ColFilter colKey="week" label="الأسبوع" /></th>
@@ -5037,6 +5170,10 @@ const [activeVeToast, setActiveVeToast] = useState<{ item: any } | null>(null);
         <th className="px-3 py-4 text-center th-style"><ColFilter colKey="opSheet" label="OP Sheet" /></th>
         <th className="px-6 py-4 text-center th-style">تجميعه ✓</th>
         <th className="px-6 py-4 text-center th-style">اتسلمت ✓</th>
+        <th className="px-4 py-4 text-center th-style text-purple-400 font-bold">thumbnail LINK</th>
+        <th className="px-4 py-4 text-center th-style text-purple-400 font-bold">time</th>
+        <th className="px-4 py-4 text-center th-style text-purple-400 font-bold">لينك اليوتيوب</th>
+        <th className="px-4 py-4 text-center th-style text-purple-400 font-bold">UPLOADED?</th>
       </>
     );
   };
@@ -5100,7 +5237,10 @@ const [activeVeToast, setActiveVeToast] = useState<{ item: any } | null>(null);
             </button>
           </div>
           {/* Top Static Tabs */}
-          {stages.filter(s => s.gid === '1476192399' || s.gid === '1535230545').filter(stage => !profile?.role || PERMISSIONS.canViewTab(profile.role, stage.label, profile.allowed_tabs || [])).map((stage) => (
+          {stages.filter(s => s.gid === '1476192399' || s.gid === '1535230545').filter(stage => {
+            if (!profile) return true;
+            return PERMISSIONS.canViewTab(profile.role, stage.label, profile.allowed_tabs ?? []);
+          }).map((stage) => (
             <SidebarItem
               key={stage.gid}
               icon={stage.icon}
@@ -5126,53 +5266,76 @@ const [activeVeToast, setActiveVeToast] = useState<{ item: any } | null>(null);
           ))}
 
           {/* Mode Selector (Segmented control between Operations, Reels, and Designers) */}
-          <div className="mt-2 mb-4 px-1">
-            <div className="flex bg-white/5 p-1 rounded-2xl border border-white/10 gap-1">
-              {(['OP', 'REELS', 'DESIGNERS'] as const).map((mode) => (
-                <button
-                  key={mode}
-                  onClick={() => {
-                    setAppMode(mode);
-                    if (mode === 'REELS') {
-                      setActiveGid('1436746012');
-                      setActiveLabel('Shooting');
-                    } else if (mode === 'DESIGNERS') {
-                      setActiveGid('501319673');
-                      setActiveLabel('Designers');
-                    } else {
-                      setActiveGid('497207661');
-                      setActiveLabel('Junior 4');
-                    }
-                    setStatusFilter('All');
-                    setTeacherFilter('All');
-                    setYearFilter('All');
-                    setTermFilter('All');
-                    setBypassYearTerm(false);
-                    setStageWeekFilter('All');
-                    setColFilters({});
-                    setSearchQuery('');
-                  }}
-                  className={`flex-1 py-2 text-[10px] font-black uppercase tracking-wider rounded-xl transition-all duration-300 ${
-                    appMode === mode
-                      ? 'bg-primary text-white shadow-lg'
-                      : 'text-muted hover:text-foreground hover:bg-white/5'
-                  }`}
-                >
-                  {mode === 'OP' ? 'Operations' : mode === 'REELS' ? 'Reels' : 'Designers'}
-                </button>
-              ))}
-            </div>
-          </div>
+          {(() => {
+            const MARKETING_LABELS = ['Operations','تجميعات','إحصائيات التجميعات 📊','Junior 4','Junior 5','Junior 6','Middle 1','Middle 2','Middle 3','Senior 1','Senior 2','Senior 3'];
+            const REELS_LABELS = ['Shooting','Ve','CUTS','احصائيات الريلز'];
+            const DESIGNERS_LABELS = ['Designers','احصائيات تصاميم'];
+            const tabs = profile?.allowed_tabs ?? [];
+            const hasAnyTab = (labels: string[]) => {
+              if (!profile || profile.role === 'admin' || profile.role === 'manager') return true;
+              if (tabs.length === 0) return true; // no restriction = show all
+              return labels.some(l => tabs.some(t => t.toLowerCase() === l.toLowerCase()));
+            };
+            const visibleModes = (['OP', 'REELS', 'DESIGNERS'] as const).filter(mode => {
+              if (mode === 'OP') return hasAnyTab(MARKETING_LABELS);
+              if (mode === 'REELS') return hasAnyTab(REELS_LABELS);
+              return hasAnyTab(DESIGNERS_LABELS);
+            });
+            if (visibleModes.length === 0) return null;
+            return (
+              <div className="mt-2 mb-4 px-1">
+                <div className="flex bg-white/5 p-1 rounded-2xl border border-white/10 gap-1">
+                  {visibleModes.map((mode) => (
+                    <button
+                      key={mode}
+                      onClick={() => {
+                        setAppMode(mode);
+                        if (mode === 'REELS') {
+                          setActiveGid('1436746012');
+                          setActiveLabel('Shooting');
+                        } else if (mode === 'DESIGNERS') {
+                          setActiveGid('501319673');
+                          setActiveLabel('Designers');
+                        } else {
+                          setActiveGid('497207661');
+                          setActiveLabel('Junior 4');
+                        }
+                        setStatusFilter('All');
+                        setTeacherFilter('All');
+                        setYearFilter('All');
+                        setTermFilter('All');
+                        setBypassYearTerm(false);
+                        setStageWeekFilter('All');
+                        setColFilters({});
+                        setSearchQuery('');
+                      }}
+                      className={`flex-1 py-2 text-[10px] font-black uppercase tracking-wider rounded-xl transition-all duration-300 ${
+                        appMode === mode
+                          ? 'bg-primary text-white shadow-lg'
+                          : 'text-muted hover:text-foreground hover:bg-white/5'
+                      }`}
+                    >
+                      {mode === 'OP' ? 'Operations' : mode === 'REELS' ? 'Reels' : 'Designers'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
+
 
           {/* Dynamic Tabs based on Mode */}
           <div className="flex flex-col gap-1">
             {(appMode === 'OP' 
-              ? stages.filter(s => s.gid !== '1476192399' && s.gid !== '1535230545' && s.gid !== 'analytics_tagme3at') 
+              ? stages.filter(s => s.gid !== '1476192399' && s.gid !== '1535230545') 
               : appMode === 'REELS' 
               ? reelsStages 
               : designersStages
             )
-              .filter(stage => !profile?.role || PERMISSIONS.canViewTab(profile.role, stage.label, profile.allowed_tabs || []))
+              .filter(stage => {
+                if (!profile) return true;
+                return PERMISSIONS.canViewTab(profile.role, stage.label, profile.allowed_tabs ?? []);
+              })
               .map((stage) => (
               <SidebarItem
                 key={stage.gid}
@@ -5201,7 +5364,10 @@ const [activeVeToast, setActiveVeToast] = useState<{ item: any } | null>(null);
 
           {/* Bottom Static Tabs (Analytics) */}
           <div className="mt-4">
-            {stages.filter(s => s.gid === 'analytics_tagme3at').filter(stage => !profile?.role || PERMISSIONS.canViewTab(profile.role, stage.label, profile.allowed_tabs || [])).map((stage) => (
+            {stages.filter(s => s.gid === 'analytics_tagme3at').filter(stage => {
+            if (!profile) return true;
+            return PERMISSIONS.canViewTab(profile.role, stage.label, profile.allowed_tabs ?? []);
+          }).map((stage) => (
               <SidebarItem
                 key={stage.gid}
                 icon={stage.icon}
@@ -5944,7 +6110,9 @@ const [activeVeToast, setActiveVeToast] = useState<{ item: any } | null>(null);
           ) : isDesignAnalytics ? (
             <DesignAnalytics liveData={liveData} loading={loading} />
           ) : isDesignersPage ? (
-            <DesignersDashboard liveData={liveData} setLiveData={setLiveData} loading={loading} />
+            <ErrorBoundary>
+              <DesignersDashboard liveData={liveData} setLiveData={setLiveData} loading={loading} />
+            </ErrorBoundary>
           ) : (
             <div className="table-container">
               <div className="overflow-x-auto">
@@ -6173,7 +6341,7 @@ const [activeVeToast, setActiveVeToast] = useState<{ item: any } | null>(null);
                       if (['1436746012', '1939073164', '798246690'].includes(activeGid)) {
                         return <ShootingRow key={idx} item={item} index={idx} activeGid={activeGid} onToggleFilmed={handleFilmedToggle} loadingFilmedCode={loadingFilmedCode} onUpdateShootingRow={handleUpdateShootingRow} liveData={liveData} optionsLists={{ branches: uniqueBranches, years: uniqueYears, teachers: uniqueTeachers, extraNames: uniqueExtraNames, types: uniqueTypes, formats: uniqueFormats, bys: uniqueBys, storages: uniqueStorages, editors: editorsList }} autofillDrag={autofillDrag} setAutofillDrag={setAutofillDrag} onApplyAutofill={handleApplyAutofill} activeCell={activeCell} setActiveCell={setActiveCell} toast={toast} isSubscribed={subscribedTasks.includes(item.id)} onToggleSubscribe={toggleSubscribe} />;
                       }
-                      return <StageRow key={idx} item={item} index={idx} tagmeTransfers={tagmeTransfers} onTagmeToggle={handleTagmeToggle} activeLabel={activeLabel} isGlowing={isGlowing} onUpdateDate={handleUpdateDate} onUpdateWeek={handleUpdateWeek} />;
+                      return <StageRow key={idx} item={item} index={idx} tagmeTransfers={tagmeTransfers} onTagmeToggle={handleTagmeToggle} activeLabel={activeLabel} isGlowing={isGlowing} onUpdateDate={handleUpdateDate} onUpdateWeek={handleUpdateWeek} onUpdateThumbnailLink={handleUpdateThumbnailLink} onUpdateTime={handleUpdateTime} onUpdateYoutubeLink={handleUpdateYoutubeLink} onUpdateUploaded={handleUpdateUploaded} />;
                     }) : (
                       <motion.tr initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
                         <td colSpan={colSpan} className="py-40 text-center opacity-30">

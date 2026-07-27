@@ -1523,10 +1523,10 @@ app.patch('/api/users/:id', async (req, res) => {
     if (Array.isArray(req.body.allowed_tabs)) updates.allowed_tabs = req.body.allowed_tabs;
     if (typeof req.body.role === 'string') updates.role = req.body.role;
     if (typeof req.body.team === 'string') updates.team = req.body.team;
+    if (typeof req.body.default_mode === 'string') updates.default_mode = req.body.default_mode;
 
     const nextRole = updates.role || target.role;
     assertCanManageTarget(requester, nextRole, target);
-    if (updates.role && updates.role !== 'supervisor') updates.allowed_tabs = [];
 
     const { data, error } = await supabaseAdminClient
       .from('user_profiles')
@@ -1676,11 +1676,55 @@ const parseCsv = (text) => {
 const sheetCacheMap = new Map();
 const CACHE_DURATION_MS = 15000; // 15 seconds cache
 
+const GID_TO_TAB = {
+  '1476192399': 'Operations',
+  '1535230545': 'تجميعات',
+  '497207661': 'Junior 4',
+  '96752860': 'Junior 5',
+  '346788121': 'Junior 6',
+  '458352282': 'Middle 1',
+  '2113852114': 'Middle 2',
+  '2089699920': 'Middle 3',
+  '1640460225': 'Senior 1',
+  '595027661': 'Senior 2',
+  '286303232': 'Senior 3',
+  '501319673': 'Designers',
+  '1436746012': 'Shooting',
+  '1939073164': 'Ve',
+  '0': 'CUTS',
+};
+
 app.get('/api/sheet', async (req, res) => {
   const { gid } = req.query;
   console.log(`[API] Requested GID: ${gid}`);
   if (!gid) {
     return res.status(400).json({ error: 'Missing GID parameter' });
+  }
+
+  // 🔒 Server-side token & permission verification
+  try {
+    const authHeader = req.headers.authorization;
+    const token = authHeader?.replace('Bearer ', '');
+    if (token) {
+      const requester = await getRequesterProfile(req);
+      if (requester && requester.role !== 'admin' && requester.role !== 'manager') {
+        const allowedTabs = Array.isArray(requester.allowed_tabs) ? requester.allowed_tabs : [];
+        const requestedTab = GID_TO_TAB[String(gid)];
+        if (allowedTabs.length > 0 && requestedTab) {
+          const isAllowed = allowedTabs.some(
+            t => String(t).trim().toLowerCase() === requestedTab.trim().toLowerCase()
+          );
+          if (!isAllowed) {
+            return res.status(403).json({ error: 'Forbidden: No access to this tab' });
+          }
+        }
+      }
+    }
+  } catch (err) {
+    // If token error occurs during explicit auth check, fail securely
+    if (err.status) {
+      return res.status(err.status).json({ error: err.message });
+    }
   }
 
   // Check cache

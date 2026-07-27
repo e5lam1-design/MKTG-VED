@@ -54,12 +54,15 @@ export const PERMISSIONS = {
   canEditNotes: (role: Role) => rolePerm(role).editNotes,
   canEditBunnyLinks: (role: Role) => rolePerm(role).editBunnyLinks,
   canViewTab: (role: Role, tab: string, allowedTabs?: string[]) => {
-    // If user has custom allowed_tabs configured (non-empty array)
-    if (Array.isArray(allowedTabs) && allowedTabs.length > 0) {
-      if (allowedTabs.includes('all') || allowedTabs.includes('*')) return true;
-      return allowedTabs.some(t => String(t).trim().toLowerCase() === String(tab).trim().toLowerCase());
+    // Admin and manager always see everything
+    if (role === 'admin' || role === 'manager') return true;
+    // If user has custom allowed_tabs configured (non-empty array), enforce STRICTLY
+    const tabs = Array.isArray(allowedTabs) ? allowedTabs : [];
+    if (tabs.length > 0) {
+      if (tabs.includes('all') || tabs.includes('*')) return true;
+      return tabs.some(t => String(t).trim().toLowerCase() === String(tab).trim().toLowerCase());
     }
-    // Otherwise fallback to role-based permission
+    // Empty allowed_tabs = fallback to role-based permission
     return rolePerm(role)?.viewAllTabs ?? true;
   },
 };

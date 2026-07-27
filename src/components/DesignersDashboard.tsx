@@ -102,6 +102,8 @@ const NotesInput = ({ value, onChange, className }: any) => {
 };
 
 export default function DesignersDashboard({ liveData, setLiveData, loading, onAddDesignTask, onUpdateDesignTask }: any) {
+  const currentMonthNum = String(new Date().getMonth() + 1);
+  const [selectedMonth, setSelectedMonth] = useState<string>('All');
   const [searchTerm, setSearchTerm] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [filters, setFilters] = useState({
@@ -210,20 +212,25 @@ export default function DesignersDashboard({ liveData, setLiveData, loading, onA
     }
   }, [liveData]);
 
-  const handleCellChange = async (rowIndex: number, field: string, value: any) => {
-    const targetRow = localRows[rowIndex];
+  const handleCellChange = async (rowIdOrKey: any, field: string, value: any) => {
+    let targetRow = localRows.find(r => (r.id && r.id === rowIdOrKey) || (r.uniqueKey && r.uniqueKey === rowIdOrKey) || (r.reference && r.reference === rowIdOrKey));
+    if (!targetRow && typeof rowIdOrKey === 'number') {
+      targetRow = localRows[rowIdOrKey];
+    }
     if (!targetRow) return;
 
     // Update local state instantly for seamless responsiveness
     setLocalRows(prev => {
-      const updated = [...prev];
-      updated[rowIndex] = { ...updated[rowIndex], [field]: value };
-      
-      // Update completed_date locally for instant average duration calculations
-      if (field === 'done') {
-        updated[rowIndex].completed_date = value ? new Date().toLocaleDateString('en-US') : '';
-      }
-      return updated;
+      return prev.map(r => {
+        if ((r.id && r.id === targetRow.id) || (r.uniqueKey && r.uniqueKey === targetRow.uniqueKey) || (r.reference && r.reference === targetRow.reference)) {
+          const updated = { ...r, [field]: value };
+          if (field === 'done') {
+            updated.completed_date = value ? new Date().toLocaleDateString('en-US') : '';
+          }
+          return updated;
+        }
+        return r;
+      });
     });
 
     // Persist to Google Sheets and Supabase
@@ -340,10 +347,85 @@ export default function DesignersDashboard({ liveData, setLiveData, loading, onA
     return 'bg-[#2a2d3d] text-white/80 border-[#3a3d52]';
   };
 
+  // Helper to extract month number (1-12) from any date format
+  const extractMonthNum = (dateVal: any): string | null => {
+    if (!dateVal) return null;
+    const str = String(dateVal).trim();
+    if (!str || str === '-') return null;
+
+    // Format 1: M/D/YYYY or MM/DD/YYYY
+    if (str.includes('/')) {
+      const parts = str.split('/');
+      if (parts.length === 3) {
+        const m = parseInt(parts[0], 10);
+        if (!isNaN(m) && m >= 1 && m <= 12) return String(m);
+      }
+    }
+    // Format 2: YYYY-MM-DD
+    if (str.includes('-')) {
+      const parts = str.split('-');
+      if (parts.length === 3) {
+        const m = parseInt(parts[1], 10);
+        if (!isNaN(m) && m >= 1 && m <= 12) return String(m);
+      }
+    }
+    // Format 3: Standard JS Date parse
+    try {
+      const d = new Date(str);
+      if (!isNaN(d.getTime())) {
+        return String(d.getMonth() + 1);
+      }
+    } catch (e) {}
+
+    return null;
+  };
+
+  // Extract available months dynamically from dates
+  const availableMonths = useMemo(() => {
+    const monthNames: Record<string, string> = {
+      '1': 'شهر 1 - يناير (January)',
+      '2': 'شهر 2 - فبراير (February)',
+      '3': 'شهر 3 - مارس (March)',
+      '4': 'شهر 4 - أبريل (April)',
+      '5': 'شهر 5 - مايو (May)',
+      '6': 'شهر 6 - يونيو (June)',
+      '7': 'شهر 7 - يوليو (July)',
+      '8': 'شهر 8 - أغسطس (August)',
+      '9': 'شهر 9 - سبتمبر (September)',
+      '10': 'شهر 10 - أكتوبر (October)',
+      '11': 'شهر 11 - نوفمبر (November)',
+      '12': 'شهر 12 - ديسمبر (December)'
+    };
+    const set = new Set<string>();
+    if (Array.isArray(localRows)) {
+      localRows.forEach(row => {
+        if (row && row.date) {
+          const m = extractMonthNum(row.date);
+          if (m) set.add(m);
+        }
+      });
+    }
+
+    // Ensure 5 (May) through 8 (August) are represented if data is present
+    ['5', '6', '7', '8'].forEach(m => set.add(m));
+
+    return Array.from(set).sort((a, b) => parseInt(a, 10) - parseInt(b, 10)).map(m => ({
+      key: m,
+      label: monthNames[m] || `شهر ${m}`
+    }));
+  }, [localRows]);
+
   // Filter rows while keeping track of original index to support clean local editing
   const filteredRows = useMemo(() => {
-    const mapped = localRows.map((r, idx) => ({ ...r, originalIndex: idx }));
+    if (!Array.isArray(localRows)) return [];
+    const mapped = localRows.map((r, idx) => (r ? { ...r, originalIndex: idx } : { originalIndex: idx }));
     return mapped.filter((row: any) => {
+      if (!row) return false;
+      // 0. Month filter match
+      if (selectedMonth !== 'All') {
+        const rowMonth = extractMonthNum(row.date);
+        if (rowMonth !== selectedMonth) return false;
+      }
       // 1. Search term match
       if (searchTerm) {
         const searchString = `${row.date || ''} ${row.designer || ''} ${row.priority || ''} ${row.requester || ''} ${row.type || ''} ${row.notes || ''}`.toLowerCase();
@@ -364,48 +446,55 @@ export default function DesignersDashboard({ liveData, setLiveData, loading, onA
       }
       return true;
     });
-  }, [localRows, searchTerm, filters]);
+  }, [localRows, searchTerm, filters, selectedMonth]);
 
   // Extract unique options dynamically from localRows
   const uniqueDesigners = useMemo(() => {
-    const set = new Set(localRows.map(r => String(r.designer || '').trim()).filter(Boolean));
+    if (!Array.isArray(localRows)) return [];
+    const set = new Set(localRows.map(r => String(r?.designer || '').trim()).filter(Boolean));
     return Array.from(set).sort();
   }, [localRows]);
 
   const uniquePriorities = useMemo(() => {
-    const set = new Set(localRows.map(r => String(r.priority || '').trim()).filter(Boolean));
+    if (!Array.isArray(localRows)) return [];
+    const set = new Set(localRows.map(r => String(r?.priority || '').trim()).filter(Boolean));
     return Array.from(set).sort();
   }, [localRows]);
 
   const uniqueRequesters = useMemo(() => {
-    const set = new Set(localRows.map(r => String(r.requester || '').trim()).filter(Boolean));
+    if (!Array.isArray(localRows)) return [];
+    const set = new Set(localRows.map(r => String(r?.requester || '').trim()).filter(Boolean));
     return Array.from(set).sort();
   }, [localRows]);
 
   const uniqueTypes = useMemo(() => {
-    const set = new Set(localRows.map(r => String(r.type || '').trim()).filter(Boolean));
+    if (!Array.isArray(localRows)) return [];
+    const set = new Set(localRows.map(r => String(r?.type || '').trim()).filter(Boolean));
     return Array.from(set).sort();
   }, [localRows]);
 
   const countAya = useMemo(() => {
+    if (!Array.isArray(localRows)) return 0;
     return localRows.filter((r: any) => 
-      !r.done && 
+      r && !r.done && 
       (String(r.requester || '').toLowerCase().trim() === 'aya' || 
        String(r.designer || '').toLowerCase().trim() === 'aya')
     ).length;
   }, [localRows]);
 
   const countManar = useMemo(() => {
+    if (!Array.isArray(localRows)) return 0;
     return localRows.filter((r: any) => 
-      !r.done && 
+      r && !r.done && 
       (String(r.requester || '').toLowerCase().trim() === 'manar' || 
        String(r.designer || '').toLowerCase().trim() === 'manar')
     ).length;
   }, [localRows]);
 
   const countNarden = useMemo(() => {
+    if (!Array.isArray(localRows)) return 0;
     return localRows.filter((r: any) => 
-      !r.done && 
+      r && !r.done && 
       (String(r.requester || '').toLowerCase().trim() === 'narden' || 
        String(r.designer || '').toLowerCase().trim() === 'narden')
     ).length;
@@ -537,7 +626,7 @@ export default function DesignersDashboard({ liveData, setLiveData, loading, onA
           </div>
         </div>
 
-        <div className="flex items-center gap-3 w-full md:w-auto">
+        <div className="flex items-center gap-3 w-full md:w-auto flex-wrap">
           <div className="relative group w-full md:w-72">
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-muted/50 w-4 h-4 group-focus-within:text-purple-400 transition-colors" />
             <input
@@ -548,6 +637,45 @@ export default function DesignersDashboard({ liveData, setLiveData, loading, onA
               className="w-full bg-black/40 border border-white/5 focus:border-purple-500/50 rounded-2xl pl-11 pr-4 py-3 text-sm font-bold text-white outline-none transition-all arabic-text placeholder:text-muted/30"
             />
           </div>
+        </div>
+      </div>
+
+      {/* Monthly Sheets Navigation Bar (شيتات الشهور المنفصلة) */}
+      <div className="flex items-center justify-between gap-2 overflow-x-auto pb-4 pt-1 px-1 scrollbar-none">
+        <div className="flex items-center gap-2">
+          <span className="text-xs font-black text-purple-400 uppercase tracking-widest flex items-center gap-1.5 bg-purple-500/10 border border-purple-500/20 px-3.5 py-2 rounded-2xl shrink-0 arabic-text">
+            📑 شيتات الشهور:
+          </span>
+          {availableMonths.map((m) => {
+            const isActive = selectedMonth === m.key;
+            return (
+              <button
+                key={m.key}
+                onClick={() => setSelectedMonth(m.key)}
+                className={`px-5 py-2 rounded-2xl text-xs font-black transition-all border shrink-0 cursor-pointer flex items-center gap-2 arabic-text ${
+                  isActive
+                    ? 'bg-purple-600 border-purple-400 text-white shadow-lg shadow-purple-600/40 scale-105 ring-2 ring-purple-400/50'
+                    : 'bg-[#0a0d14] border-white/10 text-muted hover:text-white hover:bg-white/5'
+                }`}
+              >
+                <span className={`w-2 h-2 rounded-full ${isActive ? 'bg-white animate-pulse' : 'bg-purple-400'}`} />
+                <span>{m.label}</span>
+                {m.key === currentMonthNum && (
+                  <span className="bg-emerald-500 text-white text-[9px] px-1.5 py-0.5 rounded-md font-bold">الشهر الحالي ⚡</span>
+                )}
+              </button>
+            );
+          })}
+          <button
+            onClick={() => setSelectedMonth('All')}
+            className={`px-4 py-2 rounded-2xl text-xs font-black transition-all border shrink-0 cursor-pointer arabic-text ${
+              selectedMonth === 'All'
+                ? 'bg-primary border-primary text-white shadow-lg shadow-primary/30 scale-105'
+                : 'bg-[#0a0d14] border-white/10 text-muted/60 hover:text-white hover:bg-white/5'
+            }`}
+          >
+            📂 الأرشيف الكامل (كل الشهور)
+          </button>
         </div>
       </div>
 
@@ -634,11 +762,11 @@ export default function DesignersDashboard({ liveData, setLiveData, loading, onA
                 let textNotesClass = 'text-white/60';
                 
                 if (isDone) {
-                  // Case 1: Green row for all Completed/Done tasks
-                  rowBgClass = 'bg-emerald-900/65 hover:bg-emerald-900/80 border-l-[6px] border-l-emerald-400 text-emerald-100';
-                  textDateClass = 'text-emerald-200 font-bold';
-                  textDeadlineClass = 'text-emerald-300 font-mono font-bold';
-                  textNotesClass = 'text-emerald-200/80';
+                  // Case 1: Subtle green (15% opacity) for Completed/Done tasks
+                  rowBgClass = 'bg-emerald-500/[0.12] hover:bg-emerald-500/[0.18] border-l-2 border-l-emerald-500/40';
+                  textDateClass = 'text-emerald-300/80 font-bold';
+                  textDeadlineClass = 'text-emerald-300/80 font-mono font-bold';
+                  textNotesClass = 'text-emerald-200/60';
                 } else if (priorityStr === 'انهارده - ممكن يتأجل') {
                   // Case 2: Yellow row for pending postponable tasks ("انهارده - ممكن يتأجل")
                   rowBgClass = 'bg-amber-900/65 hover:bg-amber-900/80 border-l-[6px] border-l-amber-400 text-amber-100';
@@ -669,7 +797,7 @@ export default function DesignersDashboard({ liveData, setLiveData, loading, onA
                     <td className="px-4 py-3">
                       <DropdownSelect
                         value={row.designer}
-                        onChange={(val: string) => handleCellChange(row.originalIndex, 'designer', val)}
+                        onChange={(val: string) => handleCellChange(row.id || row.uniqueKey || row.originalIndex, 'designer', val)}
                         options={DESIGNERS}
                         getStyles={getDesignerStyle}
                       />
@@ -679,7 +807,7 @@ export default function DesignersDashboard({ liveData, setLiveData, loading, onA
                     <td className="px-4 py-3">
                       <DropdownSelect
                         value={row.priority}
-                        onChange={(val: string) => handleCellChange(row.originalIndex, 'priority', val)}
+                        onChange={(val: string) => handleCellChange(row.id || row.uniqueKey || row.originalIndex, 'priority', val)}
                         options={PRIORITIES}
                         getStyles={getPriorityStyle}
                       />
@@ -689,7 +817,7 @@ export default function DesignersDashboard({ liveData, setLiveData, loading, onA
                     <td className="px-4 py-3">
                       <DropdownSelect
                         value={row.requester}
-                        onChange={(val: string) => handleCellChange(row.originalIndex, 'requester', val)}
+                        onChange={(val: string) => handleCellChange(row.id || row.uniqueKey || row.originalIndex, 'requester', val)}
                         options={REQUESTERS}
                         getStyles={getRequesterStyle}
                       />
@@ -699,7 +827,7 @@ export default function DesignersDashboard({ liveData, setLiveData, loading, onA
                     <td className="px-4 py-3">
                       <DropdownSelect
                         value={row.type}
-                        onChange={(val: string) => handleCellChange(row.originalIndex, 'type', val)}
+                        onChange={(val: string) => handleCellChange(row.id || row.uniqueKey || row.originalIndex, 'type', val)}
                         options={TYPES}
                         getStyles={getTypeStyle}
                       />
@@ -712,7 +840,7 @@ export default function DesignersDashboard({ liveData, setLiveData, loading, onA
                         value={formatDateToInput(row.deadline)}
                         onChange={(e) => {
                           const formatted = formatDateFromInput(e.target.value);
-                          handleCellChange(row.originalIndex, 'deadline', formatted);
+                          handleCellChange(row.id || row.uniqueKey || row.originalIndex, 'deadline', formatted);
                         }}
                         className={`bg-transparent text-xs font-bold font-mono border border-transparent focus:border-white/20 hover:bg-white/5 focus:bg-[#0a0d14] rounded-lg px-2.5 py-1.5 outline-none text-right cursor-pointer transition-all ${
                           isDone 
@@ -741,7 +869,7 @@ export default function DesignersDashboard({ liveData, setLiveData, loading, onA
                     <td className="px-4 py-3">
                       <NotesInput
                         value={row.notes}
-                        onChange={(val: string) => handleCellChange(row.originalIndex, 'notes', val)}
+                        onChange={(val: string) => handleCellChange(row.id || row.uniqueKey || row.originalIndex, 'notes', val)}
                         className={textNotesClass}
                       />
                     </td>
@@ -750,7 +878,7 @@ export default function DesignersDashboard({ liveData, setLiveData, loading, onA
                     <td className="px-6 py-3 text-center">
                       <div className="flex flex-col items-center justify-center gap-1.5">
                         <button 
-                          onClick={() => handleCellChange(row.originalIndex, 'done', !row.done)}
+                          onClick={() => handleCellChange(row.id || row.uniqueKey || row.originalIndex, 'done', !row.done)}
                           className={`p-1.5 rounded-lg transition-colors ${row.done ? 'bg-emerald-500/20 text-emerald-400 animate-pulse' : 'bg-white/5 text-white/20 hover:bg-white/10 hover:text-white/40'}`}
                         >
                           {row.done ? <CheckSquare size={16} /> : <Square size={16} />}
@@ -814,15 +942,10 @@ export default function DesignersDashboard({ liveData, setLiveData, loading, onA
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-bold text-muted-foreground/70 mb-1.5">تاريخ الإضافة</label>
-                  <input
-                    type="date"
-                    required
-                    value={formatDateToInput(addForm.date)}
-                    onChange={e => setAddForm({...addForm, date: formatDateFromInput(e.target.value)})}
-                    className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-purple-500 transition-colors font-bold text-sm text-left cursor-pointer"
-                    style={{ colorScheme: 'dark' }}
-                    dir="ltr"
-                  />
+                  <div className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white font-bold text-sm flex items-center justify-between opacity-80 cursor-not-allowed select-none" dir="ltr">
+                    <span>{addForm.date}</span>
+                    <span className="text-[10px] text-purple-400 font-black arabic-text bg-purple-500/10 px-2 py-0.5 rounded-lg">📅 اليوم</span>
+                  </div>
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-muted-foreground/70 mb-1.5">ميعاد التسليم المتوقع</label>

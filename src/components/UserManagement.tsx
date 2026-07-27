@@ -428,28 +428,26 @@ const DEFAULT_SYSTEM_USERS: UserProfile[] = [
     try {
       let fetchedUsers: UserProfile[] = [];
 
-      // 1. Try serverless API
-      const token = getToken();
-      const res = await fetch('/api/users', {
-        headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
-      }).catch(() => null);
+      // 1. Direct Supabase query as primary source
+      const { data: dbData, error: dbErr } = await supabase
+        .from('user_profiles')
+        .select('*')
+        .order('created_at', { ascending: false });
 
-      if (res && res.ok) {
-        const data = await res.json().catch(() => ({}));
-        if (Array.isArray(data.users) && data.users.length > 0) {
-          fetchedUsers = data.users as UserProfile[];
-        }
-      }
+      if (!dbErr && dbData && dbData.length > 0) {
+        fetchedUsers = dbData as UserProfile[];
+      } else {
+        // 2. Fallback to API if direct query returned empty/error
+        const token = getToken();
+        const res = await fetch('/api/users', {
+          headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+        }).catch(() => null);
 
-      // 2. Try Supabase direct query
-      if (fetchedUsers.length === 0) {
-        const { data: dbData } = await supabase
-          .from('user_profiles')
-          .select('*')
-          .order('created_at', { ascending: false });
-
-        if (dbData && dbData.length > 0) {
-          fetchedUsers = dbData as UserProfile[];
+        if (res && res.ok) {
+          const data = await res.json().catch(() => ({}));
+          if (Array.isArray(data.users) && data.users.length > 0) {
+            fetchedUsers = data.users as UserProfile[];
+          }
         }
       }
 

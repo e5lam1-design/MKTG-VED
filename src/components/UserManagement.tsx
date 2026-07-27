@@ -580,27 +580,25 @@ const DEFAULT_SYSTEM_USERS: UserProfile[] = [
     try {
       const token = getToken();
 
-      // 2. Use API endpoint (Admin Client — bypasses RLS) to save
-      const res = await fetch(`/api/users?id=${encodeURIComponent(id)}`, {
+      // Direct Supabase update (ensures immediate persistence to DB)
+      const { error: directErr } = await supabase
+        .from('user_profiles')
+        .update({ ...updates, team })
+        .eq('id', id);
+
+      if (directErr) {
+        console.error('[handleUpdateUser] Direct Supabase error:', directErr.message);
+      }
+
+      // API endpoint update (Admin Client — fallback/additional layer)
+      fetch(`/api/users?id=${encodeURIComponent(id)}`, {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
         body: JSON.stringify({ ...updates, team }),
-      });
-
-      const result = await res.json().catch(() => ({}));
-
-      if (!res.ok) {
-        console.error('[handleUpdateUser] API error:', result?.error || res.status);
-        // Fallback: try direct supabase update
-        const { error } = await supabase
-          .from('user_profiles')
-          .update({ ...updates, team })
-          .eq('id', id);
-        if (error) console.error('[handleUpdateUser] Supabase fallback error:', error.message);
-      }
+      }).catch(err => console.error('[handleUpdateUser] API error:', err));
 
       // Save to localStorage overrides so local mode & fallback reflect changes immediately
       try {

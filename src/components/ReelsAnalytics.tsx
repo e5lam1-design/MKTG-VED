@@ -60,6 +60,7 @@ export const ReelsAnalytics = () => {
       }
     });
 
+    const allData = [...shootingData, ...veData, ...cutsData];
     const uniqueAllData = Array.from(uniqueReelsMap.values());
     const total = uniqueAllData.length;
     const completed = uniqueAllData.filter(i => i.done).length;
@@ -76,7 +77,7 @@ export const ReelsAnalytics = () => {
 
     // Teacher breakdown (exclude 'غير محدد' and empty)
     const teacherMap: Record<string, { count: number, completed: number }> = {};
-    allData.forEach((item: any) => {
+    uniqueAllData.forEach((item: any) => {
       const teacher = (item.teacher || 'غير محدد').trim();
       if (teacher === 'غير محدد' || teacher === '') return;
       if (!teacherMap[teacher]) teacherMap[teacher] = { count: 0, completed: 0 };
@@ -86,7 +87,7 @@ export const ReelsAnalytics = () => {
 
     // Branch breakdown
     const branchMap: Record<string, { count: number, completed: number }> = {};
-    allData.forEach((item: any) => {
+    uniqueAllData.forEach((item: any) => {
       const branch = (item.branch || 'غير محدد').trim();
       if (!branchMap[branch]) branchMap[branch] = { count: 0, completed: 0 };
       branchMap[branch].count++;

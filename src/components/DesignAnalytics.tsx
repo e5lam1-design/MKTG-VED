@@ -322,37 +322,35 @@ export function DesignAnalytics({ liveData, loading }: DesignAnalyticsProps) {
       {/* Main Breakdown Section */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
         
-        {/* Left Side: Designers Load Breakdown */}
+        {/* Left Side: Main Load Breakdown (Content Creators / Requesters - Narden, AYA, MANAR, JUMANA) */}
         <div className="bg-[#0a0d14] border border-white/5 p-6 rounded-3xl shadow-xl lg:col-span-2 flex flex-col space-y-6">
           <div>
-            <h3 className="text-xl font-black text-white">عبء العمل ومستوى الإنجاز لكل مصمم (Designers)</h3>
-            <p className="text-xs text-muted-foreground/60 mt-1">توزيع المهام المنجزة والمعلقة لكل مصمم (SHERIF, SHROUK, ESRAA, Hesham...)</p>
+            <h3 className="text-xl font-black text-white">عبء العمل ومستوى الإنجاز لكل صانع محتوى (Content Creators) 📣</h3>
+            <p className="text-xs text-muted-foreground/60 mt-1">توزيع الطلبات والمهام المنجزة والمعلقة لكل صانع محتوى (Narden, AYA, MANAR, JUMANA...)</p>
           </div>
 
           <div className="space-y-5 overflow-y-auto max-h-[500px] pr-2">
-            {stats.designers.map((designer) => {
-              const dCompletion = designer.total > 0 ? Math.round((designer.done / designer.total) * 100) : 0;
+            {stats.requesters.map((req) => {
+              const reqData = stats.designers.find(d => d.name.toLowerCase() === req.name.toLowerCase()) || { done: req.count, pending: 0, total: req.count, avgDuration: '1.0', typesDone: {} };
+              const dCompletion = reqData.total > 0 ? Math.round((reqData.done / reqData.total) * 100) : 100;
               return (
                 <div 
-                  key={designer.name} 
-                  onClick={() => setSelectedDesigner(selectedDesigner === designer.name ? null : designer.name)}
-                  className={`p-4 rounded-2xl border transition-all duration-300 cursor-pointer ${selectedDesigner === designer.name ? 'bg-fuchsia-500/10 border-fuchsia-500/30' : 'bg-white/[0.01] border-white/5 hover:bg-white/[0.02]'}`}
+                  key={req.name} 
+                  onClick={() => setSelectedDesigner(selectedDesigner === req.name ? null : req.name)}
+                  className={`p-4 rounded-2xl border transition-all duration-300 cursor-pointer ${selectedDesigner === req.name ? 'bg-fuchsia-500/10 border-fuchsia-500/30' : 'bg-white/[0.01] border-white/5 hover:bg-white/[0.02]'}`}
                 >
                   <div className="flex justify-between items-center mb-3">
                     <div className="flex items-center gap-3">
-                      <span className="text-sm font-bold text-white">{designer.name}</span>
+                      <span className="text-sm font-bold text-white">{req.name}</span>
                       <span className="text-[10px] bg-white/5 px-2 py-0.5 rounded text-muted-foreground">
-                        {designer.total} مهمة إجمالية
+                        {req.count} طلب إجمالي
                       </span>
                     </div>
                     <div className="flex items-center gap-3">
-                      <span className="text-xs text-emerald-400 font-bold">{designer.done} مكتمل</span>
+                      <span className="text-xs text-emerald-400 font-bold">{reqData.done} مكتمل</span>
                       <span className="text-xs text-muted/40">•</span>
-                      <span className="text-xs text-amber-500 font-bold">{designer.pending} معلق</span>
+                      <span className="text-xs text-amber-500 font-bold">{reqData.pending} معلق</span>
                       <span className="text-xs text-muted/40">•</span>
-                      <span className="text-xs text-fuchsia-400 font-bold" title="متوسط الوقت المستغرق لإنجاز المهمة">
-                        ⏱️ {designer.avgDuration} يوم
-                      </span>
                       <span className="text-xs font-black text-fuchsia-400 bg-fuchsia-500/10 px-2 py-0.5 rounded mr-2">{dCompletion}%</span>
                     </div>
                   </div>
@@ -361,21 +359,21 @@ export function DesignAnalytics({ liveData, loading }: DesignAnalyticsProps) {
                   <div className="w-full h-3 rounded-full bg-white/[0.04] overflow-hidden flex relative mb-3">
                     <div 
                       className="h-full bg-gradient-to-r from-emerald-500 to-teal-500 transition-all duration-500" 
-                      style={{ width: `${(designer.done / designer.total) * 100}%` }}
+                      style={{ width: `${(reqData.done / Math.max(1, reqData.total)) * 100}%` }}
                     />
                     <div 
                       className="h-full bg-gradient-to-r from-amber-500 to-amber-600 transition-all duration-500" 
-                      style={{ width: `${(designer.pending / designer.total) * 100}%` }}
+                      style={{ width: `${(reqData.pending / Math.max(1, reqData.total)) * 100}%` }}
                     />
                   </div>
 
-                  {/* Per-Type Completed Tasks Badges (تفاصيل أنواع المهام المنجزة) */}
+                  {/* Per-Type Completed Tasks Badges */}
                   <div className="flex flex-wrap items-center gap-1.5 pt-1">
                     <span className="text-[10px] font-bold text-muted arabic-text">أنواع المكتمل:</span>
-                    {Object.keys(designer.typesDone || {}).length === 0 ? (
+                    {Object.keys(reqData.typesDone || {}).length === 0 ? (
                       <span className="text-[10px] text-muted/40 arabic-text">لا يوجد مكتمل حتى الآن</span>
                     ) : (
-                      Object.entries(designer.typesDone).map(([tName, tCount]) => (
+                      Object.entries(reqData.typesDone).map(([tName, tCount]) => (
                         <span 
                           key={tName}
                           className="px-2 py-0.5 rounded-lg bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-[10px] font-bold flex items-center gap-1"
@@ -392,7 +390,7 @@ export function DesignAnalytics({ liveData, loading }: DesignAnalyticsProps) {
           </div>
         </div>
 
-        {/* Right Side: Priority, Type & Content Creators Distributions */}
+        {/* Right Side: Priority, Type & Designers Distributions */}
         <div className="space-y-8 flex flex-col justify-between lg:col-span-1">
           
           {/* Priorities card */}
@@ -452,25 +450,25 @@ export function DesignAnalytics({ liveData, loading }: DesignAnalyticsProps) {
             </div>
           </div>
 
-          {/* Content Creators Breakdown (Narden, AYA, MANAR, JUMANA) */}
+          {/* Designers Breakdown Card (SHERIF, SHROUK, ESRAA, Hesham...) */}
           <div className="bg-[#0a0d14] border border-white/5 p-6 rounded-3xl shadow-xl flex-1 flex flex-col space-y-4">
             <div>
-              <h3 className="text-lg font-black text-white">إحصائيات صناع المحتوى (طالبي التصاميم) 📣</h3>
-              <p className="text-[10px] text-muted-foreground/60 mt-0.5">توزيع الطلبات بين صناع المحتوى (Narden, AYA, MANAR, JUMANA...)</p>
+              <h3 className="text-lg font-black text-white">إحصائيات فريق المصممين (Designers) 🎨</h3>
+              <p className="text-[10px] text-muted-foreground/60 mt-0.5">توزيع المهام المنفذة لكل مصمم بالفريق (SHERIF, SHROUK, ESRAA...)</p>
             </div>
             
             <div className="space-y-3.5 flex-1 flex flex-col justify-center">
-              {stats.requesters.map((req) => {
-                const percentage = stats.total > 0 ? Math.round((req.count / stats.total) * 100) : 0;
+              {stats.designers.map((des) => {
+                const percentage = stats.total > 0 ? Math.round((des.total / stats.total) * 100) : 0;
                 return (
-                  <div key={req.name} className="space-y-1.5">
+                  <div key={des.name} className="space-y-1.5">
                     <div className="flex justify-between text-xs font-bold">
-                      <span className="text-pink-300 font-black">{req.name}</span>
-                      <span className="text-white/60">{req.count} طلب ({percentage}%)</span>
+                      <span className="text-emerald-300 font-black">{des.name}</span>
+                      <span className="text-white/60">{des.done} مكتمل من {des.total} ({percentage}%)</span>
                     </div>
                     <div className="w-full h-2 rounded-full bg-white/[0.04] overflow-hidden">
                       <div 
-                        className="h-full rounded-full bg-gradient-to-r from-pink-500 to-rose-500 transition-all duration-500" 
+                        className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-teal-500 transition-all duration-500" 
                         style={{ width: `${percentage}%` }}
                       />
                     </div>

@@ -28,8 +28,8 @@ export function DesignAnalytics({ liveData, loading }: DesignAnalyticsProps) {
     const pending = total - done;
     const completionRate = total > 0 ? Math.round((done / total) * 100) : 0;
 
-    // Workload per designer
-    const designerMap: Record<string, { total: number; done: number; pending: number }> = {};
+    // Workload and per-type completed breakdown per designer
+    const designerMap: Record<string, { total: number; done: number; pending: number; typesDone: Record<string, number> }> = {};
     // Priority breakdown
     const priorityMap: Record<string, number> = {};
     // Request type breakdown
@@ -64,13 +64,16 @@ export function DesignAnalytics({ liveData, loading }: DesignAnalyticsProps) {
     rows.forEach(r => {
       // Designers (Creators)
       const designer = (r.designer || 'غير محدد').trim();
+      const type = (r.type || 'OTHER').trim().toUpperCase();
+
       if (!designerMap[designer]) {
-        designerMap[designer] = { total: 0, done: 0, pending: 0 };
+        designerMap[designer] = { total: 0, done: 0, pending: 0, typesDone: {} };
       }
       designerMap[designer].total += 1;
       
       if (r.done) {
         designerMap[designer].done += 1;
+        designerMap[designer].typesDone[type] = (designerMap[designer].typesDone[type] || 0) + 1;
         
         let durationDays = 0;
         const endLoc = r.completed_date || r.completed_at || r.deadline;
@@ -109,7 +112,6 @@ export function DesignAnalytics({ liveData, loading }: DesignAnalyticsProps) {
       priorityMap[priority] = (priorityMap[priority] || 0) + 1;
 
       // Type
-      const type = (r.type || 'OTHER').trim().toUpperCase();
       typeMap[type] = (typeMap[type] || 0) + 1;
 
       // Requester
@@ -356,7 +358,7 @@ export function DesignAnalytics({ liveData, loading }: DesignAnalyticsProps) {
                   </div>
 
                   {/* Dual Colored Progress Bar */}
-                  <div className="w-full h-3 rounded-full bg-white/[0.04] overflow-hidden flex relative">
+                  <div className="w-full h-3 rounded-full bg-white/[0.04] overflow-hidden flex relative mb-3">
                     <div 
                       className="h-full bg-gradient-to-r from-emerald-500 to-teal-500 transition-all duration-500" 
                       style={{ width: `${(designer.done / designer.total) * 100}%` }}
@@ -365,6 +367,24 @@ export function DesignAnalytics({ liveData, loading }: DesignAnalyticsProps) {
                       className="h-full bg-gradient-to-r from-amber-500 to-amber-600 transition-all duration-500" 
                       style={{ width: `${(designer.pending / designer.total) * 100}%` }}
                     />
+                  </div>
+
+                  {/* Per-Type Completed Tasks Badges (تفاصيل أنواع المهام المنجزة) */}
+                  <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                    <span className="text-[10px] font-bold text-muted arabic-text">أنواع المكتمل:</span>
+                    {Object.keys(designer.typesDone || {}).length === 0 ? (
+                      <span className="text-[10px] text-muted/40 arabic-text">لا يوجد مكتمل حتى الآن</span>
+                    ) : (
+                      Object.entries(designer.typesDone).map(([tName, tCount]) => (
+                        <span 
+                          key={tName}
+                          className="px-2 py-0.5 rounded-lg bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-[10px] font-bold flex items-center gap-1"
+                        >
+                          <span>{tName}:</span>
+                          <span className="font-mono font-black text-white">{tCount as number}</span>
+                        </span>
+                      ))
+                    )}
                   </div>
                 </div>
               );

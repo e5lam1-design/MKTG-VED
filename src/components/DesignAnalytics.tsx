@@ -295,9 +295,9 @@ export function DesignAnalytics({ liveData, loading }: DesignAnalyticsProps) {
         <div className="bg-[#0a0d14] border border-white/5 p-6 rounded-3xl flex items-center justify-between shadow-lg relative overflow-hidden group">
           <div className="absolute inset-0 bg-gradient-to-br from-purple-500/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
           <div className="space-y-2">
-            <span className="text-[10px] text-muted font-black uppercase tracking-widest">صناع المحتوى</span>
+            <span className="text-[10px] text-muted font-black uppercase tracking-widest">فريق المصممين</span>
             <div className="text-3xl font-black text-purple-400">{stats.designers.length}</div>
-            <p className="text-[10px] text-muted/40 font-bold">صناع محتوى نشطين هذا الشهر</p>
+            <p className="text-[10px] text-muted/40 font-bold">مصممين نشطين هذا الشهر</p>
           </div>
           <div className="relative flex items-center justify-center w-16 h-16 rounded-2xl bg-purple-500/10 text-purple-400 shrink-0">
             <Users size={24} />
@@ -325,8 +325,8 @@ export function DesignAnalytics({ liveData, loading }: DesignAnalyticsProps) {
         {/* Left Side: Designers Load Breakdown */}
         <div className="bg-[#0a0d14] border border-white/5 p-6 rounded-3xl shadow-xl lg:col-span-2 flex flex-col space-y-6">
           <div>
-            <h3 className="text-xl font-black text-white">عبء العمل ومستوى الإنجاز لكل صانع محتوى</h3>
-            <p className="text-xs text-muted-foreground/60 mt-1">توزيع المهام بين المنجز (مكتمل) وقيد التنفيذ لكل عضو بالفريق.</p>
+            <h3 className="text-xl font-black text-white">عبء العمل ومستوى الإنجاز لكل مصمم</h3>
+            <p className="text-xs text-muted-foreground/60 mt-1">توزيع المهام بين المنجز (مكتمل) وقيد التنفيذ لكل مصمم بالفريق.</p>
           </div>
 
           <div className="space-y-5 overflow-y-auto max-h-[500px] pr-2">

@@ -452,43 +452,31 @@ export function DesignAnalytics({ liveData, loading }: DesignAnalyticsProps) {
             </div>
           </div>
 
-          {/* Speed Distribution breakdown */}
+          {/* Requesters Breakdown (صناع المحتوى / طالبي التصاميم - Narden, AYA, MANAR, JUMANA) */}
           <div className="bg-[#0a0d14] border border-white/5 p-6 rounded-3xl shadow-xl flex-1 flex flex-col space-y-4">
             <div>
-              <h3 className="text-lg font-black text-white">تصنيف سرعة إنجاز المهام ⏱️</h3>
-              <p className="text-[10px] text-muted-foreground/60 mt-0.5">توزيع المهام المنجزة حسب عدد الأيام المستغرقة.</p>
+              <h3 className="text-lg font-black text-white">إحصائيات صناع المحتوى (طالبي التصاميم) 📣</h3>
+              <p className="text-[10px] text-muted-foreground/60 mt-0.5">عدد الطلبات المقدمة من كل صانع محتوى (Narden, AYA, MANAR, JUMANA...)</p>
             </div>
             
             <div className="space-y-3.5 flex-1 flex flex-col justify-center">
-              {(() => {
-                const totalRecorded = stats.fastCount + stats.standardCount + stats.averageCount + stats.slowCount;
-                const getPercent = (count: number) => totalRecorded > 0 ? Math.round((count / totalRecorded) * 100) : 0;
-                
-                const speedBuckets = [
-                  { name: 'إنجاز سريع جداً (يوم واحد)', count: stats.fastCount, color: 'from-emerald-500 to-teal-500' },
-                  { name: 'إنجاز قياسي (يومين)', count: stats.standardCount, color: 'from-cyan-500 to-blue-500' },
-                  { name: 'إنجاز متوسط (3-5 أيام)', count: stats.averageCount, color: 'from-amber-500 to-orange-500' },
-                  { name: 'إنجاز طويل / متأخر (أكثر من 5 أيام)', count: stats.slowCount, color: 'from-rose-500 to-red-600' }
-                ];
-                
-                return speedBuckets.map((bucket) => {
-                  const pct = getPercent(bucket.count);
-                  return (
-                    <div key={bucket.name} className="space-y-1.5">
-                      <div className="flex justify-between text-xs font-bold">
-                        <span className="text-white/80">{bucket.name}</span>
-                        <span className="text-white/60">{bucket.count} مهمة ({pct}%)</span>
-                      </div>
-                      <div className="w-full h-2 rounded-full bg-white/[0.04] overflow-hidden">
-                        <div 
-                          className={`h-full rounded-full bg-gradient-to-r ${bucket.color} transition-all duration-500`}
-                          style={{ width: `${pct}%` }}
-                        />
-                      </div>
+              {stats.requesters.map((req) => {
+                const percentage = stats.total > 0 ? Math.round((req.count / stats.total) * 100) : 0;
+                return (
+                  <div key={req.name} className="space-y-1.5">
+                    <div className="flex justify-between text-xs font-bold">
+                      <span className="text-pink-300 font-black">{req.name}</span>
+                      <span className="text-white/60">{req.count} طلب ({percentage}%)</span>
                     </div>
-                  );
-                });
-              })()}
+                    <div className="w-full h-2 rounded-full bg-white/[0.04] overflow-hidden">
+                      <div 
+                        className="h-full rounded-full bg-gradient-to-r from-pink-500 to-rose-500 transition-all duration-500" 
+                        style={{ width: `${percentage}%` }}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
 

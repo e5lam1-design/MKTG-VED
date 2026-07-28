@@ -4433,6 +4433,19 @@ const [activeVeToast, setActiveVeToast] = useState<{ item: any } | null>(null);
         });
       });
 
+      // Broadcast update notification to all subscribed users
+      const taskObj = liveData.find((r: any) => r.id === oldCode);
+      const scriptVal = taskObj?.script || oldCode;
+      const parsed = parseScriptValue(scriptVal);
+      const taskName = parsed?.text || oldCode;
+
+      broadcastTaskUpdate(
+        oldCode,
+        taskName,
+        `📝 حدث تحديث على المهمة بواسطة (${profile?.name || 'مستخدم'})`,
+        'row_update'
+      );
+
       toast.success("تم تحديث الصف بنجاح!");
     } catch (err: any) {
       console.error(err);

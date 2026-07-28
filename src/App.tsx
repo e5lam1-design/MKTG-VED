@@ -4208,39 +4208,32 @@ const [activeVeToast, setActiveVeToast] = useState<{ item: any } | null>(null);
   };
 
   useEffect(() => {
-    // Load local transfers as fallback
-    const saved = localStorage.getItem('tagme3at_transfers');
-    if (saved) {
-      try { setTagmeTransfers(JSON.parse(saved)); } catch (e) {}
-    }
-    
-    // Load from SQL on mount and when gid changes
-    if (activeGid === '1535230545') {
-      fetch('/api/tagme3at').then(res => res.json()).then(data => {
-        if (data && data.items) {
-          const transfers = data.items.filter((i: any) => i.is_transfer).map((i: any) => ({
-            name: i.name, filingName: i.filing_name, opSheet: i.op_sheet, branch: i.branch, date: i.date,
-            notesMarketing: i.notes_marketing, editor: i.editor, notesEditors: i.notes_editors, done: i.done,
-            priority: i.priority, cancel: i.cancel, uniqueKey: i.unique_key, isTagmeTransfer: true,
-            thumbnailLink: i.thumbnail_link || '',
-            time: i.time || '',
-            youtubeLink: i.youtube_link || '',
-            uploaded: i.uploaded === true
-          }));
-          setTagmeTransfers(transfers);
-          
-          setEditorNotes(prev => { const n = {...prev}; data.items.forEach((i: any) => { if(i.notes_editors) n[i.unique_key] = i.notes_editors; }); return n; });
-          setMarketingNotes(prev => { const n = {...prev}; data.items.forEach((i: any) => { if(i.notes_marketing) n[i.unique_key] = i.notes_marketing; }); return n; });
-          setAssignedEditors(prev => { const n = {...prev}; data.items.forEach((i: any) => { if(i.editor) n[i.unique_key] = i.editor; }); return n; });
-          setTaskStatuses(prev => { const n = {...prev}; data.items.forEach((i: any) => { if(i.done) n[i.unique_key] = 'done'; }); return n; });
-          setTaskPriorities(prev => { const n = {...prev}; data.items.forEach((i: any) => { if(i.priority) n[i.unique_key] = true; }); return n; });
-          setAssignedThumbnailLinks(prev => { const n = {...prev}; data.items.forEach((i: any) => { if(i.thumbnail_link) n[i.unique_key] = i.thumbnail_link; }); return n; });
-          setAssignedTimes(prev => { const n = {...prev}; data.items.forEach((i: any) => { if(i.time) n[i.unique_key] = i.time; }); return n; });
-          setAssignedYoutubeLinks(prev => { const n = {...prev}; data.items.forEach((i: any) => { if(i.youtube_link) n[i.unique_key] = i.youtube_link; }); return n; });
-          setUploadedStatuses(prev => { const n = {...prev}; data.items.forEach((i: any) => { if(i.uploaded !== undefined) n[i.unique_key] = i.uploaded; }); return n; });
-        }
-      }).catch(e => console.error(e));
-    }
+    // Load directly from Supabase DB on app mount as the authoritative source of truth
+    fetch('/api/tagme3at').then(res => res.json()).then(data => {
+      if (data && data.items) {
+        const transfers = data.items.filter((i: any) => i.is_transfer).map((i: any) => ({
+          name: i.name, filingName: i.filing_name, opSheet: i.op_sheet, branch: i.branch, date: i.date,
+          notesMarketing: i.notes_marketing, editor: i.editor, notesEditors: i.notes_editors, done: i.done,
+          priority: i.priority, cancel: i.cancel, uniqueKey: i.unique_key, isTagmeTransfer: true,
+          thumbnailLink: i.thumbnail_link || '',
+          time: i.time || '',
+          youtubeLink: i.youtube_link || '',
+          uploaded: i.uploaded === true
+        }));
+        setTagmeTransfers(transfers);
+        localStorage.setItem('tagme3at_transfers', JSON.stringify(transfers));
+        
+        setEditorNotes(prev => { const n = {...prev}; data.items.forEach((i: any) => { if(i.notes_editors) n[i.unique_key] = i.notes_editors; }); return n; });
+        setMarketingNotes(prev => { const n = {...prev}; data.items.forEach((i: any) => { if(i.notes_marketing) n[i.unique_key] = i.notes_marketing; }); return n; });
+        setAssignedEditors(prev => { const n = {...prev}; data.items.forEach((i: any) => { if(i.editor) n[i.unique_key] = i.editor; }); return n; });
+        setTaskStatuses(prev => { const n = {...prev}; data.items.forEach((i: any) => { if(i.done) n[i.unique_key] = 'done'; }); return n; });
+        setTaskPriorities(prev => { const n = {...prev}; data.items.forEach((i: any) => { if(i.priority) n[i.unique_key] = true; }); return n; });
+        setAssignedThumbnailLinks(prev => { const n = {...prev}; data.items.forEach((i: any) => { if(i.thumbnail_link) n[i.unique_key] = i.thumbnail_link; }); return n; });
+        setAssignedTimes(prev => { const n = {...prev}; data.items.forEach((i: any) => { if(i.time) n[i.unique_key] = i.time; }); return n; });
+        setAssignedYoutubeLinks(prev => { const n = {...prev}; data.items.forEach((i: any) => { if(i.youtube_link) n[i.unique_key] = i.youtube_link; }); return n; });
+        setUploadedStatuses(prev => { const n = {...prev}; data.items.forEach((i: any) => { if(i.uploaded !== undefined) n[i.unique_key] = i.uploaded; }); return n; });
+      }
+    }).catch(e => console.error("Error loading Tagme3at from Supabase DB:", e));
   }, [activeGid]);
 
   const [loadingFilmedCode, setLoadingFilmedCode] = useState<string | null>(null);

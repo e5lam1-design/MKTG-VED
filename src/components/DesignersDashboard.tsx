@@ -10,17 +10,28 @@ const TYPES = ['THUMBNAIL', 'YT-COMMUNTIY', 'SOCIAL-MEDIA', 'OTHER'];
 const DropdownSelect = ({ value, onChange, options, getStyles }: any) => {
   const finalOptions = useMemo(() => {
     const valStr = String(value || '').trim();
-    if (valStr && !options.includes(valStr)) {
+    if (valStr && !options.includes(valStr) && valStr !== '__ADD_NEW__') {
       return [valStr, ...options];
     }
     return options;
   }, [value, options]);
 
+  const handleSelectChange = (val: string) => {
+    if (val === '__ADD_NEW__') {
+      const customVal = prompt('أدخل القيمة أو الاسم الجديد:');
+      if (customVal && customVal.trim() !== '') {
+        onChange(customVal.trim());
+      }
+    } else {
+      onChange(val);
+    }
+  };
+
   return (
     <div className="relative inline-flex items-center">
       <select
         value={value}
-        onChange={(e) => onChange(e.target.value)}
+        onChange={(e) => handleSelectChange(e.target.value)}
         className={`appearance-none text-xs font-black pl-7 pr-3.5 py-1.5 rounded-full border cursor-pointer outline-none transition-all shadow-sm ${getStyles(value)}`}
       >
         {finalOptions.map((opt: string) => (
@@ -28,6 +39,9 @@ const DropdownSelect = ({ value, onChange, options, getStyles }: any) => {
             {opt}
           </option>
         ))}
+        <option value="__ADD_NEW__" className="bg-[#1e1b4b] text-purple-300 font-bold">
+          ➕ إضافة كلمة/اسم جديد (Custom)...
+        </option>
       </select>
       <div className="absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none text-current opacity-80">
         <ChevronDown size={10} />

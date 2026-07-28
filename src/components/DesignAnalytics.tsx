@@ -182,7 +182,51 @@ export function DesignAnalytics({ liveData, loading }: DesignAnalyticsProps) {
   }
 
   return (
-    <div className="flex-1 flex flex-col w-full animate-fadeIn max-w-[1600px] mx-auto space-y-8" dir="rtl">
+    <div className="p-8 space-y-8 animate-fadeIn" dir="rtl">
+      {/* Production Progress Bar (Leader Dashboard Banner) */}
+      <div className="p-6 rounded-3xl bg-gradient-to-r from-purple-950/40 via-black/60 to-fuchsia-950/40 border border-fuchsia-500/30 shadow-2xl space-y-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <span className="text-xl">🎨</span>
+            <div>
+              <h3 className="text-base font-black text-white arabic-text">مؤشر نسبة الإنجاز والإنتاج الكلية للتصاميم</h3>
+              <p className="text-xs text-muted arabic-text">متابعة دقيقة لنسب التصاميم المنتهية، قيد التصميم، والمتأخرة</p>
+            </div>
+          </div>
+          <div className="text-left">
+            <span className="text-3xl font-black font-mono text-fuchsia-400">
+              {stats.completionRate}%
+            </span>
+            <span className="text-xs text-muted block arabic-text">نسبة الإنجاز النهائية</span>
+          </div>
+        </div>
+
+        {/* Multi-segment Animated Progress Bar */}
+        <div className="w-full h-4 bg-white/5 rounded-full overflow-hidden flex gap-0.5 p-0.5 border border-white/10 shadow-inner">
+          <div 
+            style={{ width: `${stats.total > 0 ? (stats.done / stats.total) * 100 : 0}%` }}
+            className="bg-gradient-to-r from-fuchsia-500 to-purple-400 h-full rounded-full transition-all duration-1000 shadow-[0_0_12px_rgba(217,70,239,0.5)]"
+            title={`مكتمل: ${stats.done}`}
+          />
+          <div 
+            style={{ width: `${stats.total > 0 ? (stats.pending / stats.total) * 100 : 0}%` }}
+            className="bg-gradient-to-r from-amber-500 to-yellow-400 h-full rounded-full transition-all duration-1000 shadow-[0_0_12px_rgba(245,158,11,0.5)]"
+            title={`قيد التصميم: ${stats.pending}`}
+          />
+        </div>
+
+        {/* Breakdown Badges */}
+        <div className="grid grid-cols-2 gap-3 pt-2">
+          <div className="bg-fuchsia-500/10 border border-fuchsia-500/20 rounded-xl p-3 text-center">
+            <span className="text-[11px] font-bold text-fuchsia-400 block arabic-text">🟪 تصاميم منتهية (DONE)</span>
+            <span className="text-lg font-black font-mono text-white">{stats.done} ({stats.completionRate}%)</span>
+          </div>
+          <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-3 text-center">
+            <span className="text-[11px] font-bold text-amber-400 block arabic-text">🟨 قيد التنفيذ والتصميم</span>
+            <span className="text-lg font-black font-mono text-white">{stats.pending} ({stats.total > 0 ? Math.round((stats.pending / stats.total) * 100) : 0}%)</span>
+          </div>
+        </div>
+      </div>
       
       {/* Page Title & Context */}
       <div className="bg-[#0a0d14] p-8 rounded-3xl border border-white/5 shadow-2xl relative overflow-hidden">

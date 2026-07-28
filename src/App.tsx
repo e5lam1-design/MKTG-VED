@@ -3256,6 +3256,7 @@ function App() {
   const [activeGid, setActiveGid] = useState(() => getInitialGid(initialMode));
   const [activeLabel, setActiveLabel] = useState(() => getInitialLabel(initialMode));
   const [appMode, setAppMode] = useState<'OP' | 'REELS' | 'DESIGNERS'>(initialMode);
+  const [isCardsView, setIsCardsView] = useState(false);
 
   // Re-apply default_mode whenever profile loads/changes (handles async profile load)
   useEffect(() => {
@@ -6058,6 +6059,22 @@ const [activeVeToast, setActiveVeToast] = useState<{ item: any } | null>(null);
                   </button>
                 </>
               )}
+
+              {/* Responsive Cards Mode Toggle Button */}
+              {!isReelsAnalytics && !isAnalyticsTagme && !isDesignAnalytics && !isDesignersPage && (
+                <button
+                  onClick={() => setIsCardsView(prev => !prev)}
+                  className={`flex items-center gap-2 px-3.5 py-2 rounded-2xl border text-xs font-bold transition-all cursor-pointer shadow-sm ${
+                    isCardsView
+                      ? 'bg-amber-500/20 border-amber-500/50 text-amber-300 shadow-[0_0_15px_rgba(245,158,11,0.2)]'
+                      : 'bg-white/5 border-white/10 text-muted hover:bg-white/10 hover:text-white'
+                  }`}
+                  title={isCardsView ? 'التحويل لوضع الجدول' : 'التحويل لوضع البطاقات/الموبايل'}
+                >
+                  <span className="text-base">{isCardsView ? '📱' : '💻'}</span>
+                  <span>{isCardsView ? 'عرض كروت (Cards)' : 'عرض جدول (Table)'}</span>
+                </button>
+              )}
               {isReelsStage && (
                 <div className="flex items-center gap-1.5" dir="rtl">
                   {[
@@ -6241,6 +6258,78 @@ const [activeVeToast, setActiveVeToast] = useState<{ item: any } | null>(null);
             <ErrorBoundary>
               <DesignersDashboard liveData={liveData} setLiveData={setLiveData} loading={loading} />
             </ErrorBoundary>
+          ) : isCardsView ? (
+            /* 📱 Responsive Mobile Cards Mode View */
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 p-2 animate-fadeIn" dir="rtl">
+              {filteredData.slice(0, visibleRecordsLimit).map((item: any, idx: number) => {
+                const itemKey = item.uniqueKey || generateKey(item);
+                const taskName = item.name || item.filingName || item.script || item.id || 'مهمة بدون عنوان';
+                const isDone = item.done === true || item.done === 'TRUE';
+                const isCanceled = item.canceled === true || item.canceled === 'TRUE';
+                const isMissing = item.missingDetails === true || item.missingDetails === 'TRUE';
+                const editorName = item.editor || item.editorCol || item.by || item.creator || 'غير محدد';
+                const driveLink = item.driveFinal || item.driveRaw || item.youtubeLink || '';
+                const parsedDrive = driveLink ? parseDriveLink(driveLink) : null;
+
+                return (
+                  <div 
+                    key={itemKey || idx} 
+                    className={`p-5 rounded-3xl border transition-all duration-300 relative space-y-4 flex flex-col justify-between shadow-lg ${
+                      isDone ? 'bg-emerald-500/10 border-emerald-500/30' :
+                      isCanceled ? 'bg-rose-500/10 border-rose-500/30' :
+                      isMissing ? 'bg-amber-500/10 border-amber-500/30' :
+                      'bg-white/[0.03] border-white/10 hover:border-primary/40'
+                    }`}
+                  >
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-[10px] font-bold font-mono px-2.5 py-1 rounded-full bg-white/10 text-white/80">
+                          #{idx + 1}
+                        </span>
+                        <span className={`text-[10px] font-black px-2.5 py-1 rounded-full ${
+                          isDone ? 'bg-emerald-500 text-white' :
+                          isCanceled ? 'bg-rose-500 text-white' :
+                          isMissing ? 'bg-amber-500 text-white' :
+                          'bg-blue-500/20 text-blue-300'
+                        }`}>
+                          {isDone ? 'DONE ✅' : isCanceled ? 'Canceled ❌' : isMissing ? 'تفاصيل ناقصة ⚠️' : 'قيد التنفيذ ⏳'}
+                        </span>
+                      </div>
+
+                      <h4 className="text-sm font-black text-white arabic-text leading-snug pt-1">
+                        {taskName}
+                      </h4>
+                      {item.branch && (
+                        <span className="inline-block text-[11px] font-bold px-2.5 py-0.5 rounded-lg bg-primary/10 text-primary border border-primary/20 arabic-text">
+                          📍 {item.branch} {item.teacher ? `| 👨‍🏫 ${item.teacher}` : ''}
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="space-y-3 pt-3 border-t border-white/5 text-xs">
+                      <div className="flex items-center justify-between text-muted">
+                        <span className="font-bold arabic-text">👤 المسند إليه / المونتير:</span>
+                        <span className="font-black text-white font-mono">{editorName}</span>
+                      </div>
+
+                      {parsedDrive && (
+                        <div className="flex items-center justify-between">
+                          <span className="font-bold text-muted arabic-text">🔗 رابط النهائي / Drive:</span>
+                          <a 
+                            href={parsedDrive.url} 
+                            target="_blank" 
+                            rel="noopener noreferrer" 
+                            className="text-primary hover:underline truncate max-w-[160px] font-mono text-[11px]"
+                          >
+                            {parsedDrive.text}
+                          </a>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           ) : (
             <div className="table-container">
               <div className="overflow-x-auto">

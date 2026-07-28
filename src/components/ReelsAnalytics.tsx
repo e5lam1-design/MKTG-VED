@@ -246,6 +246,63 @@ export const ReelsAnalytics = () => {
         </div>
       </div>
 
+      {/* Production Progress Bar (Leader Dashboard Banner) */}
+      <div className="p-6 rounded-3xl bg-gradient-to-r from-emerald-950/40 via-black/60 to-purple-950/40 border border-emerald-500/30 shadow-2xl space-y-4">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <span className="text-xl">🚀</span>
+            <div>
+              <h3 className="text-base font-black text-white arabic-text">مؤشر نسبة الإنجاز والإنتاج الكلية</h3>
+              <p className="text-xs text-muted arabic-text">متابعة دقيقة لنسب المكتمل، قيد التنفيذ، والتفاصيل الناقصة/الملغية</p>
+            </div>
+          </div>
+          <div className="text-left">
+            <span className="text-3xl font-black font-mono text-emerald-400">
+              {stats.total > 0 ? Math.round((stats.completed / stats.total) * 100) : 0}%
+            </span>
+            <span className="text-xs text-muted block arabic-text">نسبة الإنجاز النهائية</span>
+          </div>
+        </div>
+
+        {/* Multi-segment Animated Progress Bar */}
+        <div className="w-full h-4 bg-white/5 rounded-full overflow-hidden flex gap-0.5 p-0.5 border border-white/10 shadow-inner">
+          {/* DONE / MUP */}
+          <div 
+            style={{ width: `${stats.total > 0 ? (stats.completed / stats.total) * 100 : 0}%` }}
+            className="bg-gradient-to-r from-emerald-500 to-teal-400 h-full rounded-full transition-all duration-1000 shadow-[0_0_12px_rgba(16,185,129,0.5)]"
+            title={`مكتمل (DONE): ${stats.completed}`}
+          />
+          {/* In Progress / Pending */}
+          <div 
+            style={{ width: `${stats.total > 0 ? (stats.pending / stats.total) * 100 : 0}%` }}
+            className="bg-gradient-to-r from-amber-500 to-yellow-400 h-full rounded-full transition-all duration-1000 shadow-[0_0_12px_rgba(245,158,11,0.5)]"
+            title={`قيد التنفيذ: ${stats.pending}`}
+          />
+          {/* Missing / Canceled */}
+          <div 
+            style={{ width: `${stats.total > 0 ? ((stats.canceled + stats.missing) / stats.total) * 100 : 0}%` }}
+            className="bg-gradient-to-r from-rose-500 to-red-400 h-full rounded-full transition-all duration-1000 shadow-[0_0_12px_rgba(244,63,94,0.5)]"
+            title={`ملغي / ناقص: ${stats.canceled + stats.missing}`}
+          />
+        </div>
+
+        {/* Breakdown Badges */}
+        <div className="grid grid-cols-3 gap-3 pt-2">
+          <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-3 text-center">
+            <span className="text-[11px] font-bold text-emerald-400 block arabic-text">🟩 مكتمل (DONE)</span>
+            <span className="text-lg font-black font-mono text-white">{stats.completed} ({stats.total > 0 ? Math.round((stats.completed / stats.total) * 100) : 0}%)</span>
+          </div>
+          <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-3 text-center">
+            <span className="text-[11px] font-bold text-amber-400 block arabic-text">🟨 قيد التنفيذ والمونتاج</span>
+            <span className="text-lg font-black font-mono text-white">{stats.pending} ({stats.total > 0 ? Math.round((stats.pending / stats.total) * 100) : 0}%)</span>
+          </div>
+          <div className="bg-rose-500/10 border border-rose-500/20 rounded-xl p-3 text-center">
+            <span className="text-[11px] font-bold text-rose-400 block arabic-text">🟥 ملغي / ناقص تفاصيل</span>
+            <span className="text-lg font-black font-mono text-white">{stats.canceled + stats.missing} ({stats.total > 0 ? Math.round(((stats.canceled + stats.missing) / stats.total) * 100) : 0}%)</span>
+          </div>
+        </div>
+      </div>
+
       {/* KPI Stats Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
         {/* Total Reels */}

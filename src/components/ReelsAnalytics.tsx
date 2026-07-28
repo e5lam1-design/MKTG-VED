@@ -450,7 +450,7 @@ export const ReelsAnalytics = () => {
               <div className="p-5 rounded-2xl bg-white/[0.02] border border-white/5 hover:bg-white/[0.04] transition-all flex items-center justify-between">
                 <div className="space-y-1">
                   <span className="text-[11px] font-bold text-muted arabic-text block">من دخول المونتاج إلى الإنجاز النهائي (DONE) ✂️</span>
-                  <span className="text-xs text-white/75 arabic-text block">معدل وقت المونتاج والمراجعة حتى التسليم النهائي</span>
+                  <span className="text-xs text-white/75 arabic-text block">معدل وقت المونتاج والمراجعة حتى التسليم النهائي + التعديلات</span>
                 </div>
                 <div className="text-left font-mono">
                   {stats.avgVeToDone ? (

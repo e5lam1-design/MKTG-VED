@@ -4915,6 +4915,59 @@ const [activeVeToast, setActiveVeToast] = useState<{ item: any } | null>(null);
   }, [liveData, isOperations, isTagme3at, isAnalyticsTagme, isReelsAnalytics]);
 
 
+  const reelsStatusCounts = useMemo(() => {
+    if (!isReelsStage) return { All: 0, Done: 0, Missing: 0, Canceled: 0, Filmed: 0, Pending: 0 };
+    
+    let all = 0, done = 0, missing = 0, canceled = 0, filmed = 0, pending = 0;
+
+    combinedData.forEach((item: any) => {
+      const searchVal = searchQuery.trim().toLowerCase();
+      const matchesSearch = !searchVal ||
+        (item.name && String(item.name).toLowerCase().includes(searchVal)) ||
+        (item.filingName && String(item.filingName).toLowerCase().includes(searchVal)) ||
+        (item.id && String(item.id).toLowerCase().includes(searchVal)) ||
+        (item.val && String(item.val).toLowerCase().includes(searchVal)) ||
+        (item.teacher && String(item.teacher).toLowerCase().includes(searchVal)) ||
+        (item.editor && String(item.editor).toLowerCase().includes(searchVal)) ||
+        (item.subject && String(item.subject).toLowerCase().includes(searchVal)) ||
+        (item.branch && String(item.branch).toLowerCase().includes(searchVal)) ||
+        (item.notesMarketing && String(item.notesMarketing).toLowerCase().includes(searchVal)) ||
+        (item.notesEditors && String(item.notesEditors).toLowerCase().includes(searchVal));
+
+      if (!matchesSearch) return;
+
+      if (isMyTasksOnly && currentUserName) {
+        const me = currentUserName.toLowerCase().trim();
+        const meFirstName = me.split(' ')[0];
+        const editor = String(item.editor || '').toLowerCase().trim();
+        const by = String(item.by || '').toLowerCase().trim();
+        const editorCol = String(item.editorCol || '').toLowerCase().trim();
+        const creator = String(item.creator || '').toLowerCase().trim();
+
+        const matchesUser = (val: string) => {
+          if (!val || val === 'غير محدد') return false;
+          return val === me || val.includes(me) || me.includes(val) || (meFirstName.length > 2 && val.includes(meFirstName));
+        };
+
+        if (!matchesUser(editor) && !matchesUser(by) && !matchesUser(editorCol) && !matchesUser(creator)) return;
+      }
+
+      all++;
+      const isDone = item.done === true || item.done === 'TRUE';
+      const isMissing = item.missingDetails === true || item.missingDetails === 'TRUE';
+      const isCanceled = item.canceled === true || item.canceled === 'TRUE';
+      const isFilmed = item.filmed === true || item.filmed === 'TRUE';
+
+      if (isDone) done++;
+      if (isMissing) missing++;
+      if (isCanceled) canceled++;
+      if (isFilmed) filmed++;
+      if (!isDone && !isCanceled) pending++;
+    });
+
+    return { All: all, Done: done, Missing: missing, Canceled: canceled, Filmed: filmed, Pending: pending };
+  }, [combinedData, isReelsStage, searchQuery, isMyTasksOnly, currentUserName]);
+
   const filteredData = useMemo(() => {
     const filtered = combinedData.filter((item: any) => {
       const searchVal = searchQuery.trim().toLowerCase();
@@ -6000,23 +6053,33 @@ const [activeVeToast, setActiveVeToast] = useState<{ item: any } | null>(null);
                     { id: 'Canceled', label: 'Cancel ❌' },
                     { id: 'Filmed', label: 'اتصور 🎬' },
                     { id: 'Pending', label: 'قيد الانتظار ⏳' }
-                  ].map((f) => (
-                    <button
-                      key={f.id}
-                      onClick={() => setStatusFilter(f.id)}
-                      className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
-                        statusFilter === f.id
-                          ? f.id === 'Done' ? 'bg-emerald-500 text-white shadow-md shadow-emerald-500/20'
-                            : f.id === 'Missing' ? 'bg-amber-500 text-white shadow-md shadow-amber-500/20'
-                            : f.id === 'Canceled' ? 'bg-rose-500 text-white shadow-md shadow-rose-500/20'
-                            : f.id === 'Filmed' ? 'bg-cyan-500 text-white shadow-md shadow-cyan-500/20'
-                            : 'bg-primary text-white shadow-md shadow-primary/30'
-                          : 'bg-white/5 text-muted border border-white/10 hover:bg-white/10 hover:text-white'
-                      }`}
-                    >
-                      {f.label}
-                    </button>
-                  ))}
+                  ].map((f) => {
+                    const count = (reelsStatusCounts as any)[f.id] || 0;
+                    return (
+                      <button
+                        key={f.id}
+                        onClick={() => setStatusFilter(f.id)}
+                        className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                          statusFilter === f.id
+                            ? f.id === 'Done' ? 'bg-emerald-500 text-white shadow-md shadow-emerald-500/20'
+                              : f.id === 'Missing' ? 'bg-amber-500 text-white shadow-md shadow-amber-500/20'
+                              : f.id === 'Canceled' ? 'bg-rose-500 text-white shadow-md shadow-rose-500/20'
+                              : f.id === 'Filmed' ? 'bg-cyan-500 text-white shadow-md shadow-cyan-500/20'
+                              : 'bg-primary text-white shadow-md shadow-primary/30'
+                            : 'bg-white/5 text-muted border border-white/10 hover:bg-white/10 hover:text-white'
+                        }`}
+                      >
+                        <span>{f.label}</span>
+                        <span className={`px-2 py-0.5 rounded-full text-[10px] font-mono font-black ${
+                          statusFilter === f.id
+                            ? 'bg-black/30 text-white'
+                            : 'bg-white/10 text-white/80'
+                        }`}>
+                          {count}
+                        </span>
+                      </button>
+                    );
+                  })}
                 </div>
               )}
               {!isTagme3at && !isOperations && !isReelsStage && (

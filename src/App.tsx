@@ -4434,10 +4434,18 @@ const [activeVeToast, setActiveVeToast] = useState<{ item: any } | null>(null);
       });
 
       // Broadcast update notification to all subscribed users
-      const taskObj = liveData.find((r: any) => r.id === oldCode);
-      const scriptVal = taskObj?.script || oldCode;
-      const parsed = parseScriptValue(scriptVal);
-      const taskName = parsed?.text || oldCode;
+      const taskObj = Array.isArray(liveData) ? liveData.find((r: any) => r.id === oldCode) : null;
+      const rawScript = taskObj?.script || oldCode;
+      let taskName = oldCode;
+      if (rawScript) {
+        const s = String(rawScript).trim();
+        const hyperlinkMatch = s.match(/=HYPERLINK\s*\(\s*(['"])(.*?)\1\s*,\s*(['"])(.*?)\3\s*\)/i);
+        if (hyperlinkMatch) {
+          taskName = hyperlinkMatch[4].trim();
+        } else {
+          taskName = s;
+        }
+      }
 
       broadcastTaskUpdate(
         oldCode,

@@ -2140,7 +2140,7 @@ const ShootingRow = ({ item, index, activeGid, onToggleFilmed, loadingFilmedCode
                       className="px-3 py-1.5 rounded-xl bg-blue-500/10 hover:bg-blue-500/20 text-blue-400 font-mono text-[11px] underline cursor-pointer shadow-sm shrink-0 truncate max-w-[220px]"
                       title={parsed.url}
                     >
-                      {parsed.url}
+                      {parsed.text}
                     </a>
                   );
                 })()
@@ -2359,7 +2359,7 @@ const ShootingRow = ({ item, index, activeGid, onToggleFilmed, loadingFilmedCode
                       className="px-3 py-1.5 rounded-xl bg-purple-500/10 hover:bg-purple-500/20 text-purple-400 font-mono text-[11px] underline cursor-pointer shadow-sm shrink-0 truncate max-w-[220px]"
                       title={parsed.url}
                     >
-                      {parsed.url}
+                      {parsed.text}
                     </a>
                   );
                 })()

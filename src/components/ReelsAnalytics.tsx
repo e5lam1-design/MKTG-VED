@@ -42,14 +42,30 @@ export const ReelsAnalytics = () => {
     const veData = rawVeData.map(i => ({ ...i, stage: 'Ve' }));
     const cutsData = rawCutsData.map(i => ({ ...i, stage: 'Cuts' }));
 
-    // Combine all
-    const allData = [...shootingData, ...veData, ...cutsData];
+    // Deduplicate reels by unique code (id) to ensure items passed from Shooting to Ve/Cuts are counted as 1 unique reel
+    const uniqueReelsMap = new Map();
+    [...shootingData, ...veData, ...cutsData].forEach(item => {
+      const codeKey = (item.id || item.script || Math.random().toString()).trim().toLowerCase();
+      if (!uniqueReelsMap.has(codeKey)) {
+        uniqueReelsMap.set(codeKey, item);
+      } else {
+        // Merge status flags (if marked done/canceled in Ve or Cuts, update status)
+        const existing = uniqueReelsMap.get(codeKey);
+        uniqueReelsMap.set(codeKey, {
+          ...existing,
+          done: existing.done || item.done,
+          canceled: existing.canceled || item.canceled,
+          missingDetails: existing.missingDetails || item.missingDetails
+        });
+      }
+    });
 
-    const total = allData.length;
-    const completed = allData.filter(i => i.done).length;
+    const uniqueAllData = Array.from(uniqueReelsMap.values());
+    const total = uniqueAllData.length;
+    const completed = uniqueAllData.filter(i => i.done).length;
     const pending = total - completed;
-    const canceled = allData.filter(i => i.canceled).length;
-    const missing = allData.filter(i => i.missingDetails).length;
+    const canceled = uniqueAllData.filter(i => i.canceled).length;
+    const missing = uniqueAllData.filter(i => i.missingDetails).length;
 
     // Stage breakdown: total and completed for each of the three stages
     const stageMap = [

@@ -111,13 +111,23 @@ function parseDriveLink(val: string) {
     }
   } else if (driveIdRegex.test(url)) {
     url = `https://drive.google.com/file/d/${url}/view?usp=sharing`;
-  } else if (!url.startsWith('http://') && !url.startsWith('https://') && url.includes('.')) {
-    url = 'https://' + url;
+  } else if (url.startsWith('http://') || url.startsWith('https://')) {
+    // Valid full HTTP URL
+  } else {
+    // String looks like a filename (e.g., "MVI 7386.MP4" or "video.mp4") -> make it search/open drive
+    const cleanFilename = url.replace(/^https?:\/\//i, '');
+    url = `https://drive.google.com/drive/search?q=${encodeURIComponent(cleanFilename)}`;
   }
+
+  // Display text formatting
+  let text = s;
+  if (text.startsWith('https://')) text = text.substring(8);
+  if (text.startsWith('http://')) text = text.substring(7);
+  if (text.length > 25) text = text.substring(0, 23) + '...';
 
   return {
     url,
-    text: 'Link'
+    text: text || 'Drive Link'
   };
 }
 
@@ -4951,6 +4961,19 @@ const [activeVeToast, setActiveVeToast] = useState<{ item: any } | null>(null);
         if (statusFilter === 'Pending' && item.done) return false;
       }
 
+      if (isReelsStage && statusFilter !== 'All') {
+        const isDone = item.done === true || item.done === 'TRUE';
+        const isMissing = item.missingDetails === true || item.missingDetails === 'TRUE';
+        const isCanceled = item.canceled === true || item.canceled === 'TRUE';
+        const isFilmed = item.filmed === true || item.filmed === 'TRUE';
+
+        if (statusFilter === 'Done' && !isDone) return false;
+        if (statusFilter === 'Missing' && !isMissing) return false;
+        if (statusFilter === 'Canceled' && !isCanceled) return false;
+        if (statusFilter === 'Filmed' && !isFilmed) return false;
+        if (statusFilter === 'Pending' && (isDone || isCanceled)) return false;
+      }
+
       if (isStage && stageWeekFilter !== 'All') {
         if (String(item.week).trim() !== stageWeekFilter) return false;
       }
@@ -5968,7 +5991,35 @@ const [activeVeToast, setActiveVeToast] = useState<{ item: any } | null>(null);
                   </button>
                 </>
               )}
-              {!isTagme3at && !isOperations && (
+              {isReelsStage && (
+                <div className="flex items-center gap-1.5" dir="rtl">
+                  {[
+                    { id: 'All', label: 'الكل' },
+                    { id: 'Done', label: 'DONE ✅' },
+                    { id: 'Missing', label: 'تفاصيل ناقصة ⚠️' },
+                    { id: 'Canceled', label: 'Cancel ❌' },
+                    { id: 'Filmed', label: 'اتصور 🎬' },
+                    { id: 'Pending', label: 'قيد الانتظار ⏳' }
+                  ].map((f) => (
+                    <button
+                      key={f.id}
+                      onClick={() => setStatusFilter(f.id)}
+                      className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                        statusFilter === f.id
+                          ? f.id === 'Done' ? 'bg-emerald-500 text-white shadow-md shadow-emerald-500/20'
+                            : f.id === 'Missing' ? 'bg-amber-500 text-white shadow-md shadow-amber-500/20'
+                            : f.id === 'Canceled' ? 'bg-rose-500 text-white shadow-md shadow-rose-500/20'
+                            : f.id === 'Filmed' ? 'bg-cyan-500 text-white shadow-md shadow-cyan-500/20'
+                            : 'bg-primary text-white shadow-md shadow-primary/30'
+                          : 'bg-white/5 text-muted border border-white/10 hover:bg-white/10 hover:text-white'
+                      }`}
+                    >
+                      {f.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+              {!isTagme3at && !isOperations && !isReelsStage && (
                 <span className="px-5 py-2.5 text-[10px] font-black uppercase tracking-widest text-muted opacity-40">{activeLabel}</span>
               )}
             </div>

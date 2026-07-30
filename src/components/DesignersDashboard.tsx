@@ -240,10 +240,10 @@ export default function DesignersDashboard({ liveData, setLiveData, loading, onA
   const [showAddModal, setShowAddModal] = useState(false);
   const [addForm, setAddForm] = useState({
     date: new Date().toLocaleDateString('en-US'),
-    designer: DESIGNERS[0],
-    priority: PRIORITIES[0],
-    requester: REQUESTERS[0],
-    type: TYPES[0],
+    designer: DEFAULT_DESIGNERS[0],
+    priority: DEFAULT_PRIORITIES[0],
+    requester: DEFAULT_REQUESTERS[0],
+    type: DEFAULT_TYPES[0],
     deadline: '',
     reference: '',
     notes: '',
@@ -300,10 +300,10 @@ export default function DesignersDashboard({ liveData, setLiveData, loading, onA
       // Reset form
       setAddForm({
         date: new Date().toLocaleDateString('en-US'),
-        designer: DESIGNERS[0],
-        priority: PRIORITIES[0],
-        requester: REQUESTERS[0],
-        type: TYPES[0],
+        designer: allDesignersList[0] || '',
+        priority: allPrioritiesList[0] || '',
+        requester: allRequestersList[0] || '',
+        type: allTypesList[0] || '',
         deadline: '',
         reference: '',
         notes: '',

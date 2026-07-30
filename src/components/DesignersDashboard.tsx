@@ -740,7 +740,7 @@ export default function DesignersDashboard({ liveData, setLiveData, loading, onA
                     label="الكريتور" 
                     value={filters.designer} 
                     onChange={(val: any) => setFilters(p => ({ ...p, designer: val }))} 
-                    options={uniqueDesigners} 
+                    options={allDesignersList} 
                   />
                 </th>
                 <th className="px-4 py-3 sticky top-0 bg-[#080a0f] z-10 text-right">
@@ -748,7 +748,7 @@ export default function DesignersDashboard({ liveData, setLiveData, loading, onA
                     label="الأولوية" 
                     value={filters.priority} 
                     onChange={(val: any) => setFilters(p => ({ ...p, priority: val }))} 
-                    options={uniquePriorities} 
+                    options={allPrioritiesList} 
                   />
                 </th>
                 <th className="px-4 py-3 sticky top-0 bg-[#080a0f] z-10 text-right">
@@ -756,7 +756,7 @@ export default function DesignersDashboard({ liveData, setLiveData, loading, onA
                     label="المصمم" 
                     value={filters.requester} 
                     onChange={(val: any) => setFilters(p => ({ ...p, requester: val }))} 
-                    options={uniqueRequesters} 
+                    options={allRequestersList} 
                   />
                 </th>
                 <th className="px-4 py-3 sticky top-0 bg-[#080a0f] z-10 text-right">
@@ -764,7 +764,7 @@ export default function DesignersDashboard({ liveData, setLiveData, loading, onA
                     label="النوع" 
                     value={filters.type} 
                     onChange={(val: any) => setFilters(p => ({ ...p, type: val }))} 
-                    options={uniqueTypes} 
+                    options={allTypesList} 
                   />
                 </th>
                 <th className="px-4 py-4 font-bold sticky top-0 bg-[#080a0f] z-10 text-right text-muted/60">ميعاد التسليم</th>

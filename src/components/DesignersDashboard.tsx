@@ -1,13 +1,39 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { Loader2, Search, CheckSquare, Square, ChevronDown, Plus, X } from 'lucide-react';
 
-const DESIGNERS = ['SHERIF', 'SHROUK', 'ESRAA', 'Hesham', 'Sohaila', 'alaa', 'alaa zakria', 'NOUR', 'NOURHAN', 'KHALED', 'EMAN', 'AWNEY', 'ANAS', 'SAMIR', 'MONA', 'YOMNA', 'MANAR', 'MARAM', 'Esraa nagi', 'A.AMR', 'AHMED', 'nada', 'abdelkerim', 'Donia', 'Esraa Naga', 'A.Medhat'];
-const PRIORITIES = ['انهارده - ضروري', 'بكرة', 'انهارده - ممكن يتأجل', 'CHECK DEADLINE'];
-const REQUESTERS = ['Narden', 'AYA', 'MANAR', 'JUMANA'];
-const TYPES = ['THUMBNAIL', 'YT-COMMUNTIY', 'SOCIAL-MEDIA', 'OTHER'];
+const DEFAULT_DESIGNERS = ['SHERIF', 'SHROUK', 'ESRAA', 'Hesham', 'Sohaila', 'alaa', 'alaa zakria', 'NOUR', 'NOURHAN', 'KHALED', 'EMAN', 'AWNEY', 'ANAS', 'SAMIR', 'MONA', 'YOMNA', 'MANAR', 'MARAM', 'Esraa nagi', 'A.AMR', 'AHMED', 'nada', 'abdelkerim', 'Donia', 'Esraa Naga', 'A.Medhat'];
+const DEFAULT_PRIORITIES = ['انهارده - ضروري', 'بكرة', 'انهارده - ممكن يتأجل', 'CHECK DEADLINE'];
+const DEFAULT_REQUESTERS = ['Narden', 'AYA', 'MANAR', 'JUMANA'];
+const DEFAULT_TYPES = ['THUMBNAIL', 'YT-COMMUNTIY', 'SOCIAL-MEDIA', 'OTHER'];
+
+// Helper to get custom items stored in localStorage
+const getStoredCustomItems = (key: string, defaults: string[]) => {
+  try {
+    const saved = localStorage.getItem(`custom_options_${key}`);
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      if (Array.isArray(parsed)) {
+        return Array.from(new Set([...defaults, ...parsed]));
+      }
+    }
+  } catch (e) {}
+  return defaults;
+};
+
+// Helper to save new custom item to localStorage
+const saveCustomItem = (key: string, newItem: string) => {
+  try {
+    const saved = localStorage.getItem(`custom_options_${key}`);
+    let list: string[] = saved ? JSON.parse(saved) : [];
+    if (!list.includes(newItem)) {
+      list.push(newItem);
+      localStorage.setItem(`custom_options_${key}`, JSON.stringify(list));
+    }
+  } catch (e) {}
+};
 
 // Custom Google-Sheets-style Dropdown component (pill shaped)
-const DropdownSelect = ({ value, onChange, options, getStyles }: any) => {
+const DropdownSelect = ({ value, onChange, options, getStyles, categoryKey }: any) => {
   const finalOptions = useMemo(() => {
     const valStr = String(value || '').trim();
     if (valStr && !options.includes(valStr) && valStr !== '__ADD_NEW__') {
@@ -20,7 +46,11 @@ const DropdownSelect = ({ value, onChange, options, getStyles }: any) => {
     if (val === '__ADD_NEW__') {
       const customVal = prompt('أدخل اسم أو كلمة جديدة (Custom):');
       if (customVal && customVal.trim() !== '') {
-        onChange(customVal.trim());
+        const cleanVal = customVal.trim();
+        if (categoryKey) {
+          saveCustomItem(categoryKey, cleanVal);
+        }
+        onChange(cleanVal);
       }
     } else {
       onChange(val);
@@ -462,29 +492,33 @@ export default function DesignersDashboard({ liveData, setLiveData, loading, onA
     });
   }, [localRows, searchTerm, filters, selectedMonth]);
 
-  // Extract unique options dynamically from localRows
-  const uniqueDesigners = useMemo(() => {
-    if (!Array.isArray(localRows)) return [];
-    const set = new Set(localRows.map(r => String(r?.designer || '').trim()).filter(Boolean));
-    return Array.from(set).sort();
+  // Extract unique options dynamically from localRows & localStorage
+  const allDesignersList = useMemo(() => {
+    const stored = getStoredCustomItems('designer', DEFAULT_DESIGNERS);
+    if (!Array.isArray(localRows)) return stored;
+    const fromRows = localRows.map(r => String(r?.designer || '').trim()).filter(Boolean);
+    return Array.from(new Set([...stored, ...fromRows]));
   }, [localRows]);
 
-  const uniquePriorities = useMemo(() => {
-    if (!Array.isArray(localRows)) return [];
-    const set = new Set(localRows.map(r => String(r?.priority || '').trim()).filter(Boolean));
-    return Array.from(set).sort();
+  const allPrioritiesList = useMemo(() => {
+    const stored = getStoredCustomItems('priority', DEFAULT_PRIORITIES);
+    if (!Array.isArray(localRows)) return stored;
+    const fromRows = localRows.map(r => String(r?.priority || '').trim()).filter(Boolean);
+    return Array.from(new Set([...stored, ...fromRows]));
   }, [localRows]);
 
-  const uniqueRequesters = useMemo(() => {
-    if (!Array.isArray(localRows)) return [];
-    const set = new Set(localRows.map(r => String(r?.requester || '').trim()).filter(Boolean));
-    return Array.from(set).sort();
+  const allRequestersList = useMemo(() => {
+    const stored = getStoredCustomItems('requester', DEFAULT_REQUESTERS);
+    if (!Array.isArray(localRows)) return stored;
+    const fromRows = localRows.map(r => String(r?.requester || '').trim()).filter(Boolean);
+    return Array.from(new Set([...stored, ...fromRows]));
   }, [localRows]);
 
-  const uniqueTypes = useMemo(() => {
-    if (!Array.isArray(localRows)) return [];
-    const set = new Set(localRows.map(r => String(r?.type || '').trim()).filter(Boolean));
-    return Array.from(set).sort();
+  const allTypesList = useMemo(() => {
+    const stored = getStoredCustomItems('type', DEFAULT_TYPES);
+    if (!Array.isArray(localRows)) return stored;
+    const fromRows = localRows.map(r => String(r?.type || '').trim()).filter(Boolean);
+    return Array.from(new Set([...stored, ...fromRows]));
   }, [localRows]);
 
   const countAya = useMemo(() => {
@@ -812,8 +846,9 @@ export default function DesignersDashboard({ liveData, setLiveData, loading, onA
                       <DropdownSelect
                         value={row.designer}
                         onChange={(val: string) => handleCellChange(row.id || row.uniqueKey || row.originalIndex, 'designer', val)}
-                        options={DESIGNERS}
+                        options={allDesignersList}
                         getStyles={getDesignerStyle}
+                        categoryKey="designer"
                       />
                     </td>
 
@@ -822,8 +857,9 @@ export default function DesignersDashboard({ liveData, setLiveData, loading, onA
                       <DropdownSelect
                         value={row.priority}
                         onChange={(val: string) => handleCellChange(row.id || row.uniqueKey || row.originalIndex, 'priority', val)}
-                        options={PRIORITIES}
+                        options={allPrioritiesList}
                         getStyles={getPriorityStyle}
+                        categoryKey="priority"
                       />
                     </td>
 
@@ -832,8 +868,9 @@ export default function DesignersDashboard({ liveData, setLiveData, loading, onA
                       <DropdownSelect
                         value={row.requester}
                         onChange={(val: string) => handleCellChange(row.id || row.uniqueKey || row.originalIndex, 'requester', val)}
-                        options={REQUESTERS}
+                        options={allRequestersList}
                         getStyles={getRequesterStyle}
+                        categoryKey="requester"
                       />
                     </td>
 
@@ -842,8 +879,9 @@ export default function DesignersDashboard({ liveData, setLiveData, loading, onA
                       <DropdownSelect
                         value={row.type}
                         onChange={(val: string) => handleCellChange(row.id || row.uniqueKey || row.originalIndex, 'type', val)}
-                        options={TYPES}
+                        options={allTypesList}
                         getStyles={getTypeStyle}
+                        categoryKey="type"
                       />
                     </td>
 

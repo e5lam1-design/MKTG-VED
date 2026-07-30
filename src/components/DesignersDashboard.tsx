@@ -1020,7 +1020,7 @@ export default function DesignersDashboard({ liveData, setLiveData, loading, onA
                     onChange={e => setAddForm({...addForm, designer: e.target.value})}
                     className="w-full bg-[#0b1019] border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-purple-500 transition-colors font-bold text-sm cursor-pointer"
                   >
-                    {DESIGNERS.map(d => (
+                    {allDesignersList.map(d => (
                       <option key={d} value={d} className="bg-[#0b1019]">{d}</option>
                     ))}
                   </select>
@@ -1032,7 +1032,7 @@ export default function DesignersDashboard({ liveData, setLiveData, loading, onA
                     onChange={e => setAddForm({...addForm, priority: e.target.value})}
                     className="w-full bg-[#0b1019] border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-purple-500 transition-colors font-bold text-sm cursor-pointer"
                   >
-                    {PRIORITIES.map(p => (
+                    {allPrioritiesList.map(p => (
                       <option key={p} value={p} className="bg-[#0b1019]">{p}</option>
                     ))}
                   </select>
@@ -1047,7 +1047,7 @@ export default function DesignersDashboard({ liveData, setLiveData, loading, onA
                     onChange={e => setAddForm({...addForm, requester: e.target.value})}
                     className="w-full bg-[#0b1019] border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-purple-500 transition-colors font-bold text-sm cursor-pointer"
                   >
-                    {REQUESTERS.map(r => (
+                    {allRequestersList.map(r => (
                       <option key={r} value={r} className="bg-[#0b1019]">{r}</option>
                     ))}
                   </select>
@@ -1059,7 +1059,7 @@ export default function DesignersDashboard({ liveData, setLiveData, loading, onA
                     onChange={e => setAddForm({...addForm, type: e.target.value})}
                     className="w-full bg-[#0b1019] border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-purple-500 transition-colors font-bold text-sm cursor-pointer"
                   >
-                    {TYPES.map(t => (
+                    {allTypesList.map(t => (
                       <option key={t} value={t} className="bg-[#0b1019]">{t}</option>
                     ))}
                   </select>

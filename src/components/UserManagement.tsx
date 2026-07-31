@@ -411,6 +411,21 @@ export const UserManagement = () => {
   const [filterRole, setFilterRole] = useState<Role | 'all'>('all');
   const [rolePermissions, setRolePermissions] = useState(DEFAULT_ROLE_PERMISSIONS);
   const [permissionsToast, setPermissionsToast] = useState<'success' | 'error' | null>(null);
+  const [activityLogs, setActivityLogs] = useState<Array<{ id?: string; user_id?: string; name?: string; email?: string; event_type: string; timestamp: string }>>([]);
+
+  const fetchActivityLogs = async () => {
+    try {
+      const res = await fetch('/api/log-activity').catch(() => null);
+      if (res && res.ok) {
+        const data = await res.json().catch(() => ({}));
+        if (Array.isArray(data.logs)) {
+          setActivityLogs(data.logs);
+        }
+      }
+    } catch (e) {
+      console.error('[fetchActivityLogs]', e);
+    }
+  };
 
   const getToken = () => profile?.id || session?.user?.id || session?.access_token || '';
 
@@ -547,7 +562,7 @@ const DEFAULT_SYSTEM_USERS: UserProfile[] = [
     setTimeout(() => setPermissionsToast(null), 3000);
   };
 
-  useEffect(() => { fetchUsers(); fetchPermissions(); fetchUserTeams(); }, [session?.access_token]);
+  useEffect(() => { fetchUsers(); fetchPermissions(); fetchUserTeams(); fetchActivityLogs(); }, [session?.access_token]);
 
   const handleUpdateUser = async (id: string, updates: Partial<UserProfile>, team: 'marketing' | 'video' | '') => {
     // 1. Optimistic UI update
@@ -921,23 +936,34 @@ const DEFAULT_SYSTEM_USERS: UserProfile[] = [
               </tr>
             </thead>
             <tbody className="divide-y divide-white/[0.03]">
-              {users.flatMap(u => [
-                ...(u.last_login_at ? [{ user: u.name, email: u.email, type: 'login', time: u.last_login_at }] : []),
-                ...(u.last_logout_at ? [{ user: u.name, email: u.email, type: 'logout', time: u.last_logout_at }] : [])
-              ]).sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime()).length === 0 ? (
-                <tr>
-                  <td colSpan={4} className="p-8 text-center text-white/30 font-bold arabic-text">
-                    لا توجد سجلات مسجلة بعد
-                  </td>
-                </tr>
-              ) : (
-                users.flatMap(u => [
-                  ...(u.last_login_at ? [{ user: u.name, email: u.email, type: 'login', time: u.last_login_at }] : []),
-                  ...(u.last_logout_at ? [{ user: u.name, email: u.email, type: 'logout', time: u.last_logout_at }] : [])
-                ])
-                .sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime())
-                .map((log, idx) => (
-                  <tr key={`${log.email}-${log.type}-${log.time}`} className="hover:bg-white/[0.02] transition-colors">
+              {(() => {
+                const combined = [
+                  ...activityLogs.map(l => ({ user: l.name || 'مستخدم', email: l.email || '', type: l.event_type, time: l.timestamp })),
+                  ...users.flatMap(u => [
+                    ...(u.last_login_at ? [{ user: u.name, email: u.email, type: 'login', time: u.last_login_at }] : []),
+                    ...(u.last_logout_at ? [{ user: u.name, email: u.email, type: 'logout', time: u.last_logout_at }] : [])
+                  ])
+                ];
+                // Deduplicate by time + email + type
+                const uniqueLogsMap = new Map();
+                combined.forEach(item => {
+                  const key = `${item.email}-${item.type}-${item.time}`;
+                  if (!uniqueLogsMap.has(key)) uniqueLogsMap.set(key, item);
+                });
+                const sortedLogs = Array.from(uniqueLogsMap.values()).sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime());
+
+                if (sortedLogs.length === 0) {
+                  return (
+                    <tr>
+                      <td colSpan={4} className="p-8 text-center text-white/30 font-bold arabic-text">
+                        لا توجد سجلات مسجلة بعد
+                      </td>
+                    </tr>
+                  );
+                }
+
+                return sortedLogs.map((log, idx) => (
+                  <tr key={`${log.email}-${log.type}-${log.time}-${idx}`} className="hover:bg-white/[0.02] transition-colors">
                     <td className="p-3.5 text-white/30 font-mono text-[11px]">{idx + 1}</td>
                     <td className="p-3.5 font-bold text-white">
                       <span>{log.user}</span>
@@ -960,8 +986,8 @@ const DEFAULT_SYSTEM_USERS: UserProfile[] = [
                       {new Date(log.time).toLocaleString('ar-EG', { dateStyle: 'medium', timeStyle: 'short' })}
                     </td>
                   </tr>
-                ))
-              )}
+                ));
+              })()}
             </tbody>
           </table>
         </div>

@@ -250,7 +250,11 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     if (data.is_active === false) return { error: 'الحساب غير مفعل' };
 
     const nowIso = new Date().toISOString();
-    await supabase.from('user_profiles').update({ last_login_at: nowIso }).eq('id', data.id);
+    try {
+      await supabase.from('user_profiles').update({ last_login_at: nowIso }).eq('id', data.id);
+    } catch {}
+    
+    // Always trigger log-activity API endpoint for user_logs table insertion
     fetch('/api/log-activity', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

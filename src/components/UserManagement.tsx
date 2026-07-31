@@ -844,15 +844,6 @@ const DEFAULT_SYSTEM_USERS: UserProfile[] = [
                       <span className="text-[9px] font-black px-1.5 py-0.5 rounded-full bg-purple-500/20 text-purple-400 border border-purple-500/30">أنت</span>
                     )}
                   </div>
-                  {/* Login & Logout Log Information */}
-                  <div className="flex flex-wrap items-center gap-3 mt-1 text-[11px] font-mono">
-                    <span className="text-emerald-400/90 font-bold bg-emerald-500/10 px-2 py-0.5 rounded-lg border border-emerald-500/20">
-                      🟢 تسجيل الدخول: {u.last_login_at ? new Date(u.last_login_at).toLocaleString('ar-EG', { dateStyle: 'short', timeStyle: 'short' }) : 'لم يسجل'}
-                    </span>
-                    <span className="text-rose-400/90 font-bold bg-rose-500/10 px-2 py-0.5 rounded-lg border border-rose-500/20">
-                      🔴 تسجيل الخروج: {u.last_logout_at ? new Date(u.last_logout_at).toLocaleString('ar-EG', { dateStyle: 'short', timeStyle: 'short' }) : 'لم يسجل'}
-                    </span>
-                  </div>
                   {u.allowed_tabs && u.allowed_tabs.length > 0 && (
                     <p className="text-[10px] text-blue-400/60 mt-1 font-medium">
                       التابات: {u.allowed_tabs.slice(0, 3).join(' · ')}{u.allowed_tabs.length > 3 ? ` +${u.allowed_tabs.length - 3}` : ''}

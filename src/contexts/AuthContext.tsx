@@ -225,7 +225,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
       const nowIso = new Date().toISOString();
       if (authData?.user?.id) {
-        supabase.from('user_profiles').update({ last_login_at: nowIso }).eq('id', authData.user.id).catch(() => {});
+        await supabase.from('user_profiles').update({ last_login_at: nowIso }).eq('id', authData.user.id);
         fetch('/api/log-activity', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -250,7 +250,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     if (data.is_active === false) return { error: 'الحساب غير مفعل' };
 
     const nowIso = new Date().toISOString();
-    supabase.from('user_profiles').update({ last_login_at: nowIso }).eq('id', data.id).catch(() => {});
+    await supabase.from('user_profiles').update({ last_login_at: nowIso }).eq('id', data.id);
     fetch('/api/log-activity', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -272,7 +272,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       const currentId = profile?.id || localProfileIdRef.current || user?.id;
       const nowIso = new Date().toISOString();
       if (currentId) {
-        await supabase.from('user_profiles').update({ last_logout_at: nowIso }).eq('id', currentId).catch(() => {});
+        await supabase.from('user_profiles').update({ last_logout_at: nowIso }).eq('id', currentId);
         await fetch('/api/log-activity', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },

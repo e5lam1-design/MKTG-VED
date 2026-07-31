@@ -226,6 +226,11 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       const nowIso = new Date().toISOString();
       if (authData?.user?.id) {
         supabase.from('user_profiles').update({ last_login_at: nowIso }).eq('id', authData.user.id).catch(() => {});
+        fetch('/api/log-activity', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ user_id: authData.user.id, event_type: 'login', email }),
+        }).catch(() => {});
       }
 
       localStorage.removeItem(LOCAL_LOGIN_KEY);
@@ -246,6 +251,11 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
     const nowIso = new Date().toISOString();
     supabase.from('user_profiles').update({ last_login_at: nowIso }).eq('id', data.id).catch(() => {});
+    fetch('/api/log-activity', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ user_id: data.id, event_type: 'login', name: data.name, email: data.email }),
+    }).catch(() => {});
 
     const p = { ...data, last_login_at: nowIso, allowed_tabs: parseAllowedTabs(data.allowed_tabs) } as UserProfile;
     localProfileIdRef.current = p.id;
@@ -263,6 +273,11 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       const nowIso = new Date().toISOString();
       if (currentId) {
         await supabase.from('user_profiles').update({ last_logout_at: nowIso }).eq('id', currentId).catch(() => {});
+        await fetch('/api/log-activity', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ user_id: currentId, event_type: 'logout', name: profile?.name, email: profile?.email }),
+        }).catch(() => {});
       }
 
       await supabase.auth.signOut().catch(() => {});

@@ -32,19 +32,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           .eq('id', user_id);
       }
 
-      // 2. Try inserting into user_logs table (if created in Supabase)
-      try {
-        await supabaseAdminClient
-          .from('user_logs')
-          .insert({
-            user_id: user_id || null,
-            name: name || '',
-            email: email || '',
-            event_type,
-            timestamp: nowIso
-          });
-      } catch (logErr) {
-        // Table might not exist yet, ignore log table insertion error safely
+      // 2. Insert into user_logs table
+      const { error: insertErr } = await supabaseAdminClient
+        .from('user_logs')
+        .insert({
+          user_id: user_id || null,
+          name: name || '',
+          email: email || '',
+          event_type,
+          timestamp: nowIso
+        });
+      
+      if (insertErr) {
+        console.error('[log-activity] user_logs insert error:', insertErr.message);
       }
 
       return res.status(200).json({ success: true, timestamp: nowIso });

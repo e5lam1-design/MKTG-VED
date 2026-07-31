@@ -2501,9 +2501,20 @@ const CutsRow = ({
     });
   }, [item]);
 
+  const saveCutsOverrideLocally = (itemCode: string, fieldName: string, value: any) => {
+    try {
+      const raw = localStorage.getItem('cuts_overrides');
+      const overrides = raw ? JSON.parse(raw) : {};
+      overrides[itemCode] = overrides[itemCode] || {};
+      overrides[itemCode][fieldName] = value;
+      localStorage.setItem('cuts_overrides', JSON.stringify(overrides));
+    } catch {}
+  };
+
   const handleFieldChange = async (fieldName: string, value: string) => {
     const updatedForm = { ...editForm, [fieldName]: value };
     setEditForm(updatedForm);
+    saveCutsOverrideLocally(item.id, fieldName, value);
 
     if (!onUpdateShootingRow) return;
     setIsSaving(true);
@@ -2528,6 +2539,7 @@ const CutsRow = ({
       const isValidLink = val && (val.toLowerCase() === 'تم' || val.includes('http://') || val.includes('https://') || val.includes('drive.google.com') || val.includes('docs.google.com') || driveIdRegex.test(val));
       if (!isValidLink) {
         nextDoneStatus = false;
+        saveCutsOverrideLocally(item.id, 'done', false);
       }
     }
 
@@ -2602,6 +2614,7 @@ const CutsRow = ({
       fieldName === 'canceled' ? (newVal ? 'TRUE' : 'FALSE') : (item.canceled ? 'TRUE' : 'FALSE')
     ];
     
+    saveCutsOverrideLocally(item.id, fieldName, newVal);
     try {
       await onUpdateShootingRow(item.id, rowData);
     } catch(e) {
@@ -4816,6 +4829,19 @@ const [activeVeToast, setActiveVeToast] = useState<{ item: any } | null>(null);
       if (uploadedStatuses[key] !== undefined) {
         updated.uploaded = uploadedStatuses[key];
       }
+
+      // Apply cuts_overrides saved in localStorage so changes persist instantly on refresh
+      try {
+        const rawOverrides = localStorage.getItem('cuts_overrides');
+        if (rawOverrides) {
+          const overrides = JSON.parse(rawOverrides);
+          const itemCode = updated.id || key;
+          if (overrides[itemCode]) {
+            Object.assign(updated, overrides[itemCode]);
+          }
+        }
+      } catch {}
+
       return updated;
     });
   }, [liveData, youtubeItems, tagmeTransfers, localEntries, activeGid, isOperations, isTagme3at, assignedEditors, editorNotes, marketingNotes, assignedOpSheets, assignedBranches, assignedDates, assignedWeeks, assignedBunnyLinks, assignedThumbnailLinks, assignedTimes, assignedYoutubeLinks, uploadedStatuses]);

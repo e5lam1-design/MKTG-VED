@@ -258,18 +258,24 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   };
 
   const signOut = async () => {
-    const currentId = profile?.id || localProfileIdRef.current || user?.id;
-    const nowIso = new Date().toISOString();
-    if (currentId) {
-      await supabase.from('user_profiles').update({ last_logout_at: nowIso }).eq('id', currentId).catch(() => {});
-    }
+    try {
+      const currentId = profile?.id || localProfileIdRef.current || user?.id;
+      const nowIso = new Date().toISOString();
+      if (currentId) {
+        await supabase.from('user_profiles').update({ last_logout_at: nowIso }).eq('id', currentId).catch(() => {});
+      }
 
-    await supabase.auth.signOut();
-    localStorage.removeItem(LOCAL_LOGIN_KEY);
-    localProfileIdRef.current = null;
-    setProfile(null);
-    setUser(null);
-    setSession(null);
+      await supabase.auth.signOut().catch(() => {});
+    } catch (e) {
+      console.error('[signOut]', e);
+    } finally {
+      localStorage.clear();
+      localProfileIdRef.current = null;
+      setProfile(null);
+      setUser(null);
+      setSession(null);
+      window.location.href = '/';
+    }
   };
 
   return (

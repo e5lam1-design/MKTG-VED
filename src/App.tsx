@@ -2540,14 +2540,16 @@ const CutsRow = ({
       }
     }
 
-    // Done status logic: if fieldName is 'driveFinal' and the value is empty/invalid,
-    // we automatically uncheck done for everyone!
+    // Done status logic: if fieldName is 'driveFinal', automatically set done=true when valid link is added, or uncheck done if invalid
     let nextDoneStatus = item.done;
-    if (fieldName === 'driveFinal' && item.done) {
+    if (fieldName === 'driveFinal') {
       const val = String(value || '').trim();
       const driveIdRegex = /^[a-zA-Z0-9_-]{25,55}$/;
       const isValidLink = val && (val.toLowerCase() === 'تم' || val.includes('http://') || val.includes('https://') || val.includes('drive.google.com') || val.includes('docs.google.com') || driveIdRegex.test(val));
-      if (!isValidLink) {
+      if (isValidLink) {
+        nextDoneStatus = true;
+        saveCutsOverrideLocally(item.id, 'done', true);
+      } else {
         nextDoneStatus = false;
         saveCutsOverrideLocally(item.id, 'done', false);
       }

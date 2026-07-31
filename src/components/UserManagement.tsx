@@ -895,6 +895,78 @@ const DEFAULT_SYSTEM_USERS: UserProfile[] = [
         )}
       </div>
 
+      {/* Full Login & Logout Activity Logs Table */}
+      {/* Full Login & Logout Activity Logs Table */}
+      <div className="bg-[#0c1017] border border-white/10 rounded-3xl p-6 space-y-4 shadow-2xl">
+        <div className="flex items-center justify-between border-b border-white/5 pb-4">
+          <div>
+            <h3 className="text-lg font-black text-white arabic-text flex items-center gap-2">
+              <span>📋 سجل النشاطات الكامل (Login & Logout Audit Log)</span>
+            </h3>
+            <p className="text-xs text-white/40 mt-1 arabic-text">جدول تتبع مواعيد وقائع عمليات تسجيل الدخول والخروج لكافة المستخدمين لحظياً</p>
+          </div>
+          <span className="text-[11px] font-mono font-bold bg-purple-500/10 text-purple-400 border border-purple-500/20 px-3 py-1 rounded-xl">
+            Live Activity Feed
+          </span>
+        </div>
+
+        <div className="overflow-x-auto rounded-2xl border border-white/5 bg-black/30">
+          <table className="w-full text-right border-collapse text-xs">
+            <thead>
+              <tr className="bg-white/[0.03] text-[10px] uppercase font-black text-white/40 border-b border-white/5">
+                <th className="p-3.5 text-right">#</th>
+                <th className="p-3.5 text-right">المستخدم / البريد</th>
+                <th className="p-3.5 text-center">نوع الحدث</th>
+                <th className="p-3.5 text-left">التاريخ والتوقيت</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-white/[0.03]">
+              {users.flatMap(u => [
+                ...(u.last_login_at ? [{ user: u.name, email: u.email, type: 'login', time: u.last_login_at }] : []),
+                ...(u.last_logout_at ? [{ user: u.name, email: u.email, type: 'logout', time: u.last_logout_at }] : [])
+              ]).sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime()).length === 0 ? (
+                <tr>
+                  <td colSpan={4} className="p-8 text-center text-white/30 font-bold arabic-text">
+                    لا توجد سجلات مسجلة بعد
+                  </td>
+                </tr>
+              ) : (
+                users.flatMap(u => [
+                  ...(u.last_login_at ? [{ user: u.name, email: u.email, type: 'login', time: u.last_login_at }] : []),
+                  ...(u.last_logout_at ? [{ user: u.name, email: u.email, type: 'logout', time: u.last_logout_at }] : [])
+                ])
+                .sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime())
+                .map((log, idx) => (
+                  <tr key={`${log.email}-${log.type}-${log.time}`} className="hover:bg-white/[0.02] transition-colors">
+                    <td className="p-3.5 text-white/30 font-mono text-[11px]">{idx + 1}</td>
+                    <td className="p-3.5 font-bold text-white">
+                      <span>{log.user}</span>
+                      <span className="text-[10px] text-white/40 font-mono block">{log.email}</span>
+                    </td>
+                    <td className="p-3.5 text-center">
+                      {log.type === 'login' ? (
+                        <span className="px-3 py-1 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 font-black text-[11px] inline-flex items-center gap-1.5">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                          تسجيل دخول 🟢
+                        </span>
+                      ) : (
+                        <span className="px-3 py-1 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-400 font-black text-[11px] inline-flex items-center gap-1.5">
+                          <span className="w-1.5 h-1.5 rounded-full bg-rose-400" />
+                          تسجيل خروج 🔴
+                        </span>
+                      )}
+                    </td>
+                    <td className="p-3.5 text-left font-mono font-bold text-white/70" dir="ltr">
+                      {new Date(log.time).toLocaleString('ar-EG', { dateStyle: 'medium', timeStyle: 'short' })}
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
       {/* Modals */}
       <AnimatePresence>
         {editingUser && (

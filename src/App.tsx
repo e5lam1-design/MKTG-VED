@@ -2486,6 +2486,18 @@ const CutsRow = ({
   };
 
   useEffect(() => {
+    let localFinal = item.driveFinal || '';
+    try {
+      const raw = localStorage.getItem('cuts_overrides');
+      if (raw) {
+        const overrides = JSON.parse(raw);
+        const code = item.id;
+        if (overrides[code] && overrides[code].driveFinal !== undefined) {
+          localFinal = overrides[code].driveFinal;
+        }
+      }
+    } catch {}
+
     setEditForm({
       branch: item.branch || '',
       year: item.year || '',
@@ -2497,7 +2509,7 @@ const CutsRow = ({
       creatorNotes: item.creatorNotes || '',
       editorNotes: item.editorNotes || '',
       editor: item.editor || '',
-      driveFinal: item.driveFinal || ''
+      driveFinal: localFinal
     });
   }, [item]);
 
@@ -2638,10 +2650,23 @@ const CutsRow = ({
 
   const inputStyle = "w-full bg-white/5 border border-white/10 hover:bg-white/10 rounded-xl px-3 py-1.5 text-xs font-bold text-center text-white/90 outline-none transition-all focus:bg-[#0b1019] focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/30";
 
-  const isCanceled = item.canceled === true || item.canceled === 'TRUE';
-  const isProblem = item.problem === true || item.problem === 'TRUE';
-  const isMissing = item.missingDetails === true || item.missingDetails === 'TRUE';
-  const isDone = item.done === true || item.done === 'TRUE';
+  const getOverrideVal = (field: string, fallback: boolean) => {
+    try {
+      const raw = localStorage.getItem('cuts_overrides');
+      if (raw) {
+        const overrides = JSON.parse(raw);
+        if (overrides[item.id] && overrides[item.id][field] !== undefined) {
+          return !!overrides[item.id][field];
+        }
+      }
+    } catch {}
+    return fallback;
+  };
+
+  const isCanceled = getOverrideVal('canceled', item.canceled === true || item.canceled === 'TRUE');
+  const isProblem = getOverrideVal('problem', item.problem === true || item.problem === 'TRUE');
+  const isMissing = getOverrideVal('missingDetails', item.missingDetails === true || item.missingDetails === 'TRUE');
+  const isDone = getOverrideVal('done', item.done === true || item.done === 'TRUE');
 
   return (
     <motion.tr
@@ -2921,9 +2946,9 @@ const CutsRow = ({
             />
           ) : (
             <div className="flex items-center justify-center gap-1.5">
-              {item.driveFinal ? (
+              {editForm.driveFinal ? (
                 (() => {
-                  const parsed = parseCutsLink(item.driveFinal, 'Final');
+                  const parsed = parseCutsLink(editForm.driveFinal, 'Final');
                   return (
                     <a 
                       href={parsed?.url || '#'} 

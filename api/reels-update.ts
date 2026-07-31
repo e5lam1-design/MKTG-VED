@@ -192,36 +192,68 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           .select('id')
           .maybeSingle();
 
-        const shootingId = updatedShooting?.id;
-        if (veRowIndex !== -1 && shootingId) {
-          const veItem = {
-            shooting_id: shootingId,
-            date: parseDate(rowData[0]) || new Date().toISOString().split('T')[0],
-            branch: rowData[1] || null,
-            year: rowData[2] || null,
-            teacher: rowData[3] || null,
-            column_5: rowData[4] || null,
-            code: rowData[5] || null,
-            script_link: rowData[6] || null,
-            type: rowData[7] || null,
-            format: rowData[8] || null,
-            is_filmed: rowData[9] === 'TRUE' || rowData[9] === true || String(rowData[9]).toLowerCase() === 'true',
-            filming_date: parseDate(rowData[10]),
-            filmed_by: rowData[11] || null,
-            storage: rowData[12] || null,
-            notes: rowData[13] || null,
-            drive_raw: rowData[14] || null,
-            drive_final: rowData[17] || null,
-            is_canceled: String(rowData[18] || '').toUpperCase() === 'TRUE' || rowData[18] === true,
-            is_missing_details: String(rowData[19] || '').toUpperCase() === 'TRUE' || rowData[19] === true,
-            editor_name: rowData[15] || null,
-            is_done: rowData[16] === 'TRUE' || rowData[16] === true || String(rowData[16]).toLowerCase() === 'true'
-          };
+        // 1. Update ve table in Supabase directly by code
+        const veItem = {
+          date: parseDate(rowData[0]) || new Date().toISOString().split('T')[0],
+          branch: rowData[1] || null,
+          year: rowData[2] || null,
+          teacher: rowData[3] || null,
+          column_5: rowData[4] || null,
+          code: rowData[5] || null,
+          script_link: rowData[6] || null,
+          type: rowData[7] || null,
+          format: rowData[8] || null,
+          is_filmed: rowData[9] === 'TRUE' || rowData[9] === true || String(rowData[9]).toLowerCase() === 'true',
+          filming_date: parseDate(rowData[10]),
+          filmed_by: rowData[11] || null,
+          storage: rowData[12] || null,
+          notes: rowData[13] || null,
+          drive_raw: rowData[14] || null,
+          editor_name: rowData[15] || null,
+          is_done: rowData[16] === 'TRUE' || rowData[16] === true || String(rowData[16]).toLowerCase() === 'true',
+          drive_final: rowData[17] || null,
+          is_canceled: String(rowData[18] || '').toUpperCase() === 'TRUE' || rowData[18] === true,
+          is_missing_details: String(rowData[19] || '').toUpperCase() === 'TRUE' || rowData[19] === true
+        };
 
-          await supabaseAdmin
-            .from('ve')
-            .update(veItem)
-            .eq('code', oldCode);
+        const { error: veErr } = await supabaseAdmin
+          .from('ve')
+          .update(veItem)
+          .eq('code', oldCode);
+
+        if (veErr) {
+          console.error('[Supabase VE update error]', veErr.message);
+        }
+
+        // 2. Update cuts table in Supabase directly by code
+        const cutsItem = {
+          date: parseDate(rowData[0]) || new Date().toISOString().split('T')[0],
+          branch: rowData[1] || null,
+          year: rowData[2] || null,
+          type_col: rowData[3] || null,
+          creator: rowData[4] || null,
+          code: rowData[5] || null,
+          data_files: rowData[6] || null,
+          script: rowData[7] || null,
+          type: rowData[8] || null,
+          format: rowData[9] || null,
+          creator_notes: rowData[10] || null,
+          editor_notes: rowData[11] || null,
+          is_missing_details: rowData[12] === 'TRUE' || rowData[12] === true || String(rowData[12]).toLowerCase() === 'true',
+          is_problem: rowData[13] === 'TRUE' || rowData[13] === true || String(rowData[13]).toLowerCase() === 'true',
+          is_done: rowData[14] === 'TRUE' || rowData[14] === true || String(rowData[14]).toLowerCase() === 'true',
+          editor: rowData[15] || null,
+          drive_final: rowData[16] || null,
+          is_canceled: String(rowData[17] || '').toUpperCase() === 'TRUE' || rowData[17] === true
+        };
+
+        const { error: cutsErr } = await supabaseAdmin
+          .from('cuts')
+          .update(cutsItem)
+          .eq('code', oldCode);
+
+        if (cutsErr) {
+          console.error('[Supabase Cuts update error]', cutsErr.message);
         }
       }
     } catch (err: any) {

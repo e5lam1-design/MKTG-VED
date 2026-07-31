@@ -220,8 +220,14 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         email = String(resolveData?.email || '').toLowerCase().trim();
       }
       if (!email) return { error: 'اسم المستخدم غير موجود' };
-      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      const { data: authData, error } = await supabase.auth.signInWithPassword({ email, password });
       if (error) return { error: error.message };
+
+      const nowIso = new Date().toISOString();
+      if (authData?.user?.id) {
+        supabase.from('user_profiles').update({ last_login_at: nowIso }).eq('id', authData.user.id).catch(() => {});
+      }
+
       localStorage.removeItem(LOCAL_LOGIN_KEY);
       localProfileIdRef.current = null;
       return { error: null };
@@ -238,7 +244,10 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     if (error || !data) return { error: 'الاسم أو الإيميل غير موجود' };
     if (data.is_active === false) return { error: 'الحساب غير مفعل' };
 
-    const p = { ...data, allowed_tabs: parseAllowedTabs(data.allowed_tabs) } as UserProfile;
+    const nowIso = new Date().toISOString();
+    supabase.from('user_profiles').update({ last_login_at: nowIso }).eq('id', data.id).catch(() => {});
+
+    const p = { ...data, last_login_at: nowIso, allowed_tabs: parseAllowedTabs(data.allowed_tabs) } as UserProfile;
     localProfileIdRef.current = p.id;
     setUser(null);
     setSession(null);
@@ -249,6 +258,12 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   };
 
   const signOut = async () => {
+    const currentId = profile?.id || localProfileIdRef.current || user?.id;
+    const nowIso = new Date().toISOString();
+    if (currentId) {
+      await supabase.from('user_profiles').update({ last_logout_at: nowIso }).eq('id', currentId).catch(() => {});
+    }
+
     await supabase.auth.signOut();
     localStorage.removeItem(LOCAL_LOGIN_KEY);
     localProfileIdRef.current = null;

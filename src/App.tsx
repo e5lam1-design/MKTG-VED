@@ -5517,15 +5517,12 @@ const [activeVeToast, setActiveVeToast] = useState<{ item: any } | null>(null);
             </div>
             <button
               onClick={() => signOut()}
-              className="w-8 h-8 rounded-xl bg-white/5 hover:bg-rose-500/20 hover:text-rose-400 text-white/30 flex items-center justify-center transition-all cursor-pointer"
+              className="px-3 py-2 rounded-xl bg-rose-500/15 hover:bg-rose-500/30 border border-rose-500/30 text-rose-300 font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer shadow-sm hover:scale-105 active:scale-95 shrink-0 arabic-text"
               title="تسجيل الخروج"
             >
               <LogOut size={14} />
+              <span>خروج</span>
             </button>
-          </div>
-          {/* DEBUG - remove later */}
-          <div className="mt-2 text-[9px] text-yellow-400/70 break-all">
-            role: {profile?.role ?? 'NULL'} | tabs: {JSON.stringify(profile?.allowed_tabs ?? 'NULL')}
           </div>
         </div>
       </aside>

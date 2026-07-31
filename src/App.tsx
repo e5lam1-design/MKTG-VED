@@ -2508,6 +2508,16 @@ const CutsRow = ({
       overrides[itemCode] = overrides[itemCode] || {};
       overrides[itemCode][fieldName] = value;
       localStorage.setItem('cuts_overrides', JSON.stringify(overrides));
+
+      // Also persist directly to Supabase DB via task-metadata endpoint for multi-device persistence!
+      const token = session?.access_token || profile?.id;
+      if (token) {
+        fetch('/api/task-metadata', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+          body: JSON.stringify({ field: 'cuts_overrides', metadata: overrides })
+        }).catch(() => {});
+      }
     } catch {}
   };
 
@@ -4248,6 +4258,21 @@ const [activeVeToast, setActiveVeToast] = useState<{ item: any } | null>(null);
         setUploadedStatuses(prev => { const n = {...prev}; data.items.forEach((i: any) => { if(i.uploaded !== undefined) n[i.unique_key] = i.uploaded; }); return n; });
       }
     }).catch(e => console.error("Error loading Tagme3at from Supabase DB:", e));
+
+    // Load cuts_overrides from Supabase DB task_metadata
+    const token = session?.access_token || profile?.id;
+    if (token) {
+      fetch('/api/task-metadata', {
+        headers: { 'Authorization': `Bearer ${token}` }
+      })
+      .then(res => res.json())
+      .then(data => {
+        if (data?.metadata?.cuts_overrides) {
+          localStorage.setItem('cuts_overrides', JSON.stringify(data.metadata.cuts_overrides));
+        }
+      })
+      .catch(() => {});
+    }
   }, [activeGid]);
 
   const [loadingFilmedCode, setLoadingFilmedCode] = useState<string | null>(null);

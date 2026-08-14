@@ -1,13 +1,13 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || '';
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY || '';
+const supabaseUrl = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || 'https://dppdaqmrrjbldcygadpi.supabase.co';
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.VITE_SUPABASE_ANON_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRwcGRhcW1ycmpibGRjeWdhZHBpIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3OTIzNTIyNSwiZXhwIjoyMDk0ODExMjI1fQ.EBZ2wyV48UA9h9tLM0vUrjovR8xCb8lPLIaVgI9aVwU';
 const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 
   if (req.method === 'OPTIONS') {
@@ -20,9 +20,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     if (method === 'GET') {
       const { data, error } = await supabaseAdmin
-        .from('tagme3at_items')
+        .from('tagme3at_26')
         .select('*')
-        .order('created_at', { ascending: false });
+        .order('id', { ascending: false });
 
       if (error) throw error;
       return res.status(200).json({ items: data || [] });
@@ -51,11 +51,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         thumbnail_link: body.thumbnailLink || '',
         time: body.time || '',
         youtube_link: body.youtubeLink || '',
-        uploaded: body.uploaded ?? false
+        uploaded: body.uploaded ?? false,
+        updated_at: new Date().toISOString()
       };
 
       const { data, error } = await supabaseAdmin
-        .from('tagme3at_items')
+        .from('tagme3at_26')
         .upsert(itemData, { onConflict: 'unique_key' })
         .select()
         .single();
@@ -64,14 +65,34 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(200).json({ item: data });
     }
 
+    if (method === 'PUT') {
+      const { uniqueKey, updates } = req.body;
+      if (!uniqueKey || !updates) {
+        return res.status(400).json({ error: 'Missing uniqueKey or updates' });
+      }
+
+      const { data, error } = await supabaseAdmin
+        .from('tagme3at_26')
+        .update({
+          ...updates,
+          updated_at: new Date().toISOString()
+        })
+        .eq('unique_key', uniqueKey)
+        .select()
+        .single();
+
+      if (error) throw error;
+      return res.status(200).json({ item: data });
+    }
+
     if (method === 'DELETE') {
-      const uniqueKey = key || req.query.uniqueKey as string;
+      const uniqueKey = key || (req.query.uniqueKey as string);
       if (!uniqueKey) {
         return res.status(400).json({ error: 'Missing uniqueKey parameter' });
       }
 
       const { error } = await supabaseAdmin
-        .from('tagme3at_items')
+        .from('tagme3at_26')
         .delete()
         .eq('unique_key', uniqueKey);
 

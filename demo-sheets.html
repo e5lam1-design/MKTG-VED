@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Marketing & Operations — Google Sheets DEMO Version (نسخة الشرح)</title>
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Lucide Icons CDN -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <!-- Google Fonts: Cairo & Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800;900&family=Inter:wght@400;600;700;900&display=swap" rel="stylesheet">
+  <style>
+    body {
+      font-family: 'Cairo', 'Inter', sans-serif;
+      background-color: #05070a;
+      color: #f8fafc;
+    }
+    .arabic-text { font-family: 'Cairo', sans-serif; }
+    .glass-panel {
+      background: rgba(15, 23, 42, 0.65);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px border rgba(255, 255, 255, 0.08);
+    }
+    .row-hover:hover {
+      background-color: rgba(255, 255, 255, 0.03);
+    }
+    /* Custom Scrollbar */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #0b0f17; }
+    ::-webkit-scrollbar-thumb { background: #1e293b; border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: #334155; }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col selection:bg-amber-500/30 selection:text-amber-200">
+
+  <!-- Top Demo Alert Banner -->
+  <div class="bg-gradient-to-r from-amber-600/20 via-yellow-500/20 to-amber-600/20 border-b border-amber-500/30 px-6 py-3 flex flex-wrap items-center justify-between gap-4 sticky top-0 z-50 backdrop-blur-xl">
+    <div class="flex items-center gap-3">
+      <span class="flex h-3 w-3 relative">
+        <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75"></span>
+        <span class="relative inline-flex rounded-full h-3 w-3 bg-amber-500"></span>
+      </span>
+      <div class="flex items-center gap-2">
+        <span class="text-xs font-black uppercase tracking-wider bg-amber-500/20 text-amber-300 border border-amber-500/40 px-2.5 py-1 rounded-lg">
+          Google Sheets DEMO
+        </span>
+        <span class="text-sm font-black text-white">نسخة تجريبية خاصة بالشرح والتوضيح فقط (متصلة بالشيتات الأصلية)</span>
+      </div>
+    </div>
+    <div class="flex items-center gap-3">
+      <a href="http://localhost:5173" class="px-4 py-1.5 rounded-xl bg-primary/20 hover:bg-primary/30 border border-primary/40 text-primary text-xs font-black transition-all flex items-center gap-2">
+        <i data-lucide="arrow-right" class="w-4 h-4"></i>
+        <span>العودة للوحة الأساسية (Supabase)</span>
+      </a>
+      <button onclick="fetchCurrentTab(true)" class="px-4 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 border border-white/20 text-white text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer">
+        <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
+        <span>تحديث من الشيت</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- Main Layout -->
+  <div class="flex flex-1 overflow-hidden">
+    
+    <!-- Sidebar / Tabs Navigator -->
+    <aside class="w-72 border-l border-white/10 glass-panel p-6 flex flex-col gap-6 shrink-0 h-[calc(100vh-53px)] overflow-y-auto">
+      <div>
+        <div class="flex items-center gap-3 mb-2">
+          <div class="w-10 h-10 rounded-2xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-amber-400">
+            <i data-lucide="file-spreadsheet" class="w-5 h-5"></i>
+          </div>
+          <div>
+            <h2 class="font-black text-base leading-tight text-white">أقسام الشيتات</h2>
+            <p class="text-[10px] text-muted text-gray-400 font-bold">اختر الشيت المراد استعراضه</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Categories -->
+      <div class="space-y-6">
+        
+        <!-- Category: Operations & Marketing -->
+        <div>
+          <span class="text-[11px] font-black uppercase tracking-wider text-amber-400/80 mb-2 block pr-2">العمليات والتجميعات</span>
+          <div class="space-y-1" id="tabs-main"></div>
+        </div>
+
+        <!-- Category: Stages (J4..S3) -->
+        <div>
+          <span class="text-[11px] font-black uppercase tracking-wider text-emerald-400/80 mb-2 block pr-2">شيتات المراحل (Stages)</span>
+          <div class="space-y-1" id="tabs-stages"></div>
+        </div>
+
+        <!-- Category: Reels -->
+        <div>
+          <span class="text-[11px] font-black uppercase tracking-wider text-purple-400/80 mb-2 block pr-2">قسم الريلز (Reels)</span>
+          <div class="space-y-1" id="tabs-reels"></div>
+        </div>
+
+        <!-- Category: Designers -->
+        <div>
+          <span class="text-[11px] font-black uppercase tracking-wider text-cyan-400/80 mb-2 block pr-2">قسم المصممين</span>
+          <div class="space-y-1" id="tabs-designers"></div>
+        </div>
+
+      </div>
+    </aside>
+
+    <!-- Main Content Area -->
+    <main class="flex-1 flex flex-col p-8 overflow-y-auto">
+      
+      <!-- Sheet Header & Search Controls -->
+      <div class="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6 pb-6 border-b border-white/10">
+        <div>
+          <div class="flex items-center gap-3">
+            <h1 class="text-2xl font-black text-white" id="current-sheet-title">Operations</h1>
+            <span class="px-3 py-1 rounded-full text-xs font-black bg-white/5 border border-white/10 text-gray-300 font-mono" id="sheet-record-count">0 Records</span>
+          </div>
+          <p class="text-xs text-gray-400 mt-1" id="current-sheet-desc">بيانات حية مباشرة من Google Sheets للشرح والعرض التوضيحي</p>
+        </div>
+
+        <!-- Search Input -->
+        <div class="flex items-center gap-3">
+          <div class="relative min-w-[280px]">
+            <input 
+              type="text" 
+              id="search-input" 
+              placeholder="بحث في جميع الحقول..." 
+              oninput="renderTable()"
+              class="w-full bg-white/5 border border-white/10 rounded-2xl py-2.5 pr-10 pl-4 text-xs font-bold text-white focus:outline-none focus:border-amber-500 transition-all"
+            >
+            <i data-lucide="search" class="w-4 h-4 text-gray-400 absolute right-3.5 top-1/2 -translate-y-1/2"></i>
+          </div>
+        </div>
+      </div>
+
+      <!-- Data Table Container -->
+      <div class="flex-1 glass-panel rounded-3xl border border-white/10 overflow-hidden flex flex-col">
+        <div class="overflow-x-auto flex-1">
+          <table class="w-full text-right text-xs">
+            <thead class="bg-white/5 border-b border-white/10 text-gray-300 font-black sticky top-0 z-10 backdrop-blur-md" id="table-headers">
+              <!-- Dynamically rendered headers -->
+            </thead>
+            <tbody class="divide-y divide-white/[0.04] font-medium" id="table-body">
+              <!-- Dynamically rendered rows -->
+            </tbody>
+          </table>
+        </div>
+
+        <!-- Empty / Loading State Overlay -->
+        <div id="table-state" class="py-20 text-center flex flex-col items-center justify-center gap-3 hidden">
+          <div class="w-10 h-10 border-4 border-amber-500/20 border-t-amber-500 rounded-full animate-spin"></div>
+          <span class="text-xs font-black text-amber-400 uppercase tracking-widest">جاري جلب البيانات من Google Sheets...</span>
+        </div>
+      </div>
+
+    </main>
+
+  </div>
+
+  <script>
+    // Tab Definitions
+    const SHEETS_CONFIG = [
+      { category: 'main', gid: '1476192399', label: 'Operations', icon: 'layers', color: '#f59e0b', docId: '1Hm7noXxv8ITMU3dNXQmqFEzfZY1mZlBJ4bQ9_ZIR0-M' },
+      { category: 'main', gid: '1535230545', label: 'تجميعات', icon: 'check-circle-2', color: '#10b981', docId: '2PACX-1vRuuQ4J0z5ze6hHeZIvM24VqPApNS_eHIvnBmZ4EyPWj7J1MpvBOyPodwx0DKa1yqNkjlFdahgN6jZI' },
+      { category: 'stages', gid: '497207661', label: 'Junior 4', icon: 'graduation-cap', color: '#38bdf8', docId: '2PACX-1vRuuQ4J0z5ze6hHeZIvM24VqPApNS_eHIvnBmZ4EyPWj7J1MpvBOyPodwx0DKa1yqNkjlFdahgN6jZI' },
+      { category: 'stages', gid: '96752860', label: 'Junior 5', icon: 'graduation-cap', color: '#38bdf8', docId: '2PACX-1vRuuQ4J0z5ze6hHeZIvM24VqPApNS_eHIvnBmZ4EyPWj7J1MpvBOyPodwx0DKa1yqNkjlFdahgN6jZI' },
+      { category: 'stages', gid: '346788121', label: 'Junior 6', icon: 'graduation-cap', color: '#38bdf8', docId: '2PACX-1vRuuQ4J0z5ze6hHeZIvM24VqPApNS_eHIvnBmZ4EyPWj7J1MpvBOyPodwx0DKa1yqNkjlFdahgN6jZI' },
+      { category: 'stages', gid: '458352282', label: 'Middle 1', icon: 'graduation-cap', color: '#818cf8', docId: '2PACX-1vRuuQ4J0z5ze6hHeZIvM24VqPApNS_eHIvnBmZ4EyPWj7J1MpvBOyPodwx0DKa1yqNkjlFdahgN6jZI' },
+      { category: 'stages', gid: '2113852114', label: 'Middle 2', icon: 'graduation-cap', color: '#818cf8', docId: '2PACX-1vRuuQ4J0z5ze6hHeZIvM24VqPApNS_eHIvnBmZ4EyPWj7J1MpvBOyPodwx0DKa1yqNkjlFdahgN6jZI' },
+      { category: 'stages', gid: '2089699920', label: 'Middle 3', icon: 'graduation-cap', color: '#818cf8', docId: '2PACX-1vRuuQ4J0z5ze6hHeZIvM24VqPApNS_eHIvnBmZ4EyPWj7J1MpvBOyPodwx0DKa1yqNkjlFdahgN6jZI' },
+      { category: 'stages', gid: '1640460225', label: 'Senior 1', icon: 'graduation-cap', color: '#c084fc', docId: '2PACX-1vRuuQ4J0z5ze6hHeZIvM24VqPApNS_eHIvnBmZ4EyPWj7J1MpvBOyPodwx0DKa1yqNkjlFdahgN6jZI' },
+      { category: 'stages', gid: '595027661', label: 'Senior 2', icon: 'graduation-cap', color: '#c084fc', docId: '2PACX-1vRuuQ4J0z5ze6hHeZIvM24VqPApNS_eHIvnBmZ4EyPWj7J1MpvBOyPodwx0DKa1yqNkjlFdahgN6jZI' },
+      { category: 'stages', gid: '286303232', label: 'Senior 3', icon: 'graduation-cap', color: '#c084fc', docId: '2PACX-1vRuuQ4J0z5ze6hHeZIvM24VqPApNS_eHIvnBmZ4EyPWj7J1MpvBOyPodwx0DKa1yqNkjlFdahgN6jZI' },
+      { category: 'reels', gid: '1436746012', label: 'Shooting', icon: 'video', color: '#ec4899', docId: '2PACX-1vTvcQ3v1JOzacx9tcsYrbriofFyHlu7rOKKlsobvpP9vjnbHGcg_Qn9TLlbkgB2YsGiX0GO1U4wlZjd' },
+      { category: 'reels', gid: '1939073164', label: 'Ve', icon: 'scissors', color: '#ec4899', docId: '2PACX-1vTvcQ3v1JOzacx9tcsYrbriofFyHlu7rOKKlsobvpP9vjnbHGcg_Qn9TLlbkgB2YsGiX0GO1U4wlZjd' },
+      { category: 'reels', gid: '0', label: 'CUTS', icon: 'film', color: '#ec4899', docId: '2PACX-1vTvcQ3v1JOzacx9tcsYrbriofFyHlu7rOKKlsobvpP9vjnbHGcg_Qn9TLlbkgB2YsGiX0GO1U4wlZjd' },
+      { category: 'designers', gid: '501319673', label: 'Designers Hub', icon: 'palette', color: '#a855f7', docId: '2PACX-1vRkOH2-jRtYqmkf0opn6in9TMg3oOo6FBvlGfkJjhDwn-t-CSYyrTbn4EDjNCFdvKL7tQG6nQ--jSdC' },
+    ];
+
+    let currentGid = '1476192399';
+    let currentRawRows = [];
+    let currentHeaders = [];
+
+    function initSidebar() {
+      const cats = {
+        main: document.getElementById('tabs-main'),
+        stages: document.getElementById('tabs-stages'),
+        reels: document.getElementById('tabs-reels'),
+        designers: document.getElementById('tabs-designers'),
+      };
+
+      SHEETS_CONFIG.forEach(sheet => {
+        const btn = document.createElement('button');
+        btn.className = `w-full flex items-center justify-between px-3.5 py-2 rounded-xl text-xs font-bold transition-all text-gray-300 hover:text-white hover:bg-white/5 border border-transparent ${sheet.gid === currentGid ? 'bg-amber-500/20 !text-amber-300 border-amber-500/30 font-black' : ''}`;
+        btn.id = `tab-btn-${sheet.gid}`;
+        btn.onclick = () => switchTab(sheet.gid);
+        btn.innerHTML = `
+          <div class="flex items-center gap-2.5">
+            <i data-lucide="${sheet.icon}" class="w-4 h-4" style="color: ${sheet.color}"></i>
+            <span>${sheet.label}</span>
+          </div>
+          <span class="text-[10px] opacity-40 font-mono">#${sheet.gid.slice(-3)}</span>
+        `;
+        if (cats[sheet.category]) {
+          cats[sheet.category].appendChild(btn);
+        }
+      });
+
+      lucide.createIcons();
+    }
+
+    function switchTab(gid) {
+      currentGid = gid;
+      document.querySelectorAll('[id^="tab-btn-"]').forEach(el => {
+        el.className = el.className.replace('bg-amber-500/20 !text-amber-300 border-amber-500/30 font-black', '');
+      });
+      const activeBtn = document.getElementById(`tab-btn-${gid}`);
+      if (activeBtn) {
+        activeBtn.className += ' bg-amber-500/20 !text-amber-300 border-amber-500/30 font-black';
+      }
+
+      const conf = SHEETS_CONFIG.find(s => s.gid === gid);
+      if (conf) {
+        document.getElementById('current-sheet-title').innerText = conf.label;
+      }
+      fetchCurrentTab();
+    }
+
+    async function fetchCurrentTab(force = false) {
+      const conf = SHEETS_CONFIG.find(s => s.gid === currentGid);
+      if (!conf) return;
+
+      const stateEl = document.getElementById('table-state');
+      stateEl.classList.remove('hidden');
+      document.getElementById('table-body').innerHTML = '';
+
+      try {
+        let rows = [];
+        // First try local proxy endpoint
+        const res = await fetch(`/api/sheet?gid=${conf.gid}&t=${Date.now()}`);
+        if (res.ok) {
+          const json = await res.json();
+          rows = json.rows || [];
+        } else {
+          // Direct fallback
+          const url = `https://docs.google.com/spreadsheets/d/e/${conf.docId}/pub?gid=${conf.gid}&single=true&output=csv`;
+          const csvRes = await fetch(url);
+          if (csvRes.ok) {
+            const csvText = await csvRes.text();
+            rows = parseCsv(csvText);
+          }
+        }
+
+        if (rows.length > 0) {
+          currentHeaders = rows[0] || [];
+          currentRawRows = rows.slice(1).filter(r => r && r.some(c => String(c).trim().length > 0));
+        } else {
+          currentHeaders = [];
+          currentRawRows = [];
+        }
+
+        document.getElementById('sheet-record-count').innerText = `${currentRawRows.length} Records`;
+        stateEl.classList.add('hidden');
+        renderTable();
+      } catch (err) {
+        console.error('Fetch error:', err);
+        stateEl.innerHTML = `<span class="text-xs text-rose-400 font-bold">فشل جلب الشيت: ${err.message}</span>`;
+      }
+    }
+
+    function parseCsv(text) {
+      const rows = [];
+      let currentRow = [];
+      let currentCell = '';
+      let inQuotes = false;
+      for (let i = 0; i < text.length; i++) {
+        const char = text[i];
+        const nextChar = text[i + 1];
+        if (char === '"') {
+          if (inQuotes && nextChar === '"') { currentCell += '"'; i++; }
+          else { inQuotes = !inQuotes; }
+        } else if (char === ',' && !inQuotes) {
+          currentRow.push(currentCell.trim());
+          currentCell = '';
+        } else if (char === '\n' && !inQuotes) {
+          currentRow.push(currentCell.trim());
+          rows.push(currentRow);
+          currentRow = [];
+          currentCell = '';
+        } else if (char === '\r' && !inQuotes) {}
+        else { currentCell += char; }
+      }
+      if (currentCell || currentRow.length > 0) {
+        currentRow.push(currentCell.trim());
+        rows.push(currentRow);
+      }
+      return rows;
+    }
+
+    function renderTable() {
+      const searchVal = document.getElementById('search-input').value.trim().toLowerCase();
+      const thead = document.getElementById('table-headers');
+      const tbody = document.getElementById('table-body');
+
+      // Render Headers
+      if (currentHeaders.length > 0) {
+        thead.innerHTML = `<tr>${currentHeaders.map((h, i) => `<th class="px-4 py-3.5 text-right font-black uppercase text-[11px] tracking-wider text-gray-300">${h || `عمود ${i+1}`}</th>`).join('')}</tr>`;
+      } else {
+        thead.innerHTML = '';
+      }
+
+      // Filter Rows
+      const filtered = currentRawRows.filter(row => {
+        if (!searchVal) return true;
+        return row.some(cell => String(cell).toLowerCase().includes(searchVal));
+      });
+
+      document.getElementById('sheet-record-count').innerText = `${filtered.length} of ${currentRawRows.length} Records`;
+
+      if (filtered.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="${currentHeaders.length || 1}" class="py-16 text-center text-gray-500 font-bold">لا توجد بيانات مطابقة للبحث</td></tr>`;
+        return;
+      }
+
+      // Render Rows (capped at 150 for rendering speed)
+      tbody.innerHTML = filtered.slice(0, 150).map((row, idx) => {
+        return `<tr class="row-hover transition-colors border-b border-white/[0.02]">
+          ${row.map(cell => {
+            const str = String(cell || '').trim();
+            const isDone = str.toUpperCase() === 'TRUE';
+            const isFalse = str.toUpperCase() === 'FALSE';
+            const isUrl = str.startsWith('http://') || str.startsWith('https://');
+
+            if (isDone) {
+              return `<td class="px-4 py-3 text-center"><span class="px-2 py-0.5 rounded-md bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-[10px] font-black">TRUE ✓</span></td>`;
+            }
+            if (isFalse) {
+              return `<td class="px-4 py-3 text-center"><span class="px-2 py-0.5 rounded-md bg-white/5 text-gray-500 border border-white/10 text-[10px] font-bold">FALSE</span></td>`;
+            }
+            if (isUrl) {
+              return `<td class="px-4 py-3"><a href="${str}" target="_blank" class="text-amber-400 hover:underline max-w-[180px] truncate block font-mono text-[11px]">${str}</a></td>`;
+            }
+            return `<td class="px-4 py-3 text-right max-w-[240px] truncate">${str || '<span class="text-gray-600">---</span>'}</td>`;
+          }).join('')}
+        </tr>`;
+      }).join('');
+    }
+
+    // Startup
+    initSidebar();
+    switchTab('1476192399');
+  </script>
+</body>
+</html>

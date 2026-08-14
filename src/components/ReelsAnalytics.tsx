@@ -1,21 +1,139 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useEffect } from 'react';
 import { useGoogleSheets } from '../hooks/useGoogleSheets';
+import { supabase } from '../lib/supabase';
 import { 
   BarChart3, Film, CheckCircle2, XCircle, AlertCircle, Clock, 
   Layers, Users, Award, MapPin, PieChart, Search, Calendar, 
   Play, ArrowLeft, History, TrendingUp, Cpu, Sparkles
 } from 'lucide-react';
 
-export const ReelsAnalytics = () => {
-  // Fetch data from the 3 sheets using the existing hook
-  const { data: rawShootingData, loading: shootingLoading, error: shootingError } = useGoogleSheets('1436746012');
-  const { data: rawVeData, loading: veLoading, error: veError } = useGoogleSheets('1939073164');
-  const { data: rawCutsData, loading: cutsLoading, error: cutsError } = useGoogleSheets('0');
+interface ReelsAnalyticsProps {
+  isDemo?: boolean;
+}
+
+export const ReelsAnalytics = ({ isDemo = false }: ReelsAnalyticsProps) => {
+  // 1. Google Sheets fallback / demo data
+  const { data: sheetShooting, loading: shootingLoading, error: shootingError } = useGoogleSheets('1436746012');
+  const { data: sheetVe, loading: veLoading, error: veError } = useGoogleSheets('1939073164');
+  const { data: sheetCuts, loading: cutsLoading, error: cutsError } = useGoogleSheets('0');
+
+  // 2. Supabase Live Production Data
+  const [dbShooting, setDbShooting] = useState<any[]>([]);
+  const [dbVe, setDbVe] = useState<any[]>([]);
+  const [dbCuts, setDbCuts] = useState<any[]>([]);
+  const [dbLoading, setDbLoading] = useState(!isDemo);
+
+  useEffect(() => {
+    if (isDemo) return;
+    let isMounted = true;
+    const fetchSupabaseReels = async () => {
+      setDbLoading(true);
+      try {
+        const [resShooting, resVe, resCuts] = await Promise.all([
+          supabase.from('reels_shooting_26').select('*').order('id', { ascending: false }),
+          supabase.from('reels_ve_26').select('*').order('id', { ascending: false }),
+          supabase.from('reels_cuts_26').select('*').order('id', { ascending: false })
+        ]);
+
+        if (!isMounted) return;
+
+        if (resShooting.data) {
+          setDbShooting(resShooting.data.map((i: any) => ({
+            id: i.code || i.id,
+            code: i.code || '',
+            date: i.date || '',
+            branch: i.branch || '',
+            year: i.year || '',
+            teacher: i.teacher || '',
+            extraName: i.extra_name || '',
+            script: i.script || '',
+            type: i.type || '',
+            format: i.format || '',
+            filmed: i.filmed === true,
+            filmingDate: i.filming_date || '',
+            by: i.by || '',
+            storage: i.storage || '',
+            notes: i.notes || '',
+            driveRaw: i.drive_raw || '',
+            editorCol: i.editor_col || '',
+            done: i.done === true,
+            driveFinal: i.drive_final || '',
+            canceled: i.canceled === true,
+            missingDetails: i.missing_details === true,
+            createdAt: i.created_at
+          })));
+        }
+
+        if (resVe.data) {
+          setDbVe(resVe.data.map((i: any) => ({
+            id: i.code || i.id,
+            code: i.code || '',
+            date: i.date || '',
+            branch: i.branch || '',
+            year: i.year || '',
+            teacher: i.teacher || '',
+            extraName: i.extra_name || '',
+            script: i.script || '',
+            type: i.type || '',
+            format: i.format || '',
+            filmed: i.filmed === true,
+            filmingDate: i.filming_date || '',
+            by: i.by || '',
+            storage: i.storage || '',
+            notes: i.notes || '',
+            driveRaw: i.drive_raw || '',
+            editorCol: i.editor_col || '',
+            done: i.done === true,
+            driveFinal: i.drive_final || '',
+            canceled: i.canceled === true,
+            missingDetails: i.missing_details === true,
+            createdAt: i.created_at
+          })));
+        }
+
+        if (resCuts.data) {
+          setDbCuts(resCuts.data.map((i: any) => ({
+            id: i.code || i.id,
+            code: i.code || '',
+            date: i.date || '',
+            branch: i.branch || '',
+            year: i.year || '',
+            typeCol: i.type_col || 'CUT',
+            creator: i.creator || '',
+            dataFiles: i.data_files || '',
+            script: i.script || '',
+            type: i.type || '',
+            format: i.format || '',
+            creatorNotes: i.creator_notes || '',
+            editorNotes: i.editor_notes || '',
+            missingDetails: i.missing_details === true,
+            problem: i.problem === true,
+            done: i.done === true,
+            editor: i.editor || '',
+            driveFinal: i.drive_final || '',
+            canceled: i.canceled === true,
+            createdAt: i.created_at
+          })));
+        }
+      } catch (err) {
+        console.error('[ReelsAnalytics] Error fetching Supabase reels:', err);
+      } finally {
+        if (isMounted) setDbLoading(false);
+      }
+    };
+
+    fetchSupabaseReels();
+    return () => { isMounted = false; };
+  }, [isDemo]);
+
+  const rawShootingData = isDemo ? sheetShooting : (dbShooting.length > 0 ? dbShooting : sheetShooting);
+  const rawVeData = isDemo ? sheetVe : (dbVe.length > 0 ? dbVe : sheetVe);
+  const rawCutsData = isDemo ? sheetCuts : (dbCuts.length > 0 ? dbCuts : sheetCuts);
 
   const [searchCode, setSearchCode] = useState('');
 
-  const loading = shootingLoading || veLoading || cutsLoading;
-  const error = shootingError || veError || cutsError;
+  const loading = isDemo ? (shootingLoading || veLoading || cutsLoading) : dbLoading;
+  const error = isDemo ? (shootingError || veError || cutsError) : null;
 
   // Date parsing helper
   const parseDate = (dStr: string) => {
@@ -37,15 +155,19 @@ export const ReelsAnalytics = () => {
   const stats = useMemo(() => {
     if (loading || !rawShootingData || !rawVeData || !rawCutsData) return null;
 
-    // Process each stage
-    const shootingData = rawShootingData.map(i => ({ ...i, stage: 'Shooting' }));
-    const veData = rawVeData.map(i => ({ ...i, stage: 'Ve' }));
-    const cutsData = rawCutsData.map(i => ({ ...i, stage: 'Cuts' }));
+    // Check if row has valid content (not a blank row from Google Sheets)
+    const isValidRow = (r: any) => Boolean(r && (String(r.id || '').trim() || String(r.script || '').trim() || String(r.name || '').trim() || String(r.teacher || '').trim()));
 
-    // Deduplicate reels by unique code (id) to ensure items passed from Shooting to Ve/Cuts are counted as 1 unique reel
+    // Process and filter each stage
+    const shootingData = rawShootingData.filter(isValidRow).map(i => ({ ...i, stage: 'Shooting' }));
+    const veData = rawVeData.filter(isValidRow).map(i => ({ ...i, stage: 'Ve' }));
+    const cutsData = rawCutsData.filter(isValidRow).map(i => ({ ...i, stage: 'Cuts' }));
+
+    // Deduplicate reels by unique code (id or script name)
     const uniqueReelsMap = new Map();
     [...shootingData, ...veData, ...cutsData].forEach(item => {
-      const codeKey = (item.id || item.script || Math.random().toString()).trim().toLowerCase();
+      const codeKey = (item.id || item.script || item.name || '').trim().toLowerCase();
+      if (!codeKey) return;
       if (!uniqueReelsMap.has(codeKey)) {
         uniqueReelsMap.set(codeKey, item);
       } else {
@@ -60,7 +182,6 @@ export const ReelsAnalytics = () => {
       }
     });
 
-    const allData = [...shootingData, ...veData, ...cutsData];
     const uniqueAllData = Array.from(uniqueReelsMap.values());
     const total = uniqueAllData.length;
     const completed = uniqueAllData.filter(i => i.done).length;
@@ -267,23 +388,27 @@ export const ReelsAnalytics = () => {
   if (!stats) return null;
 
   return (
-    <div className="p-12 space-y-12 animate-fadeIn animate-duration-300" dir="rtl">
+    <div className="p-6 md:p-8 space-y-8 animate-fadeIn max-w-[1600px] mx-auto" dir="rtl">
       {/* Top Banner */}
-      <div className="p-8 rounded-3xl bg-gradient-to-l from-emerald-600/20 via-teal-900/20 to-transparent border border-emerald-500/30 relative overflow-hidden flex items-center justify-between shadow-[0_0_50px_rgba(16,185,129,0.15)]">
+      <div className="p-6 md:p-8 rounded-3xl bg-gradient-to-l from-emerald-950/40 via-black/60 to-[#0a0d14] border border-emerald-500/20 relative overflow-hidden flex items-center justify-between shadow-2xl">
         <div className="space-y-2 relative z-10">
-          <h2 className="text-3xl font-black text-white arabic-text flex items-center gap-3">
+          <div className="flex items-center gap-3 text-emerald-400 mb-1 uppercase tracking-[0.25em] font-black text-[10px]">
+            <Sparkles size={13} />
+            <span>Reels Operations Hub</span>
+          </div>
+          <h2 className="text-3xl md:text-4xl font-black text-white arabic-text flex items-center gap-3">
             <span>لوحة تحكم إحصائيات الريلز</span>
-            <span className="text-xs px-3 py-1 bg-emerald-500 text-white rounded-full font-bold shadow-lg shadow-emerald-500/50">LIVE V3.5</span>
+            <span className="text-[11px] px-3 py-1 bg-emerald-500 text-white rounded-full font-black shadow-lg shadow-emerald-500/30">LIVE V3.5</span>
           </h2>
-          <p className="text-sm text-emerald-300/80 arabic-text">تحليل فوري لحالة التصوير والمونتاج والتقطيع، متوسط دورة حياة الريل، ومستكشف خط المسار الزمني التفاعلي.</p>
+          <p className="text-xs md:text-sm text-white/50 font-medium arabic-text">تحليل فوري لحالة التصوير والمونتاج والتقطيع، متوسط دورة حياة الريل، ومستكشف خط المسار الزمني التفاعلي.</p>
         </div>
-        <div className="w-20 h-20 rounded-3xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 shrink-0 shadow-inner">
-          <Film size={40} className="animate-pulse" />
+        <div className="w-16 h-16 md:w-20 md:h-20 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400 shrink-0 shadow-inner">
+          <Film size={36} className="animate-pulse" />
         </div>
       </div>
 
       {/* Production Progress Bar (Leader Dashboard Banner) */}
-      <div className="p-6 rounded-3xl bg-gradient-to-r from-emerald-950/40 via-black/60 to-purple-950/40 border border-emerald-500/30 shadow-2xl space-y-4">
+      <div className="p-6 rounded-3xl bg-[#0a0d14] border border-emerald-500/30 shadow-2xl space-y-4">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <span className="text-xl">🚀</span>
@@ -323,7 +448,7 @@ export const ReelsAnalytics = () => {
         </div>
 
         {/* Breakdown Badges */}
-        <div className="grid grid-cols-3 gap-3 pt-2">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-2">
           <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-3 text-center">
             <span className="text-[11px] font-bold text-emerald-400 block arabic-text">🟩 مكتمل (DONE)</span>
             <span className="text-lg font-black font-mono text-white">{stats.completed} ({stats.total > 0 ? Math.round((stats.completed / stats.total) * 100) : 0}%)</span>
@@ -342,21 +467,21 @@ export const ReelsAnalytics = () => {
       {/* KPI Stats Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
         {/* Total Reels */}
-        <div className="p-6 rounded-3xl bg-white/[0.02] border border-white/10 hover:border-emerald-500/50 transition-all duration-300 group hover:shadow-[0_0_30px_rgba(16,185,129,0.15)] relative overflow-hidden">
+        <div className="p-6 rounded-3xl bg-[#0a0d14] border border-white/5 hover:border-emerald-500/40 transition-all duration-300 group hover:shadow-[0_0_30px_rgba(16,185,129,0.15)] relative overflow-hidden">
           <div className="flex items-center justify-between mb-4">
-            <span className="text-xs font-black text-muted group-hover:text-emerald-300 transition-colors arabic-text">إجمالي الريلز</span>
+            <span className="text-xs font-black text-white/50 group-hover:text-emerald-300 transition-colors arabic-text">إجمالي الريلز</span>
             <div className="w-10 h-10 rounded-xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center group-hover:scale-110 transition-transform">
               <Film size={20} />
             </div>
           </div>
           <h3 className="text-4xl font-black tracking-tight text-white">{stats.total}</h3>
-          <p className="text-[10px] text-muted mt-2 arabic-text opacity-60">تشمل التصوير والمونتاج والتقطيع</p>
+          <p className="text-[10px] text-white/40 mt-2 arabic-text">تشمل التصوير والمونتاج والتقطيع</p>
         </div>
 
         {/* Successfully Completed */}
-        <div className="p-6 rounded-3xl bg-white/[0.02] border border-white/10 hover:border-emerald-500/50 transition-all duration-300 group hover:shadow-[0_0_30px_rgba(16,185,129,0.15)] relative overflow-hidden">
+        <div className="p-6 rounded-3xl bg-[#0a0d14] border border-white/5 hover:border-emerald-500/40 transition-all duration-300 group hover:shadow-[0_0_30px_rgba(16,185,129,0.15)] relative overflow-hidden">
           <div className="flex items-center justify-between mb-4">
-            <span className="text-xs font-black text-muted group-hover:text-emerald-400 transition-colors arabic-text">المكتملة بنجاح</span>
+            <span className="text-xs font-black text-white/50 group-hover:text-emerald-400 transition-colors arabic-text">المكتملة بنجاح</span>
             <div className="w-10 h-10 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center group-hover:scale-110 transition-transform shadow-[0_0_15px_rgba(16,185,129,0.4)]">
               <CheckCircle2 size={20} />
             </div>
@@ -368,9 +493,9 @@ export const ReelsAnalytics = () => {
         </div>
 
         {/* In Progress */}
-        <div className="p-6 rounded-3xl bg-white/[0.02] border border-white/10 hover:border-amber-500/50 transition-all duration-300 group hover:shadow-[0_0_30px_rgba(245,158,11,0.15)] relative overflow-hidden">
+        <div className="p-6 rounded-3xl bg-[#0a0d14] border border-white/5 hover:border-amber-500/40 transition-all duration-300 group hover:shadow-[0_0_30px_rgba(245,158,11,0.15)] relative overflow-hidden">
           <div className="flex items-center justify-between mb-4">
-            <span className="text-xs font-black text-muted group-hover:text-amber-400 transition-colors arabic-text">قيد التنفيذ والمراجعة</span>
+            <span className="text-xs font-black text-white/50 group-hover:text-amber-400 transition-colors arabic-text">قيد التنفيذ والمراجعة</span>
             <div className="w-10 h-10 rounded-xl bg-amber-500/10 text-amber-400 flex items-center justify-center group-hover:scale-110 transition-transform">
               <Clock size={20} />
             </div>
@@ -382,9 +507,9 @@ export const ReelsAnalytics = () => {
         </div>
 
         {/* Missing Details */}
-        <div className="p-6 rounded-3xl bg-white/[0.02] border border-white/10 hover:border-purple-500/50 transition-all duration-300 group hover:shadow-[0_0_30px_rgba(147,51,234,0.15)] relative overflow-hidden">
+        <div className="p-6 rounded-3xl bg-[#0a0d14] border border-white/5 hover:border-purple-500/40 transition-all duration-300 group hover:shadow-[0_0_30px_rgba(147,51,234,0.15)] relative overflow-hidden">
           <div className="flex items-center justify-between mb-4">
-            <span className="text-xs font-black text-muted group-hover:text-purple-300 transition-colors arabic-text">تفاصيل ناقصة</span>
+            <span className="text-xs font-black text-white/50 group-hover:text-purple-300 transition-colors arabic-text">تفاصيل ناقصة</span>
             <div className="w-10 h-10 rounded-xl bg-purple-500/20 text-purple-400 flex items-center justify-center group-hover:scale-110 transition-transform animate-pulse shadow-[0_0_15px_rgba(147,51,234,0.5)]">
               <AlertCircle size={20} />
             </div>
@@ -396,9 +521,9 @@ export const ReelsAnalytics = () => {
         </div>
 
         {/* Canceled */}
-        <div className="p-6 rounded-3xl bg-white/[0.02] border border-white/10 hover:border-rose-500/50 transition-all duration-300 group hover:shadow-[0_0_30px_rgba(239,68,68,0.15)] relative overflow-hidden">
+        <div className="p-6 rounded-3xl bg-[#0a0d14] border border-white/5 hover:border-rose-500/40 transition-all duration-300 group hover:shadow-[0_0_30px_rgba(239,68,68,0.15)] relative overflow-hidden">
           <div className="flex items-center justify-between mb-4">
-            <span className="text-xs font-black text-muted group-hover:text-rose-300 transition-colors arabic-text">ملغية</span>
+            <span className="text-xs font-black text-white/50 group-hover:text-rose-300 transition-colors arabic-text">ملغية</span>
             <div className="w-10 h-10 rounded-xl bg-rose-500/10 text-rose-400 flex items-center justify-center group-hover:scale-110 transition-transform">
               <XCircle size={20} />
             </div>

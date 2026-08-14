@@ -2217,6 +2217,113 @@ app.delete('/api/design-tasks', async (req, res) => {
   }
 });
 
+// --- TAGME3AT 26 CRUD ENDPOINTS ---
+app.get('/api/tagme3at', async (req, res) => {
+  try {
+    if (!supabaseAdminClient) throw new Error('Supabase admin not configured');
+    const { data, error } = await supabaseAdminClient
+      .from('tagme3at_26')
+      .select('*')
+      .order('id', { ascending: false });
+
+    if (error) throw error;
+    res.json({ items: data || [] });
+  } catch (err) {
+    console.error('[Proxy /api/tagme3at GET error]:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/tagme3at', async (req, res) => {
+  try {
+    if (!supabaseAdminClient) throw new Error('Supabase admin not configured');
+    const body = req.body;
+    if (!body || !body.uniqueKey) {
+      return res.status(400).json({ error: 'Missing uniqueKey or payload' });
+    }
+
+    const itemData = {
+      unique_key: body.uniqueKey,
+      is_transfer: body.isTagmeTransfer ?? true,
+      name: body.name || '',
+      filing_name: body.filingName || '---',
+      op_sheet: body.opSheet || '',
+      branch: body.branch || '',
+      date: body.date || '',
+      notes_marketing: body.notesMarketing || '',
+      editor: body.editor || 'غير محدد',
+      notes_editors: body.notesEditors || '',
+      done: body.done ?? false,
+      priority: body.priority ?? false,
+      cancel: body.cancel ?? false,
+      thumbnail_link: body.thumbnailLink || '',
+      time: body.time || '',
+      youtube_link: body.youtubeLink || '',
+      uploaded: body.uploaded ?? false,
+      updated_at: new Date().toISOString()
+    };
+
+    const { data, error } = await supabaseAdminClient
+      .from('tagme3at_26')
+      .upsert(itemData, { onConflict: 'unique_key' })
+      .select()
+      .single();
+
+    if (error) throw error;
+    res.json({ item: data });
+  } catch (err) {
+    console.error('[Proxy /api/tagme3at POST error]:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put('/api/tagme3at', async (req, res) => {
+  try {
+    if (!supabaseAdminClient) throw new Error('Supabase admin not configured');
+    const { uniqueKey, updates } = req.body;
+    if (!uniqueKey || !updates) {
+      return res.status(400).json({ error: 'Missing uniqueKey or updates' });
+    }
+
+    const { data, error } = await supabaseAdminClient
+      .from('tagme3at_26')
+      .update({
+        ...updates,
+        updated_at: new Date().toISOString()
+      })
+      .eq('unique_key', uniqueKey)
+      .select()
+      .single();
+
+    if (error) throw error;
+    res.json({ item: data });
+  } catch (err) {
+    console.error('[Proxy /api/tagme3at PUT error]:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete('/api/tagme3at', async (req, res) => {
+  try {
+    if (!supabaseAdminClient) throw new Error('Supabase admin not configured');
+    const uniqueKey = req.query.key || req.query.uniqueKey || req.body.uniqueKey;
+    if (!uniqueKey) {
+      return res.status(400).json({ error: 'Missing uniqueKey parameter' });
+    }
+
+    const { error } = await supabaseAdminClient
+      .from('tagme3at_26')
+      .delete()
+      .eq('unique_key', uniqueKey);
+
+    if (error) throw error;
+    res.json({ success: true });
+  } catch (err) {
+    console.error('[Proxy /api/tagme3at DELETE error]:', err.message);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.listen(3001, () => console.log('✅ Dev API proxy running on http://localhost:3001'));
 
 

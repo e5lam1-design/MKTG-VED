@@ -1,10 +1,235 @@
-import React, { useState, useMemo, useEffect } from 'react';
-import { Loader2, Search, CheckSquare, Square, ChevronDown, Plus, X } from 'lucide-react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
+import { Loader2, Search, CheckSquare, Square, ChevronDown, Plus, X, Undo2, Redo2, Layers, Calendar, User, Eye, Sparkles, AlertTriangle } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { useDesignersTasks } from '../hooks/useDesignersTasks';
 
 const DEFAULT_DESIGNERS = ['SHERIF', 'SHROUK', 'ESRAA', 'Hesham', 'Sohaila', 'alaa', 'alaa zakria', 'NOUR', 'NOURHAN', 'KHALED', 'EMAN', 'AWNEY', 'ANAS', 'SAMIR', 'MONA', 'YOMNA', 'MANAR', 'MARAM', 'Esraa nagi', 'A.AMR', 'AHMED', 'nada', 'abdelkerim', 'Donia', 'Esraa Naga', 'A.Medhat'];
 const DEFAULT_PRIORITIES = ['انهارده - ضروري', 'بكرة', 'انهارده - ممكن يتأجل', 'CHECK DEADLINE'];
 const DEFAULT_REQUESTERS = ['Narden', 'AYA', 'MANAR', 'JUMANA'];
 const DEFAULT_TYPES = ['THUMBNAIL', 'YT-COMMUNTIY', 'SOCIAL-MEDIA', 'OTHER'];
+
+// Interactive Floating Popover for Review Tasks (Opens Upwards with Distinct Filter Controls)
+const ReviewTasksPopover = ({
+  name,
+  count,
+  tasks,
+  isActive,
+  onToggleFilter,
+  colorScheme
+}: {
+  name: string;
+  count: number;
+  tasks: any[];
+  isActive: boolean;
+  onToggleFilter: () => void;
+  colorScheme: {
+    badgeBg: string;
+    badgeBorder: string;
+    badgeText: string;
+    activeRing: string;
+    dotColor: string;
+    glowColor?: string;
+  };
+}) => {
+  const [isOpen, setIsOpen] = useState(false);
+  const popoverRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (popoverRef.current && !popoverRef.current.contains(e.target as Node)) {
+        setIsOpen(false);
+      }
+    };
+    if (isOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isOpen]);
+
+  const isUrgent = count > 5;
+
+  return (
+    <div className="relative inline-block" ref={popoverRef}>
+      {/* Floating Interactive Popover (OPENS DOWNWARDS WITH ZERO CLIPPING) */}
+      <AnimatePresence>
+        {isOpen && (
+          <motion.div
+            initial={{ opacity: 0, y: -10, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -8, scale: 0.95 }}
+            transition={{ duration: 0.2, ease: "easeOut" }}
+            className="absolute left-0 sm:left-1/2 sm:-translate-x-1/2 top-full mt-3.5 w-84 sm:w-96 bg-[#070a12] border border-purple-500/40 rounded-3xl p-4 shadow-[0_30px_80px_rgba(0,0,0,0.98)] ring-1 ring-white/10 z-[500] space-y-3.5"
+            dir="rtl"
+          >
+            {/* Pointer triangle arrow pointing UP towards pill */}
+            <div className="absolute -top-2 left-1/2 -translate-x-1/2 w-4 h-4 bg-[#0e1322] border-t border-l border-purple-500/40 rotate-45 pointer-events-none" />
+
+            {/* Header with gradient background */}
+            <div className="flex items-center justify-between bg-white/[0.04] -mx-4 -mt-4 p-4 rounded-t-3xl border-b border-white/10">
+              <div className="flex items-center gap-2.5">
+                <span className={`w-3 h-3 rounded-full ${colorScheme.dotColor} shadow-md animate-pulse`} />
+                <div>
+                  <h4 className="text-sm font-black text-white arabic-text flex items-center gap-2">
+                    <span>مهام المراجعة لـ {name}</span>
+                    <Sparkles size={14} className="text-amber-400" />
+                  </h4>
+                  <p className="text-[10px] text-white/50 font-bold">
+                    {count === 0 ? 'لا توجد مهام معلقة' : `يوجد ${count} مهام قيد المراجعة والتنفيذ`}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsOpen(false)}
+                className="w-7 h-7 rounded-full bg-white/10 hover:bg-white/20 text-white/70 hover:text-white flex items-center justify-center transition-colors cursor-pointer"
+              >
+                <X size={14} />
+              </button>
+            </div>
+
+            {/* Task Cards List */}
+            <div className="max-h-72 overflow-y-auto space-y-2.5 pr-1 scrollbar-thin">
+              {tasks.length === 0 ? (
+                <div className="text-center py-8 text-white/50 text-xs font-bold arabic-text flex flex-col items-center gap-2 bg-white/[0.02] rounded-2xl border border-white/5">
+                  <span className="text-3xl">🎉</span>
+                  <span className="text-emerald-400 font-black">All Clear!</span>
+                  <span className="text-[11px]">لا توجد مهام مراجعة نشطة لهذا المصمم</span>
+                </div>
+              ) : (
+                tasks.map((t: any, idx: number) => {
+                  const taskTitle = t.notes || t.reference || t.type || `مهمة #${idx + 1}`;
+                  return (
+                    <div
+                      key={t.id || idx}
+                      className="bg-[#111624] hover:bg-[#161d30] border border-white/10 hover:border-purple-500/50 rounded-2xl p-3.5 transition-all space-y-2.5 group shadow-md text-right"
+                    >
+                      {/* Task Top Row */}
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-xs font-black text-purple-300 font-mono bg-purple-500/20 px-2 py-0.5 rounded-lg border border-purple-500/30">
+                          تاسك #{idx + 1}
+                        </span>
+                        <div className="flex items-center gap-1.5 flex-wrap justify-end">
+                          {t.type && (
+                            <span className="text-[10px] font-black px-2 py-0.5 rounded-lg bg-sky-500/20 text-sky-300 border border-sky-500/40 shadow-sm">
+                              {t.type}
+                            </span>
+                          )}
+                          {t.priority && (
+                            <span className="text-[10px] font-black px-2 py-0.5 rounded-lg bg-amber-500/20 text-amber-300 border border-amber-500/40 shadow-sm">
+                              {t.priority}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Title / Description */}
+                      <p className="text-xs font-bold text-white arabic-text leading-relaxed line-clamp-3">
+                        {taskTitle}
+                      </p>
+
+                      {/* Details row: Creator, Deadline */}
+                      <div className="flex items-center justify-between text-[11px] text-white/70 pt-2 border-t border-white/5">
+                        {t.designer ? (
+                          <span className="font-bold truncate max-w-[140px] flex items-center gap-1">
+                            <span className="text-muted/60">الكريتور:</span>
+                            <span className="text-white font-black">{t.designer}</span>
+                          </span>
+                        ) : <span />}
+                        {t.deadline ? (
+                          <span className="font-mono text-amber-300 font-bold bg-amber-500/15 px-2.5 py-0.5 rounded-lg border border-amber-500/30 shadow-sm">
+                            📅 {t.deadline}
+                          </span>
+                        ) : null}
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+
+            {/* Distinctive Filter Toggle Button in Popover */}
+            <div className="pt-2 border-t border-white/10">
+              <button
+                type="button"
+                onClick={() => {
+                  onToggleFilter();
+                  setIsOpen(false);
+                }}
+                className={`w-full py-2.5 px-4 rounded-2xl text-xs font-black transition-all flex items-center justify-center gap-2 cursor-pointer shadow-lg ${
+                  isActive
+                    ? 'bg-rose-500/25 hover:bg-rose-500/40 border border-rose-500/50 text-rose-300 hover:text-white'
+                    : 'bg-purple-600 hover:bg-purple-500 text-white shadow-purple-600/40 hover:scale-[1.02] active:scale-98'
+                }`}
+              >
+                {isActive ? (
+                  <>
+                    <X size={15} />
+                    <span>إلغاء فلتر جدول {name} (عرض الكل)</span>
+                  </>
+                ) : (
+                  <>
+                    <Eye size={15} />
+                    <span>تصفية الجدول على مهام {name} فقط ({count} تاسك) 🎯</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Trigger Pill Button with Single Click (Filter) & Double Click (Open Popup) */}
+      <div className="flex items-center gap-1.5">
+        <button
+          type="button"
+          onClick={() => onToggleFilter()}
+          onDoubleClick={(e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            setIsOpen(prev => !prev);
+          }}
+          className={`flex items-center gap-2 px-3.5 py-1.5 rounded-full text-sm font-black transition-all hover:scale-105 active:scale-95 select-none outline-none cursor-pointer ${
+            isActive
+              ? `${colorScheme.badgeBg} text-white border-2 ${colorScheme.badgeBorder} shadow-xl ring-2 ${colorScheme.activeRing} scale-105`
+              : `${colorScheme.badgeBg} ${colorScheme.badgeText} border ${colorScheme.badgeBorder} shadow-lg hover:brightness-125`
+          } ${isUrgent ? 'animate-bounce' : ''}`}
+          title={`نقرة واحدة: فلترة الجدول على ${name} | نقرتين مزدوجتين: عرض تفاصيل الـ Pop-up`}
+        >
+          <span className={`w-2 h-2 rounded-full ${colorScheme.dotColor} ${isUrgent ? 'animate-ping' : 'animate-pulse'}`} />
+          <span>{isUrgent ? `⚠️ ${name}:` : `${name}:`}</span>
+          
+          {/* Clickable Count Badge (opens popup on direct click too!) */}
+          <span
+            onClick={(e) => {
+              e.stopPropagation();
+              setIsOpen(prev => !prev);
+            }}
+            className="text-white font-black font-mono bg-white/15 hover:bg-white/30 px-1.5 py-0.5 rounded-md text-xs transition-colors shadow-inner flex items-center gap-1"
+            title="اضغط لعرض تفاصيل المهام"
+          >
+            <span>{count}</span>
+            <ChevronDown size={10} className={`transition-transform duration-300 ${isOpen ? 'rotate-180 text-white' : 'opacity-70'}`} />
+          </span>
+        </button>
+
+        {/* If filtered, show quick cancel badge */}
+        {isActive && (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleFilter();
+            }}
+            className="p-1 rounded-full bg-rose-500/20 hover:bg-rose-500/40 text-rose-300 border border-rose-500/40 transition-all text-[10px] font-bold cursor-pointer"
+            title="إلغاء الفلتر"
+          >
+            <X size={12} />
+          </button>
+        )}
+      </div>
+    </div>
+  );
+};
 
 // Helper to get custom items stored in localStorage
 const getStoredCustomItems = (key: string, defaults: string[]) => {
@@ -111,18 +336,41 @@ const HeaderFilter = ({ label, value, onChange, options }: any) => {
   );
 };
 
-// Optimized inline editable Notes Input component
-const NotesInput = ({ value, onChange, className }: any) => {
-  const [val, setVal] = React.useState(value || '');
+// Enhanced inline editable Notes Input with Undo/Redo History system
+const NotesInput = ({ value, onChange, className, itemKey }: any) => {
+  const historyKey = `hist_design_notes_${itemKey || 'global'}`;
+  
+  const [history, setHistory] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem(historyKey);
+      if (saved) return JSON.parse(saved);
+    } catch (e) {}
+    return value ? [value] : [''];
+  });
+  
+  const [currentIndex, setCurrentIndex] = useState<number>(() => history.length - 1);
+  const [val, setVal] = useState(value || '');
 
-  React.useEffect(() => {
+  useEffect(() => {
     setVal(value || '');
   }, [value]);
 
-  const handleBlur = () => {
-    if (val !== (value || '')) {
-      onChange(val);
+  const commitValue = (newVal: string) => {
+    if (newVal !== history[currentIndex] && newVal !== history[history.length - 1]) {
+      const newHistory = [...history.slice(0, currentIndex + 1), newVal].slice(-25);
+      setHistory(newHistory);
+      setCurrentIndex(newHistory.length - 1);
+      try {
+        localStorage.setItem(historyKey, JSON.stringify(newHistory));
+      } catch (e) {}
+      onChange(newVal);
+    } else if (newVal !== (value || '')) {
+      onChange(newVal);
     }
+  };
+
+  const handleBlur = () => {
+    commitValue(val);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
@@ -131,25 +379,77 @@ const NotesInput = ({ value, onChange, className }: any) => {
     }
   };
 
+  const undo = () => {
+    if (currentIndex > 0) {
+      const prevVal = history[currentIndex - 1];
+      setCurrentIndex(currentIndex - 1);
+      setVal(prevVal);
+      onChange(prevVal);
+    }
+  };
+
+  const redo = () => {
+    if (currentIndex < history.length - 1) {
+      const nextVal = history[currentIndex + 1];
+      setCurrentIndex(currentIndex + 1);
+      setVal(nextVal);
+      onChange(nextVal);
+    }
+  };
+
+  const canUndo = currentIndex > 0;
+  const canRedo = currentIndex < history.length - 1;
+
   return (
-    <input
-      type="text"
-      value={val}
-      onChange={(e) => setVal(e.target.value)}
-      onBlur={handleBlur}
-      onKeyDown={handleKeyDown}
-      placeholder="إضافة ملاحظات..."
-      className={`bg-transparent text-xs font-medium border border-transparent focus:border-white/20 hover:bg-white/5 focus:bg-[#0a0d14] rounded-lg px-2.5 py-1.5 outline-none text-right transition-all w-full max-w-[250px] arabic-text placeholder:text-white/10 ${className}`}
-      dir="rtl"
-    />
+    <div className="relative flex items-center gap-1 group w-full max-w-[280px]">
+      <button 
+        onClick={undo} 
+        disabled={!canUndo}
+        type="button"
+        className={`p-1 rounded-full bg-black/40 border transition-all shrink-0 cursor-pointer ${
+          canUndo 
+            ? 'border-purple-500/50 text-purple-400 hover:bg-purple-500/20 hover:scale-110 shadow-lg' 
+            : 'border-white/5 text-white/10 opacity-30 cursor-not-allowed'
+        }`}
+        title="تراجع (Undo)"
+      >
+        <Undo2 size={12} />
+      </button>
+
+      <input
+        type="text"
+        value={val}
+        onChange={(e) => setVal(e.target.value)}
+        onBlur={handleBlur}
+        onKeyDown={handleKeyDown}
+        placeholder="إضافة ملاحظات..."
+        className={`bg-transparent text-xs font-medium border border-transparent focus:border-purple-500/50 hover:bg-white/5 focus:bg-[#0a0d14] rounded-lg px-2.5 py-1.5 outline-none text-right transition-all w-full arabic-text placeholder:text-white/10 ${className}`}
+        dir="rtl"
+      />
+
+      <button 
+        onClick={redo} 
+        disabled={!canRedo}
+        type="button"
+        className={`p-1 rounded-full bg-black/40 border transition-all shrink-0 cursor-pointer ${
+          canRedo 
+            ? 'border-purple-500/50 text-purple-400 hover:bg-purple-500/20 hover:scale-110 shadow-lg' 
+            : 'border-white/5 text-white/10 opacity-30 cursor-not-allowed'
+        }`}
+        title="إعادة (Redo)"
+      >
+        <Redo2 size={12} />
+      </button>
+    </div>
   );
 };
 
-export default function DesignersDashboard({ liveData, setLiveData, loading, onAddDesignTask, onUpdateDesignTask }: any) {
+export default function DesignersDashboard({ isDemoMode = false, liveData: sheetData }: { isDemoMode?: boolean; liveData?: any[] } = {}) {
   const currentMonthNum = String(new Date().getMonth() + 1);
   const [selectedMonth, setSelectedMonth] = useState<string>('All');
   const [searchTerm, setSearchTerm] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+  const [visibleLimit, setVisibleLimit] = useState<number>(300);
   const [filters, setFilters] = useState({
     designer: 'All',
     priority: 'All',
@@ -157,6 +457,22 @@ export default function DesignersDashboard({ liveData, setLiveData, loading, onA
     type: 'All',
     done: 'All'
   });
+
+  useEffect(() => {
+    setVisibleLimit(300);
+  }, [selectedMonth, searchTerm, filters]);
+
+  // ── Time-aware alert: fires on tab entry if current time ≥ 14:30 ──────────
+  const [showLateAlert, setShowLateAlert] = useState(false);
+  useEffect(() => {
+    const now = new Date();
+    const hours = now.getHours();
+    const minutes = now.getMinutes();
+    // After 14:30 (2:30 PM)
+    if (hours > 14 || (hours === 14 && minutes >= 30)) {
+      setShowLateAlert(true);
+    }
+  }, []); // only on mount (tab entry)
   
   const toggleRequesterFilter = (name: string) => {
     setFilters(prev => {
@@ -235,10 +551,19 @@ export default function DesignersDashboard({ liveData, setLiveData, loading, onA
     return null;
   };
   
-  // Local state to make the table fully interactive and responsive
-  const [localRows, setLocalRows] = useState<any[]>([]);
+  // ── Data source: Supabase in production, Google Sheets in demo ──────────
+  const supabase = useDesignersTasks();
+  const localRows: any[] = isDemoMode
+    ? (Array.isArray(sheetData) ? sheetData : [])
+    : supabase.tasks;
+  const loading = isDemoMode ? false : supabase.loading;
+  const addTask = isDemoMode ? null : supabase.addTask;
+  const updateTask = isDemoMode ? null : supabase.updateTask;
+  const toggleDone = isDemoMode ? null : supabase.toggleDone;
+
   const [showAddModal, setShowAddModal] = useState(false);
   const [addForm, setAddForm] = useState({
+    name: '',
     date: new Date().toLocaleDateString('en-US'),
     designer: DEFAULT_DESIGNERS[0],
     priority: DEFAULT_PRIORITIES[0],
@@ -250,36 +575,42 @@ export default function DesignersDashboard({ liveData, setLiveData, loading, onA
     done: false
   });
 
-  useEffect(() => {
-    if (Array.isArray(liveData)) {
-      setLocalRows(liveData);
-    }
-  }, [liveData]);
-
   const handleCellChange = async (rowIdOrKey: any, field: string, value: any) => {
-    let targetRow = localRows.find(r => (r.id && r.id === rowIdOrKey) || (r.uniqueKey && r.uniqueKey === rowIdOrKey) || (r.reference && r.reference === rowIdOrKey));
-    if (!targetRow && typeof rowIdOrKey === 'number') {
+    // Find target row by id (number or string) or uniqueKey
+    let targetRow = localRows.find((r: any) => 
+      (r.id !== undefined && String(r.id) === String(rowIdOrKey)) || 
+      (r.uniqueKey && r.uniqueKey === rowIdOrKey)
+    );
+    if (!targetRow && typeof rowIdOrKey === 'number' && localRows[rowIdOrKey]) {
       targetRow = localRows[rowIdOrKey];
     }
-    if (!targetRow) return;
+    if (!targetRow) {
+      console.warn('[DesignersDashboard] targetRow not found for key:', rowIdOrKey);
+      return;
+    }
 
-    // Update local state instantly for seamless responsiveness
-    setLocalRows(prev => {
-      return prev.map(r => {
-        if ((r.id && r.id === targetRow.id) || (r.uniqueKey && r.uniqueKey === targetRow.uniqueKey) || (r.reference && r.reference === targetRow.reference)) {
-          const updated = { ...r, [field]: value };
-          if (field === 'done') {
-            updated.completed_date = value ? new Date().toLocaleDateString('en-US') : '';
-          }
-          return updated;
-        }
-        return r;
-      });
-    });
+    const numericId = Number(targetRow.id);
 
-    // Persist to Google Sheets and Supabase
-    if (onUpdateDesignTask) {
-      await onUpdateDesignTask(targetRow.reference || '', field, value, targetRow.id);
+    if (field === 'done') {
+      if (toggleDone && !isNaN(numericId)) await toggleDone(numericId, targetRow.done);
+    } else if (field === 'done_designer') {
+      if (updateTask && !isNaN(numericId)) {
+        await updateTask(numericId, {
+          done_designer: Boolean(value),
+          done_designer_at: value ? new Date().toISOString() : null,
+        });
+      }
+    } else if (field === 'received_creator') {
+      if (updateTask && !isNaN(numericId)) {
+        await updateTask(numericId, {
+          received_creator: Boolean(value),
+          received_creator_at: value ? new Date().toISOString() : null,
+        });
+      }
+    } else {
+      if (updateTask && !isNaN(numericId)) {
+        await updateTask(numericId, { [field]: value });
+      }
     }
   };
 
@@ -287,18 +618,16 @@ export default function DesignersDashboard({ liveData, setLiveData, loading, onA
     e.preventDefault();
     setIsSaving(true);
     try {
-      if (onAddDesignTask) {
-        await onAddDesignTask(addForm);
+      if (addTask) {
+        await addTask(addForm as any);
       } else {
-        const newTask = {
-          ...addForm,
-          uniqueKey: `design_${Date.now()}`
-        };
-        setLocalRows(prev => [newTask, ...prev]);
+        // Demo mode — local only
+        console.log('[Demo] Would add task:', addForm);
       }
       setShowAddModal(false);
       // Reset form
       setAddForm({
+        name: '',
         date: new Date().toLocaleDateString('en-US'),
         designer: allDesignersList[0] || '',
         priority: allPrioritiesList[0] || '',
@@ -472,7 +801,7 @@ export default function DesignersDashboard({ liveData, setLiveData, loading, onA
       }
       // 1. Search term match
       if (searchTerm) {
-        const searchString = `${row.date || ''} ${row.designer || ''} ${row.priority || ''} ${row.requester || ''} ${row.type || ''} ${row.notes || ''}`.toLowerCase();
+        const searchString = `${row.name || ''} ${row.task_name || ''} ${row.script || ''} ${row.date || ''} ${row.designer || ''} ${row.priority || ''} ${row.requester || ''} ${row.type || ''} ${row.reference || ''} ${row.notes || ''}`.toLowerCase();
         if (!searchString.includes(searchTerm.toLowerCase())) return false;
       }
       // 2. Designer filter match
@@ -483,10 +812,10 @@ export default function DesignersDashboard({ liveData, setLiveData, loading, onA
       if (filters.requester !== 'All' && String(row.requester || '').trim() !== filters.requester) return false;
       // 5. Type filter match
       if (filters.type !== 'All' && String(row.type || '').trim() !== filters.type) return false;
-      // 6. Done filter match
+      // 6. Done filter match (based on done_designer)
       if (filters.done !== 'All') {
         const isDone = filters.done === 'Done';
-        if (!!row.done !== isDone) return false;
+        if (!!row.done_designer !== isDone) return false;
       }
       return true;
     });
@@ -521,32 +850,57 @@ export default function DesignersDashboard({ liveData, setLiveData, loading, onA
     return Array.from(new Set([...stored, ...fromRows]));
   }, [localRows]);
 
-  const countAya = useMemo(() => {
-    if (!Array.isArray(localRows)) return 0;
+  const tasksAya = useMemo(() => {
+    if (!Array.isArray(localRows)) return [];
     return localRows.filter((r: any) => 
       r && !r.done && 
       (String(r.requester || '').toLowerCase().trim() === 'aya' || 
        String(r.designer || '').toLowerCase().trim() === 'aya')
-    ).length;
+    );
   }, [localRows]);
 
-  const countManar = useMemo(() => {
-    if (!Array.isArray(localRows)) return 0;
+  const tasksManar = useMemo(() => {
+    if (!Array.isArray(localRows)) return [];
     return localRows.filter((r: any) => 
       r && !r.done && 
       (String(r.requester || '').toLowerCase().trim() === 'manar' || 
        String(r.designer || '').toLowerCase().trim() === 'manar')
-    ).length;
+    );
   }, [localRows]);
 
-  const countNarden = useMemo(() => {
-    if (!Array.isArray(localRows)) return 0;
+  const tasksNarden = useMemo(() => {
+    if (!Array.isArray(localRows)) return [];
     return localRows.filter((r: any) => 
       r && !r.done && 
       (String(r.requester || '').toLowerCase().trim() === 'narden' || 
        String(r.designer || '').toLowerCase().trim() === 'narden')
-    ).length;
+    );
   }, [localRows]);
+
+  // Calculate real-time workload for all candidate designers to suggest the least busy one
+  const designerWorkloads = useMemo(() => {
+    if (!Array.isArray(localRows)) return [];
+    return allRequestersList.map(name => {
+      const activeCount = localRows.filter((r: any) => 
+        r && !r.done && 
+        (String(r.requester || '').toLowerCase().trim() === name.toLowerCase() || 
+         String(r.designer || '').toLowerCase().trim() === name.toLowerCase())
+      ).length;
+      return { name, count: activeCount };
+    }).sort((a, b) => a.count - b.count);
+  }, [localRows, allRequestersList]);
+
+  const bestSuggestedDesigner = designerWorkloads[0];
+
+  // Automatically pre-select the most available / free designer when opening the Add Modal
+  useEffect(() => {
+    if (showAddModal && bestSuggestedDesigner?.name) {
+      setAddForm(prev => ({
+        ...prev,
+        requester: bestSuggestedDesigner.name
+      }));
+    }
+  }, [showAddModal]);
 
   if (loading) {
     return (
@@ -559,8 +913,43 @@ export default function DesignersDashboard({ liveData, setLiveData, loading, onA
 
   return (
     <div className="flex-1 flex flex-col w-full animate-fadeIn max-w-[1600px] mx-auto">
-      {/* Header & Controls */}
-      <div className="mb-8 flex flex-col md:flex-row justify-between items-start md:items-end gap-6 bg-[#0a0d14] p-6 rounded-3xl border border-white/5">
+
+      {/* ⏰ Late-Day Toast Alert */}
+      <AnimatePresence>
+        {showLateAlert && (
+          <motion.div
+            initial={{ opacity: 0, y: -16, scale: 0.97 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -10, scale: 0.97 }}
+            transition={{ duration: 0.3, ease: 'easeOut' }}
+            className="w-full mb-4"
+            dir="rtl"
+          >
+            <div className="relative w-full bg-[#0f0900] border border-amber-500/40 rounded-2xl px-5 py-3.5 shadow-[0_8px_30px_rgba(0,0,0,0.6)] flex items-center justify-between gap-4 overflow-hidden">
+              {/* Ambient glow */}
+              <div className="absolute inset-0 bg-amber-500/[0.04] pointer-events-none" />
+
+              {/* Icon + Text */}
+              <div className="flex items-center gap-3 min-w-0">
+                <span className="text-xl shrink-0">⚠️</span>
+                <p className="text-sm font-black text-amber-200 arabic-text leading-snug">
+                  بعد الساعة <span className="text-white text-base">٢:٣٠</span> الحاجة مش هتخلص في نفس اليوم
+                </p>
+              </div>
+
+              {/* Close */}
+              <button
+                onClick={() => setShowLateAlert(false)}
+                className="shrink-0 w-7 h-7 rounded-full bg-white/5 hover:bg-amber-500/20 text-white/30 hover:text-amber-300 flex items-center justify-center transition-all cursor-pointer"
+              >
+                <X size={13} />
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+      {/* Sticky Header & Controls */}
+      <div className="sticky top-4 z-40 mb-8 flex flex-col md:flex-row justify-between items-start md:items-end gap-6 bg-[#0a0d14]/90 backdrop-blur-xl p-6 rounded-3xl border border-purple-500/20 shadow-[0_10px_30px_rgba(0,0,0,0.8)]">
         <div>
           <div className="flex items-center gap-3 text-purple-500 mb-2 uppercase tracking-[0.3em] font-black text-[10px]">
             <span className="relative flex h-2 w-2">
@@ -575,101 +964,59 @@ export default function DesignersDashboard({ liveData, setLiveData, loading, onA
               {filteredRows.length} RECORDS LOADED FROM GOOGLE SHEETS
             </p>
             <div className="h-6 w-0.5 bg-white/20 hidden sm:block" />
-            <div className="flex flex-wrap items-center gap-4">
-              <span className="text-sm sm:text-base uppercase font-extrabold text-white/70 tracking-wider">Active Review Tasks:</span>
+            <div className="flex flex-wrap items-center gap-3 bg-black/40 border border-white/10 px-4 py-2 rounded-2xl shadow-inner backdrop-blur-md">
+              <span className="text-xs sm:text-sm uppercase font-black text-purple-300 tracking-wider flex items-center gap-2">
+                <Sparkles size={14} className="text-purple-400" />
+                <span>Active Review Tasks:</span>
+              </span>
               
-              {/* AYA Counter */}
-              {countAya > 5 ? (
-                <button
-                  onClick={() => toggleRequesterFilter('AYA')}
-                  className={`flex items-center gap-2 px-4 py-1.5 rounded-full text-sm font-black transition-all hover:scale-105 active:scale-95 select-none outline-none ${
-                    filters.requester === 'AYA'
-                      ? 'bg-amber-500/50 text-white border-2 border-amber-400 shadow-xl ring-2 ring-amber-400/50 scale-105'
-                      : 'bg-amber-500/30 text-amber-300 border border-amber-500/60 shadow-lg hover:bg-amber-500/40'
-                  } ${countAya > 5 ? 'animate-bounce' : ''}`}
-                  title="تحذير: ضغط عمل مرتفع! اضغط للفلترة."
-                >
-                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping" />
-                  <span>⚠️ AYA:</span>
-                  <span className="text-white font-black font-mono">{countAya}</span>
-                </button>
-              ) : (
-                <button
-                  onClick={() => toggleRequesterFilter('AYA')}
-                  className={`flex items-center gap-2 px-4 py-1.5 rounded-full text-sm font-black transition-all hover:scale-105 active:scale-95 select-none outline-none ${
-                    filters.requester === 'AYA'
-                      ? 'bg-[#6a1b9a]/60 text-white border-2 border-purple-400 shadow-xl ring-2 ring-purple-400/50 scale-105'
-                      : 'bg-[#6a1b9a]/30 text-[#d8b4fe] border border-[#6a1b9a]/60 shadow-lg hover:bg-[#6a1b9a]/45'
-                  }`}
-                  title="اضغط لتصفية المهام"
-                >
-                  <span className="w-1.5 h-1.5 rounded-full bg-[#c084fc] animate-pulse" />
-                  <span>AYA:</span>
-                  <span className="text-white font-black font-mono">{countAya}</span>
-                </button>
-              )}
+              {/* AYA Popover */}
+              <ReviewTasksPopover
+                name="AYA"
+                count={tasksAya.length}
+                tasks={tasksAya}
+                isActive={filters.requester === 'AYA'}
+                onToggleFilter={() => toggleRequesterFilter('AYA')}
+                colorScheme={{
+                  badgeBg: 'bg-[#6a1b9a]/30',
+                  badgeBorder: 'border-[#6a1b9a]/60',
+                  badgeText: 'text-[#d8b4fe]',
+                  activeRing: 'ring-purple-400/50',
+                  dotColor: 'bg-[#c084fc]'
+                }}
+              />
 
-              {/* MANAR Counter */}
-              {countManar > 5 ? (
-                <button
-                  onClick={() => toggleRequesterFilter('MANAR')}
-                  className={`flex items-center gap-2 px-4 py-1.5 rounded-full text-sm font-black transition-all hover:scale-105 active:scale-95 select-none outline-none ${
-                    filters.requester === 'MANAR'
-                      ? 'bg-amber-500/50 text-white border-2 border-amber-400 shadow-xl ring-2 ring-amber-400/50 scale-105'
-                      : 'bg-amber-500/30 text-amber-300 border border-amber-500/60 shadow-lg hover:bg-amber-500/40'
-                  } ${countManar > 5 ? 'animate-bounce' : ''}`}
-                  title="تحذير: ضغط عمل مرتفع! اضغط للفلترة."
-                >
-                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping" />
-                  <span>⚠️ MANAR:</span>
-                  <span className="text-white font-black font-mono">{countManar}</span>
-                </button>
-              ) : (
-                <button
-                  onClick={() => toggleRequesterFilter('MANAR')}
-                  className={`flex items-center gap-2 px-4 py-1.5 rounded-full text-sm font-black transition-all hover:scale-105 active:scale-95 select-none outline-none ${
-                    filters.requester === 'MANAR'
-                      ? 'bg-[#0077b6]/60 text-white border-2 border-sky-400 shadow-xl ring-2 ring-sky-400/50 scale-105'
-                      : 'bg-[#0077b6]/30 text-[#90caf9] border border-[#0077b6]/60 shadow-lg hover:bg-[#0077b6]/45'
-                  }`}
-                  title="اضغط لتصفية المهام"
-                >
-                  <span className="w-1.5 h-1.5 rounded-full bg-[#38bdf8] animate-pulse" />
-                  <span>MANAR:</span>
-                  <span className="text-white font-black font-mono">{countManar}</span>
-                </button>
-              )}
+              {/* MANAR Popover */}
+              <ReviewTasksPopover
+                name="MANAR"
+                count={tasksManar.length}
+                tasks={tasksManar}
+                isActive={filters.requester === 'MANAR'}
+                onToggleFilter={() => toggleRequesterFilter('MANAR')}
+                colorScheme={{
+                  badgeBg: 'bg-[#0077b6]/30',
+                  badgeBorder: 'border-[#0077b6]/60',
+                  badgeText: 'text-[#90caf9]',
+                  activeRing: 'ring-sky-400/50',
+                  dotColor: 'bg-[#38bdf8]'
+                }}
+              />
 
-              {/* Narden Counter */}
-              {countNarden > 5 ? (
-                <button
-                  onClick={() => toggleRequesterFilter('Narden')}
-                  className={`flex items-center gap-2 px-4 py-1.5 rounded-full text-sm font-black transition-all hover:scale-105 active:scale-95 select-none outline-none ${
-                    filters.requester === 'Narden'
-                      ? 'bg-amber-500/50 text-white border-2 border-amber-400 shadow-xl ring-2 ring-amber-400/50 scale-105'
-                      : 'bg-amber-500/30 text-amber-300 border border-amber-500/60 shadow-lg hover:bg-amber-500/40'
-                  } ${countNarden > 5 ? 'animate-bounce' : ''}`}
-                  title="تحذير: ضغط عمل مرتفع! اضغط للفلترة."
-                >
-                  <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping" />
-                  <span>⚠️ Narden:</span>
-                  <span className="text-white font-black font-mono">{countNarden}</span>
-                </button>
-              ) : (
-                <button
-                  onClick={() => toggleRequesterFilter('Narden')}
-                  className={`flex items-center gap-2 px-4 py-1.5 rounded-full text-sm font-black transition-all hover:scale-105 active:scale-95 select-none outline-none ${
-                    filters.requester === 'Narden'
-                      ? 'bg-[#b71c1c]/50 text-white border-2 border-rose-400 shadow-xl ring-2 ring-rose-400/50 scale-105'
-                      : 'bg-[#b71c1c]/30 text-[#fca5a5] border border-[#b71c1c]/60 shadow-lg hover:bg-[#b71c1c]/45'
-                  }`}
-                  title="اضغط لتصفية المهام"
-                >
-                  <span className="w-1.5 h-1.5 rounded-full bg-[#fca5a5] animate-pulse" />
-                  <span>Narden:</span>
-                  <span className="text-white font-black font-mono">{countNarden}</span>
-                </button>
-              )}
+              {/* Narden Popover */}
+              <ReviewTasksPopover
+                name="Narden"
+                count={tasksNarden.length}
+                tasks={tasksNarden}
+                isActive={filters.requester === 'Narden'}
+                onToggleFilter={() => toggleRequesterFilter('Narden')}
+                colorScheme={{
+                  badgeBg: 'bg-[#b71c1c]/30',
+                  badgeBorder: 'border-[#b71c1c]/60',
+                  badgeText: 'text-[#fca5a5]',
+                  activeRing: 'ring-rose-400/50',
+                  dotColor: 'bg-[#fca5a5]'
+                }}
+              />
             </div>
           </div>
         </div>
@@ -767,16 +1114,32 @@ export default function DesignersDashboard({ liveData, setLiveData, loading, onA
                     options={allTypesList} 
                   />
                 </th>
+                <th className="px-4 py-4 font-bold sticky top-0 bg-[#080a0f] z-10 text-right text-muted/60 min-w-[160px]">اسم السكريبت / التاسك</th>
                 <th className="px-4 py-4 font-bold sticky top-0 bg-[#080a0f] z-10 text-right text-muted/60">ميعاد التسليم</th>
                 <th className="px-4 py-4 font-bold sticky top-0 bg-[#080a0f] z-10 text-left text-muted/60">REFERENCE</th>
                 <th className="px-4 py-4 font-bold sticky top-0 bg-[#080a0f] z-10 w-64 text-right text-muted/60">ملاحظات</th>
+                {/* DONE — المصمم: with filter dropdown */}
                 <th className="px-6 py-3 sticky top-0 bg-[#080a0f] z-10 text-center">
-                  <HeaderFilter 
-                    label="DONE" 
-                    value={filters.done} 
-                    onChange={(val: any) => setFilters(p => ({ ...p, done: val }))} 
-                    options={['Done', 'Pending']} 
-                  />
+                  <div className="flex flex-col items-center gap-1">
+                    <span className="text-[10px] font-black text-emerald-400 tracking-wider uppercase">DONE</span>
+                    <span className="text-[9px] text-white/30 font-bold">المصمم</span>
+                    <select
+                      value={filters.done}
+                      onChange={(e) => setFilters(p => ({ ...p, done: e.target.value }))}
+                      className="mt-0.5 text-[9px] bg-[#0e1322] border border-white/10 rounded-md px-1.5 py-0.5 text-white/60 cursor-pointer outline-none hover:border-emerald-500/40 transition-colors"
+                    >
+                      <option value="All">الكل</option>
+                      <option value="Done">منتهي ✅</option>
+                      <option value="Pending">قيد التنفيذ</option>
+                    </select>
+                  </div>
+                </th>
+                {/* RECEIVED — الكريتور */}
+                <th className="px-6 py-3 sticky top-0 bg-[#080a0f] z-10 text-center">
+                  <div className="flex flex-col items-center gap-0.5">
+                    <span className="text-[10px] font-black text-sky-400 tracking-wider uppercase">RECEIVED</span>
+                    <span className="text-[9px] text-white/30 font-bold">الكريتور</span>
+                  </div>
                 </th>
               </tr>
             </thead>
@@ -792,15 +1155,15 @@ export default function DesignersDashboard({ liveData, setLiveData, loading, onA
                     <Plus size={16} className="stroke-[3]" />
                   </div>
                 </td>
-                <td colSpan={9} className="px-4 py-3.5 text-right arabic-text">
+                <td colSpan={11} className="px-4 py-3.5 text-right arabic-text">
                   <span className="text-xs font-black text-purple-400 group-hover:text-purple-300 transition-colors tracking-wide">
                     + إضافة تاسك جديد (Add New Design Task)
                   </span>
                 </td>
               </tr>
 
-              {filteredRows.map((row: any, i) => {
-                const isDone = !!row.done;
+              {filteredRows.slice(0, visibleLimit).map((row: any, i) => {
+                const isDone = !!row.done_designer;
                 const priorityStr = String(row.priority || '').trim();
                 
                 // Dynamically resolve high-contrast theme classes
@@ -885,6 +1248,18 @@ export default function DesignersDashboard({ liveData, setLiveData, loading, onA
                       />
                     </td>
 
+                    {/* اسم السكريبت / التاسك */}
+                    <td className="px-4 py-3 min-w-[160px]">
+                      <input
+                        type="text"
+                        value={row.name || row.task_name || row.script || ''}
+                        placeholder="تسمية التاسك..."
+                        onChange={(e) => handleCellChange(row.id || row.uniqueKey || row.originalIndex, 'name', e.target.value)}
+                        className="bg-transparent text-xs font-bold border border-transparent focus:border-purple-500/50 hover:bg-white/5 focus:bg-[#0a0d14] rounded-lg px-2.5 py-1.5 outline-none text-right transition-all w-full arabic-text placeholder:text-white/15 text-white"
+                        dir="rtl"
+                      />
+                    </td>
+
                     {/* ميعاد التسليم */}
                     <td className="px-4 py-3">
                       <input
@@ -920,22 +1295,28 @@ export default function DesignersDashboard({ liveData, setLiveData, loading, onA
                     {/* ملاحظات */}
                     <td className="px-4 py-3">
                       <NotesInput
+                        itemKey={row.id || row.uniqueKey || row.originalIndex}
                         value={row.notes}
                         onChange={(val: string) => handleCellChange(row.id || row.uniqueKey || row.originalIndex, 'notes', val)}
                         className={textNotesClass}
                       />
                     </td>
 
-                     {/* DONE */}
+                    {/* DONE — المصمم */}
                     <td className="px-6 py-3 text-center">
                       <div className="flex flex-col items-center justify-center gap-1.5">
-                        <button 
-                          onClick={() => handleCellChange(row.id || row.uniqueKey || row.originalIndex, 'done', !row.done)}
-                          className={`p-1.5 rounded-lg transition-colors ${row.done ? 'bg-emerald-500/20 text-emerald-400 animate-pulse' : 'bg-white/5 text-white/20 hover:bg-white/10 hover:text-white/40'}`}
+                        <button
+                          onClick={() => handleCellChange(row.id || row.uniqueKey || row.originalIndex, 'done_designer', !row.done_designer)}
+                          title="Done — المصمم"
+                          className={`p-1.5 rounded-lg transition-all ${
+                            row.done_designer
+                              ? 'bg-emerald-500/20 text-emerald-400 scale-110 shadow-md shadow-emerald-500/20'
+                              : 'bg-white/5 text-white/20 hover:bg-emerald-500/10 hover:text-emerald-400'
+                          }`}
                         >
-                          {row.done ? <CheckSquare size={16} /> : <Square size={16} />}
+                          {row.done_designer ? <CheckSquare size={16} /> : <Square size={16} />}
                         </button>
-                        {row.done && (
+                        {row.done_designer && (
                           (() => {
                             const days = getTaskDuration(row);
                             if (days !== null) {
@@ -949,6 +1330,21 @@ export default function DesignersDashboard({ liveData, setLiveData, loading, onA
                           })()
                         )}
                       </div>
+                    </td>
+
+                    {/* RECEIVED — الكريتور */}
+                    <td className="px-6 py-3 text-center">
+                      <button
+                        onClick={() => handleCellChange(row.id || row.uniqueKey || row.originalIndex, 'received_creator', !row.received_creator)}
+                        title="استلمته — الكريتور"
+                        className={`p-1.5 rounded-lg transition-all ${
+                          row.received_creator
+                            ? 'bg-sky-500/20 text-sky-400 scale-110 shadow-md shadow-sky-500/20'
+                            : 'bg-white/5 text-white/20 hover:bg-sky-500/10 hover:text-sky-400'
+                        }`}
+                      >
+                        {row.received_creator ? <CheckSquare size={16} /> : <Square size={16} />}
+                      </button>
                     </td>
                   </tr>
                 );
@@ -1039,18 +1435,57 @@ export default function DesignersDashboard({ liveData, setLiveData, loading, onA
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-muted-foreground/70 mb-1.5">المصمم (Designer)</label>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <label className="block text-xs font-bold text-muted-foreground/70">المصمم (Designer)</label>
+                    {bestSuggestedDesigner && (
+                      <span className="text-[10px] font-black text-emerald-400 bg-emerald-500/15 border border-emerald-500/30 px-2 py-0.5 rounded-full flex items-center gap-1 shadow-sm">
+                        <Sparkles size={11} className="text-amber-400" />
+                        <span>الأكثر تفرغاً: {bestSuggestedDesigner.name} ({bestSuggestedDesigner.count} مهام)</span>
+                      </span>
+                    )}
+                  </div>
                   <select
                     value={addForm.requester}
                     onChange={e => setAddForm({...addForm, requester: e.target.value})}
                     className="w-full bg-[#0b1019] border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-purple-500 transition-colors font-bold text-sm cursor-pointer"
                   >
-                    {allRequestersList.map(r => (
-                      <option key={r} value={r} className="bg-[#0b1019]">{r}</option>
+                    {designerWorkloads.map(item => (
+                      <option key={item.name} value={item.name} className="bg-[#0b1019]">
+                        {item.name} — {item.count === 0 ? '🟢 متفرغ تماماً (0 مهام)' : item.count === 1 ? '🟡 1 مهمة قيد المراجعة' : `🔴 ${item.count} مهام نشطة`}
+                      </option>
                     ))}
                   </select>
+
+                  {/* Quick Select Suggestion Chips */}
+                  <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                    <span className="text-[10px] text-white/50 font-bold ml-1">اقتراح ذكي:</span>
+                    {designerWorkloads.map(item => {
+                      const isSelected = addForm.requester === item.name;
+                      const isFree = item.count === 0;
+                      return (
+                        <button
+                          key={item.name}
+                          type="button"
+                          onClick={() => setAddForm({ ...addForm, requester: item.name })}
+                          className={`text-[10px] font-black px-2.5 py-1 rounded-lg border transition-all cursor-pointer flex items-center gap-1.5 ${
+                            isSelected
+                              ? 'bg-purple-600 border-purple-400 text-white shadow-md scale-105 ring-1 ring-purple-400/50'
+                              : isFree
+                              ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/25'
+                              : 'bg-white/5 border-white/10 text-white/70 hover:bg-white/10 hover:text-white'
+                          }`}
+                          title={`اضغط لاختيار ${item.name} (لديه ${item.count} مهام حالياً)`}
+                        >
+                          <span className={`w-1.5 h-1.5 rounded-full ${isFree ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`} />
+                          <span>{item.name}</span>
+                          <span className="font-mono text-[9px] opacity-75">({item.count})</span>
+                          {isFree && <span className="text-[9px]">✨</span>}
+                        </button>
+                      );
+                    })}
+                  </div>
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-muted-foreground/70 mb-1.5">النوع (Type)</label>
@@ -1064,6 +1499,34 @@ export default function DesignersDashboard({ liveData, setLiveData, loading, onA
                     ))}
                   </select>
                 </div>
+              </div>
+
+              {/* اسم السكريبت / التاسك مع زر توليد الاسم */}
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-xs font-bold text-muted-foreground/70">
+                    اسم السكريبت (Script Name / Task)
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const autoName = `${addForm.type || 'TASK'}-${addForm.designer || 'CREATOR'}-${new Date().toLocaleDateString('en-GB').replace(/\//g, '')}`;
+                      setAddForm({ ...addForm, name: autoName });
+                    }}
+                    className="text-[11px] font-black text-purple-300 bg-purple-500/20 hover:bg-purple-500/30 border border-purple-500/40 px-3 py-1 rounded-xl flex items-center gap-1.5 transition-all shadow-sm cursor-pointer"
+                  >
+                    <span>توليد اسم</span>
+                    <span>✨🪄</span>
+                  </button>
+                </div>
+                <input
+                  type="text"
+                  placeholder="مثال: سكريبت مستر حسام أو كود التاسك..."
+                  value={addForm.name || ''}
+                  onChange={e => setAddForm({...addForm, name: e.target.value})}
+                  className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-purple-500 transition-colors font-bold text-sm arabic-text placeholder:text-white/20"
+                  dir="rtl"
+                />
               </div>
 
               <div>

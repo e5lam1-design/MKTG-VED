@@ -6,21 +6,96 @@ import {
   Users, 
   Clock, 
   CheckCircle2, 
-  AlertCircle,
-  FileImage
+  AlertCircle, 
+  FileImage, 
+  Search, 
+  Cpu, 
+  Timer, 
+  ArrowLeft,
+  Calendar,
+  Layers
 } from 'lucide-react';
+import { useDesignersTasks } from '../hooks/useDesignersTasks';
+
+// Helper: format ISO timestamp to readable Arabic datetime
+const formatArabicTime = (iso: string | null | undefined) => {
+  if (!iso) return null;
+  try {
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return null;
+    return d.toLocaleString('ar-EG', {
+      day: '2-digit', month: '2-digit', year: 'numeric',
+      hour: '2-digit', minute: '2-digit', hour12: true
+    });
+  } catch { return null; }
+};
+
+const diffHours = (a: string | null | undefined, b: string | null | undefined): number | null => {
+  if (!a || !b) return null;
+  const da = new Date(a), db = new Date(b);
+  if (isNaN(da.getTime()) || isNaN(db.getTime())) return null;
+  return Math.abs(db.getTime() - da.getTime()) / (1000 * 60 * 60);
+};
+
+const formatDurationBetween = (a: string | null | undefined, b: string | null | undefined): string | null => {
+  if (!a || !b) return null;
+  const da = new Date(a), db = new Date(b);
+  if (isNaN(da.getTime()) || isNaN(db.getTime())) return null;
+  const diffMs = Math.abs(db.getTime() - da.getTime());
+  const diffSec = Math.floor(diffMs / 1000);
+  const diffMin = Math.floor(diffSec / 60);
+  const diffHour = Math.floor(diffMin / 60);
+  const diffDays = Math.floor(diffHour / 24);
+
+  if (diffMin < 1) {
+    return 'أقل من دقيقة';
+  }
+  if (diffMin < 60) {
+    if (diffMin === 1) return 'دقيقة واحدة';
+    if (diffMin === 2) return 'دقيقتين';
+    if (diffMin <= 10) return `${diffMin} دقائق`;
+    return `${diffMin} دقيقة`;
+  }
+  if (diffHour < 24) {
+    const remainMin = diffMin % 60;
+    if (diffHour === 1) return remainMin > 0 ? `ساعة و ${remainMin} دقيقة` : 'ساعة واحدة';
+    if (diffHour === 2) return remainMin > 0 ? `ساعتين و ${remainMin} دقيقة` : 'ساعتين';
+    if (diffHour <= 10) return remainMin > 0 ? `${diffHour} ساعات و ${remainMin} دقيقة` : `${diffHour} ساعات`;
+    return remainMin > 0 ? `${diffHour} ساعة و ${remainMin} دقيقة` : `${diffHour} ساعة`;
+  }
+  
+  const remainHours = diffHour % 24;
+  if (diffDays === 1) return remainHours > 0 ? `يوم و ${remainHours} ساعة` : 'يوم واحد';
+  if (diffDays === 2) return remainHours > 0 ? `يومين و ${remainHours} ساعة` : 'يومين';
+  if (diffDays <= 10) return remainHours > 0 ? `${diffDays} أيام و ${remainHours} ساعة` : `${diffDays} أيام`;
+  return remainHours > 0 ? `${diffDays} يوم و ${remainHours} ساعة` : `${diffDays} يوم`;
+};
+
+const fmtAverageHours = (hours: number | null) => {
+  if (hours === null || isNaN(hours) || hours <= 0) return '—';
+  const totalMin = Math.round(hours * 60);
+  if (totalMin < 1) return 'أقل من دقيقة';
+  if (totalMin < 60) return `${totalMin} دقيقة`;
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+  if (h < 24) {
+    return m > 0 ? `${h} س و ${m} د` : `${h} ساعة`;
+  }
+  const days = (hours / 24).toFixed(1);
+  return `${days} يوم`;
+};
 
 interface DesignAnalyticsProps {
-  liveData: any[];
-  loading: boolean;
+  liveData?: any[];
+  loading?: boolean;
 }
 
-export function DesignAnalytics({ liveData, loading }: DesignAnalyticsProps) {
+export function DesignAnalytics(_props: DesignAnalyticsProps) {
+  const { tasks, loading } = useDesignersTasks();
   const [selectedDesigner, setSelectedDesigner] = useState<string | null>(null);
+  const [taskSearch, setTaskSearch] = useState('');
 
-  const rows = useMemo(() => {
-    return Array.isArray(liveData) ? liveData : [];
-  }, [liveData]);
+  const rows = useMemo(() => tasks, [tasks]);
 
   const stats = useMemo(() => {
     const total = rows.length;
@@ -614,6 +689,318 @@ export function DesignAnalytics({ liveData, loading }: DesignAnalyticsProps) {
             </tbody>
           </table>
         </div>
+      </div>
+
+      {/* ── Section: مستكشف المسار الزمني للتاسك & متوسط دورة حياة التاسك ── */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6" dir="rtl">
+        
+        {/* ── Left Card: مستكشف المسار الزمني للتاسك ── */}
+        <div className="bg-[#0b0e17] border border-white/10 rounded-3xl p-6 shadow-2xl space-y-6 flex flex-col justify-between">
+          <div className="space-y-4">
+            {/* Header */}
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-xl font-black text-white flex items-center gap-2.5">
+                  <Timer className="w-5 h-5 text-indigo-400" />
+                  <span>مستكشف المسار الزمني للتاسك</span>
+                </h3>
+                <p className="text-xs text-white/40 font-bold mt-1">تتبع دورة حياة تاسك محدد ومعرفة حالته في كل مرحلة بالتاريخ</p>
+              </div>
+              <div className="w-10 h-10 rounded-2xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center text-indigo-400">
+                <Timer size={20} />
+              </div>
+            </div>
+
+            {/* Search Input */}
+            <div className="relative">
+              <input
+                type="text"
+                value={taskSearch}
+                onChange={e => setTaskSearch(e.target.value)}
+                placeholder="(مثال: اسم السكريبت، الكريتور، أو النوع) ... ادخل اسم أو كود التاسك للبحث"
+                dir="rtl"
+                className="w-full bg-[#121624] border border-white/10 focus:border-indigo-500/50 rounded-2xl pr-11 pl-4 py-3.5 text-xs sm:text-sm text-white placeholder:text-white/25 outline-none transition-all arabic-text shadow-inner"
+              />
+              <Search size={16} className="absolute right-4 top-1/2 -translate-y-1/2 text-white/40" />
+            </div>
+
+            {/* Quick Chips (أمثلة سريعة) */}
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-[11px] font-black text-white/40 ml-1">أمثلة سريعة:</span>
+              {rows.slice(0, 5).map((t: any, idx: number) => {
+                // Generate a clean human-readable title without any URLs
+                let chipLabel = '';
+                if (t.name && !String(t.name).startsWith('http')) {
+                  chipLabel = t.name;
+                } else if (t.task_name && !String(t.task_name).startsWith('http')) {
+                  chipLabel = t.task_name;
+                } else if (t.script && !String(t.script).startsWith('http')) {
+                  chipLabel = t.script;
+                } else if (t.notes && !String(t.notes).startsWith('http') && t.notes.length <= 25) {
+                  chipLabel = t.notes;
+                } else {
+                  const type = t.type || 'تاسك';
+                  const person = t.designer || t.requester || '';
+                  chipLabel = person ? `${type} - ${person}` : `تاسك #${t.id || idx + 1}`;
+                }
+
+                // Clean search query when clicked
+                const searchQuery = (t.name && !String(t.name).startsWith('http')) ? t.name : (t.id ? String(t.id) : chipLabel);
+
+                return (
+                  <button
+                    key={t.id || idx}
+                    type="button"
+                    onClick={() => setTaskSearch(searchQuery)}
+                    className="text-[11px] font-bold px-3 py-1.5 rounded-xl bg-white/5 hover:bg-indigo-500/20 text-white/70 hover:text-white border border-white/10 hover:border-indigo-500/40 transition-all truncate max-w-[170px] cursor-pointer"
+                    title={chipLabel}
+                  >
+                    {chipLabel}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Selected Task Details & Timeline / Empty State */}
+          <div className="min-h-[220px] flex flex-col justify-center">
+            {(() => {
+              const q = taskSearch.trim().toLowerCase();
+              const matchedTask = q ? rows.find((r: any) => 
+                String(r.name || '').toLowerCase().includes(q) ||
+                String(r.task_name || '').toLowerCase().includes(q) ||
+                String(r.script || '').toLowerCase().includes(q) ||
+                String(r.notes || '').toLowerCase().includes(q) ||
+                String(r.designer || '').toLowerCase().includes(q) ||
+                String(r.requester || '').toLowerCase().includes(q) ||
+                String(r.type || '').toLowerCase().includes(q) ||
+                String(r.reference || '').toLowerCase().includes(q) ||
+                String(r.id || '').includes(q)
+              ) : null;
+
+              if (!matchedTask) {
+                return (
+                  <div className="flex flex-col items-center justify-center py-10 px-4 text-center bg-black/20 rounded-2xl border border-white/5 space-y-2.5">
+                    <div className="w-12 h-12 rounded-2xl bg-white/5 flex items-center justify-center text-white/20 mb-1">
+                      <Cpu size={24} />
+                    </div>
+                    <h4 className="text-sm font-black text-white/80 arabic-text">في انتظار إدخال الكود</h4>
+                    <p className="text-xs text-white/40 max-w-sm arabic-text">ادخل كود أو اسم تاسك محدد للبدء في توليد ورسم خط حياته الزمني تلقائياً.</p>
+                  </div>
+                );
+              }
+
+              const doneAt = formatArabicTime(matchedTask.done_designer_at);
+              const receivedAt = formatArabicTime(matchedTask.received_creator_at);
+              const createdAt = formatArabicTime(matchedTask.created_at || matchedTask.date);
+              
+              const durCreatedToDoneStr = matchedTask.done_designer 
+                ? formatDurationBetween(matchedTask.created_at || matchedTask.date, matchedTask.done_designer_at) 
+                : null;
+              const durDoneToReceivedStr = matchedTask.received_creator 
+                ? formatDurationBetween(matchedTask.done_designer_at, matchedTask.received_creator_at) 
+                : null;
+
+              return (
+                <div className="bg-[#121624] border border-indigo-500/30 rounded-2xl p-5 space-y-4 shadow-xl">
+                  {/* Task Header */}
+                  <div className="flex items-start justify-between gap-3 border-b border-white/10 pb-3">
+                    <div>
+                      <h4 className="text-sm font-black text-white arabic-text">
+                        {matchedTask.name || matchedTask.task_name || matchedTask.script || matchedTask.notes || matchedTask.reference || matchedTask.type || 'تاسك التصميم'}
+                      </h4>
+                      <div className="flex items-center gap-3 text-xs text-white/60 font-bold mt-1">
+                        <span>🎨 المصمم: <strong className="text-white">{matchedTask.designer || '-'}</strong></span>
+                        <span>•</span>
+                        <span>📣 الكريتور: <strong className="text-white">{matchedTask.requester || '-'}</strong></span>
+                      </div>
+                    </div>
+                    <span className="text-[10px] font-black px-2.5 py-1 rounded-lg bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                      {matchedTask.type || 'DESIGN'}
+                    </span>
+                  </div>
+
+                  {/* Visual Stepper Timeline */}
+                  <div className="space-y-3 pt-1">
+                    {/* Step 1: Created */}
+                    <div className="flex items-start gap-3 relative">
+                      <div className="w-6 h-6 rounded-full bg-purple-500/20 border border-purple-500/40 text-purple-300 flex items-center justify-center text-[10px] font-black shrink-0">
+                        1
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-black text-white">تاريخ الإنشاء والطلب 🆕</p>
+                        <p className="text-[11px] font-mono text-white/60">{createdAt || 'مسجل بالجدول'}</p>
+                      </div>
+                    </div>
+
+                    {/* Step 2: Designer Done */}
+                    <div className="flex items-start gap-3 relative">
+                      <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black shrink-0 ${
+                        matchedTask.done_designer 
+                          ? 'bg-emerald-500/20 border border-emerald-500/50 text-emerald-400' 
+                          : 'bg-white/5 border border-white/10 text-white/30'
+                      }`}>
+                        2
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between">
+                          <p className="text-xs font-black text-white">إنهاء المصمم (DONE) 🎨</p>
+                          {durCreatedToDoneStr && (
+                            <span className="text-[10px] font-black text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded border border-emerald-500/20 font-mono">
+                              استغرق {durCreatedToDoneStr}
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-[11px] font-mono text-white/60">
+                          {doneAt ? doneAt : <span className="text-amber-400/80 italic">قيد التصميم والتنفيذ ⏳</span>}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Step 3: Creator Received */}
+                    <div className="flex items-start gap-3 relative">
+                      <div className={`w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black shrink-0 ${
+                        matchedTask.received_creator 
+                          ? 'bg-sky-500/20 border border-sky-500/50 text-sky-400' 
+                          : 'bg-white/5 border border-white/10 text-white/30'
+                      }`}>
+                        3
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between">
+                          <p className="text-xs font-black text-white">استلام الكريتور (RECEIVED) 📥</p>
+                          {durDoneToReceivedStr && (
+                            <span className="text-[10px] font-black text-sky-400 bg-sky-500/10 px-2 py-0.5 rounded border border-sky-500/20 font-mono">
+                              بعد {durDoneToReceivedStr}
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-[11px] font-mono text-white/60">
+                          {receivedAt ? receivedAt : <span className="text-white/30 italic">في انتظار مراجعة واستلام الكريتور</span>}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
+        </div>
+
+        {/* ── Right Card: متوسط دورة حياة التاسك ── */}
+        <div className="bg-[#0b0e17] border border-white/10 rounded-3xl p-6 shadow-2xl space-y-5 flex flex-col justify-between">
+          <div className="space-y-4">
+            {/* Header */}
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-xl font-black text-white flex items-center gap-2.5">
+                  <TrendingUp className="w-5 h-5 text-emerald-400" />
+                  <span>متوسط دورة حياة التاسك</span>
+                </h3>
+                <p className="text-xs text-white/40 font-bold mt-1">معدل المدد الزمنية المستغرقة بين مراحل الإنتاج</p>
+              </div>
+              <div className="w-10 h-10 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400">
+                <TrendingUp size={20} />
+              </div>
+            </div>
+
+            {/* Calculate overall lifecycle stats */}
+            {(() => {
+              const durCreatedToDone: number[] = [];
+              const durDoneToReceived: number[] = [];
+              const durTotalCycle: number[] = [];
+
+              rows.forEach((r: any) => {
+                const created = r.created_at || r.date;
+                const doneAt = r.done_designer_at;
+                const recvAt = r.received_creator_at;
+
+                if (created && doneAt) {
+                  const h = diffHours(created, doneAt);
+                  if (h !== null && h >= 0 && h < 24 * 60) durCreatedToDone.push(h);
+                }
+                if (doneAt && recvAt) {
+                  const h = diffHours(doneAt, recvAt);
+                  if (h !== null && h >= 0 && h < 24 * 60) durDoneToReceived.push(h);
+                }
+                if (created && recvAt) {
+                  const h = diffHours(created, recvAt);
+                  if (h !== null && h >= 0 && h < 24 * 60) durTotalCycle.push(h);
+                }
+              });
+
+              const avg = (arr: number[]) => {
+                if (arr.length === 0) return null;
+                return arr.reduce((a, b) => a + b, 0) / arr.length;
+              };
+
+              const avgC2D = avg(durCreatedToDone);
+              const avgD2R = avg(durDoneToReceived);
+              const avgTotal = avg(durTotalCycle);
+
+              return (
+                <div className="space-y-3.5">
+                  {/* Row 1 */}
+                  <div className="bg-[#121624] border border-white/5 rounded-2xl p-4 flex items-center justify-between shadow-sm">
+                    <div className="space-y-1">
+                      <h4 className="text-xs font-black text-white arabic-text flex items-center gap-2">
+                        <span>من الفكرة إلى إنهاء المصمم</span>
+                        <span>🎨</span>
+                      </h4>
+                      <p className="text-[10px] text-white/40 font-bold arabic-text">الفرق بين تاريخ إنشاء التاسك وتاريخ إنهاء المصمم</p>
+                    </div>
+                    <div className="text-left font-mono">
+                      <span className="text-2xl font-black text-emerald-400">
+                        {fmtAverageHours(avgC2D)}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Row 2 */}
+                  <div className="bg-[#121624] border border-white/5 rounded-2xl p-4 flex items-center justify-between shadow-sm">
+                    <div className="space-y-1">
+                      <h4 className="text-xs font-black text-white arabic-text flex items-center gap-2">
+                        <span>من إنهاء المصمم إلى استلام الكريتور</span>
+                        <span>📥</span>
+                      </h4>
+                      <p className="text-[10px] text-white/40 font-bold arabic-text">الوقت المستغرق لمراجعة واستلام الكريتور للتصميم</p>
+                    </div>
+                    <div className="text-left font-mono">
+                      <span className="text-2xl font-black text-sky-400">
+                        {fmtAverageHours(avgD2R)}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Row 3 */}
+                  <div className="bg-[#121624] border border-white/5 rounded-2xl p-4 flex items-center justify-between shadow-sm">
+                    <div className="space-y-1">
+                      <h4 className="text-xs font-black text-white arabic-text flex items-center gap-2">
+                        <span>من الإنشاء إلى الاستلام النهائي (DONE)</span>
+                        <span>🏁</span>
+                      </h4>
+                      <p className="text-[10px] text-white/40 font-bold arabic-text">معدل وقت دورة حياة التصميم والمراجعة حتى التسليم النهائي</p>
+                    </div>
+                    <div className="text-left font-mono">
+                      <span className="text-2xl font-black text-fuchsia-400">
+                        {fmtAverageHours(avgTotal)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
+
+          {/* Bottom Callout Banner */}
+          <div className="bg-emerald-950/20 border border-emerald-500/30 rounded-2xl p-4 flex items-center gap-3">
+            <Sparkles className="w-5 h-5 text-emerald-400 shrink-0" />
+            <p className="text-[11px] text-emerald-300/80 font-bold arabic-text leading-relaxed">
+              يتم الحساب تلقائياً عن طريق مطابقة تواريخ إنشاء التاسكات وتواريخ الإنهاء والاستلام المدخلة بدقة.
+            </p>
+          </div>
+        </div>
+
       </div>
 
     </div>

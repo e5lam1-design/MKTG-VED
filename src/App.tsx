@@ -38,7 +38,8 @@ import {
   FileImage,
   Pin,
   Trash2,
-  Bookmark
+  Bookmark,
+  FileSpreadsheet
 } from 'lucide-react';
 import { useGoogleSheets } from './hooks/useGoogleSheets';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
@@ -203,21 +204,102 @@ const PreviewImage = ({ url }: { url: string }) => {
   );
 };
 
-const HistoryInput = ({ itemKey, fieldKey, value, onChange, placeholder }: any) => {
-  const historyKey = `hist_${fieldKey}_${itemKey}`;
+const formatArabicTimestamp = (isoStr?: string) => {
+  if (!isoStr) return null;
+  try {
+    const d = new Date(isoStr);
+    if (isNaN(d.getTime())) return null;
+
+    const day = String(d.getDate()).padStart(2, '0');
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const year = d.getFullYear();
+
+    let hours = d.getHours();
+    const minutes = String(d.getMinutes()).padStart(2, '0');
+    const ampm = hours >= 12 ? 'م' : 'ص';
+    hours = hours % 12;
+    hours = hours ? hours : 12;
+    const hoursStr = String(hours).padStart(2, '0');
+
+    return `${year}/${month}/${day} - ${hoursStr}:${minutes} ${ampm}`;
+  } catch {
+    return null;
+  }
+};
+
+type HistoryEntry = {
+  text: string;
+  timestamp: string;
+  author: string;
+};
+
+const HistoryInput = ({ itemKey, fieldKey, value, onChange, placeholder, updatedAt, updatedBy }: any) => {
+  const historyKey = `hist_${fieldKey || 'note'}_${itemKey || 'global'}`;
+  const timestampKey = `time_${fieldKey || 'note'}_${itemKey || 'global'}`;
+  const authorKey = `author_${fieldKey || 'note'}_${itemKey || 'global'}`;
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   
-  const [history, setHistory] = useState<string[]>(() => {
+  const [history, setHistory] = useState<HistoryEntry[]>(() => {
     const saved = localStorage.getItem(historyKey);
-    return saved ? JSON.parse(saved) : (value ? [value] : []);
+    let entries: HistoryEntry[] = [];
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          entries = parsed.map((item: any) => {
+            if (typeof item === 'string') {
+              return { text: item, timestamp: updatedAt || new Date().toISOString(), author: updatedBy || 'مستخدم' };
+            }
+            return item;
+          });
+        }
+      } catch (e) {}
+    }
+    const currentText = (value || '').trim();
+    if (currentText) {
+      if (entries.length === 0 || entries[entries.length - 1].text !== currentText) {
+        entries.push({ text: currentText, timestamp: updatedAt || new Date().toISOString(), author: updatedBy || 'مستخدم' });
+      }
+    }
+    return entries.slice(-30);
   });
   
   const [currentIndex, setCurrentIndex] = useState(history.length > 0 ? history.length - 1 : -1);
-  const [localValue, setLocalValue] = useState(value);
+  const [localValue, setLocalValue] = useState(value || '');
+  const isUndoRedoRef = useRef(false);
+
+  const [lastEditedAt, setLastEditedAt] = useState<string | undefined>(() => {
+    return (history.length > 0 && currentIndex >= 0 && history[currentIndex]?.timestamp) 
+      ? history[currentIndex].timestamp 
+      : updatedAt || localStorage.getItem(timestampKey) || undefined;
+  });
+  const [lastEditedBy, setLastEditedBy] = useState<string | undefined>(() => {
+    return (history.length > 0 && currentIndex >= 0 && history[currentIndex]?.author) 
+      ? history[currentIndex].author 
+      : updatedBy || localStorage.getItem(authorKey) || undefined;
+  });
+  const commitTimeoutRef = useRef<any>(null);
 
   // Sync external value if it changes independently
   useEffect(() => {
-    setLocalValue(value);
+    if (isUndoRedoRef.current) {
+      isUndoRedoRef.current = false;
+      return;
+    }
+    const valStr = value || '';
+    setLocalValue(valStr);
+    const trimmed = valStr.trim();
+    if (trimmed) {
+      setHistory(prev => {
+        if (prev.length === 0 || prev[prev.length - 1]?.text !== trimmed) {
+          const newH = [...prev, { text: trimmed, timestamp: updatedAt || new Date().toISOString(), author: updatedBy || 'مستخدم' }].slice(-30);
+          try { localStorage.setItem(historyKey, JSON.stringify(newH)); } catch {}
+          return newH;
+        }
+        return prev;
+      });
+      setCurrentIndex(prev => Math.max(0, history.length - 1));
+    }
   }, [value]);
 
   // Auto-grow textarea height
@@ -229,18 +311,41 @@ const HistoryInput = ({ itemKey, fieldKey, value, onChange, placeholder }: any) 
   }, [localValue]);
 
   const commitValue = (newVal: string) => {
-    if (newVal !== history[currentIndex] && newVal !== history[history.length - 1]) {
-      const newHistory = [...history.slice(0, currentIndex + 1), newVal].slice(-20);
-      setHistory(newHistory);
-      setCurrentIndex(newHistory.length - 1);
+    const trimmed = (newVal || '').trim();
+    if (trimmed === (value || '').trim() && history.length > 0 && history[currentIndex]?.text === trimmed) return;
+
+    const nowIso = new Date().toISOString();
+    const currentUser = localStorage.getItem('user_editor_name') || 'مستخدم';
+    const newEntry: HistoryEntry = { text: trimmed, timestamp: nowIso, author: currentUser };
+
+    setLastEditedAt(nowIso);
+    setLastEditedBy(currentUser);
+    try {
+      localStorage.setItem(timestampKey, nowIso);
+      localStorage.setItem(authorKey, currentUser);
+    } catch {}
+
+    const newHistory = [...history.slice(0, currentIndex + 1), newEntry].slice(-30);
+    setHistory(newHistory);
+    setCurrentIndex(newHistory.length - 1);
+    try {
       localStorage.setItem(historyKey, JSON.stringify(newHistory));
-      onChange(newVal);
-    } else if (newVal !== value) {
-      onChange(newVal);
-    }
+    } catch {}
+
+    onChange(trimmed, nowIso, currentUser);
+  };
+
+  const handleChange = (e: any) => {
+    const val = e.target.value;
+    setLocalValue(val);
+    if (commitTimeoutRef.current) clearTimeout(commitTimeoutRef.current);
+    commitTimeoutRef.current = setTimeout(() => {
+      commitValue(val);
+    }, 400);
   };
 
   const handleBlur = () => {
+    if (commitTimeoutRef.current) clearTimeout(commitTimeoutRef.current);
     commitValue(localValue);
   };
 
@@ -253,31 +358,61 @@ const HistoryInput = ({ itemKey, fieldKey, value, onChange, placeholder }: any) 
 
   const undo = () => {
     if (currentIndex > 0) {
-      const prevVal = history[currentIndex - 1];
+      const prevEntry = history[currentIndex - 1];
+      isUndoRedoRef.current = true;
       setCurrentIndex(currentIndex - 1);
-      setLocalValue(prevVal);
-      onChange(prevVal);
+      setLocalValue(prevEntry.text);
+      setLastEditedAt(prevEntry.timestamp);
+      setLastEditedBy(prevEntry.author);
+      try {
+        localStorage.setItem(timestampKey, prevEntry.timestamp);
+        if (prevEntry.author) localStorage.setItem(authorKey, prevEntry.author);
+      } catch {}
+      onChange(prevEntry.text, prevEntry.timestamp, prevEntry.author);
     }
   };
 
   const redo = () => {
     if (currentIndex < history.length - 1) {
-      const nextVal = history[currentIndex + 1];
+      const nextEntry = history[currentIndex + 1];
+      isUndoRedoRef.current = true;
       setCurrentIndex(currentIndex + 1);
-      setLocalValue(nextVal);
-      onChange(nextVal);
+      setLocalValue(nextEntry.text);
+      setLastEditedAt(nextEntry.timestamp);
+      setLastEditedBy(nextEntry.author);
+      try {
+        localStorage.setItem(timestampKey, nextEntry.timestamp);
+        if (nextEntry.author) localStorage.setItem(authorKey, nextEntry.author);
+      } catch {}
+      onChange(nextEntry.text, nextEntry.timestamp, nextEntry.author);
     }
   };
 
   const hasValue = !!localValue;
+  const timeLabel = formatArabicTimestamp(lastEditedAt);
+
   return (
-    <div className="relative flex items-center justify-center group mx-auto w-full min-w-[130px] max-w-[160px]">
+    <div className="relative flex items-center justify-center group/history mx-auto w-full min-w-[130px] max-w-[160px]">
+      {/* Floating Hover Tooltip */}
+      {hasValue && timeLabel && (
+        <div className="absolute bottom-full mb-2 hidden group-hover/history:flex flex-col items-center z-[300] pointer-events-none animate-fadeIn left-1/2 -translate-x-1/2">
+          <div className="bg-[#0c121e]/95 border border-emerald-500/40 rounded-xl px-3 py-1.5 shadow-[0_10px_30px_rgba(0,0,0,0.7)] backdrop-blur-md text-[11px] text-white whitespace-nowrap text-right flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0"></span>
+            <span className="font-mono text-emerald-300 font-bold">{timeLabel}</span>
+            {lastEditedBy && (
+              <span className="text-muted/90 text-[10px] arabic-text font-bold">👤 {lastEditedBy}</span>
+            )}
+          </div>
+          <div className="w-2 h-2 bg-[#0c121e] border-r border-b border-emerald-500/40 rotate-45 -mt-1"></div>
+        </div>
+      )}
+
       {history.length > 1 && (
         <button 
           onClick={undo} 
           disabled={currentIndex <= 0}
-          className={`absolute -left-6 p-1.5 rounded-full bg-white/5 border border-white/10 opacity-0 group-hover:opacity-100 transition-all z-10 ${currentIndex <= 0 ? 'text-white/20' : 'text-blue-400 hover:bg-blue-500/20 hover:scale-110 shadow-lg'}`}
-          title="تراجع (السابق)"
+          className={`absolute -left-6 p-1.5 rounded-full bg-white/5 border border-white/10 opacity-0 group-hover/history:opacity-100 transition-all z-10 ${currentIndex <= 0 ? 'text-white/20' : 'text-blue-400 hover:bg-blue-500/20 hover:scale-110 shadow-lg'}`}
+          title={currentIndex > 0 ? `تراجع إلى النسخة السابقة (${formatArabicTimestamp(history[currentIndex - 1]?.timestamp)})` : "لا يوجد تراجع"}
         >
           <Undo2 size={12} />
         </button>
@@ -287,7 +422,7 @@ const HistoryInput = ({ itemKey, fieldKey, value, onChange, placeholder }: any) 
         ref={textareaRef}
         rows={1}
         value={localValue}
-        onChange={(e) => setLocalValue(e.target.value)}
+        onChange={handleChange}
         onBlur={handleBlur}
         onKeyDown={handleKeyDown}
         placeholder={placeholder}
@@ -303,8 +438,8 @@ const HistoryInput = ({ itemKey, fieldKey, value, onChange, placeholder }: any) 
         <button 
           onClick={redo} 
           disabled={currentIndex >= history.length - 1}
-          className={`absolute -right-6 p-1.5 rounded-full bg-white/5 border border-white/10 opacity-0 group-hover:opacity-100 transition-all z-10 ${currentIndex >= history.length - 1 ? 'text-white/20' : 'text-emerald-400 hover:bg-emerald-500/20 hover:scale-110 shadow-lg'}`}
-          title="تقدم (التالي)"
+          className={`absolute -right-6 p-1.5 rounded-full bg-white/5 border border-white/10 opacity-0 group-hover/history:opacity-100 transition-all z-10 ${currentIndex >= history.length - 1 ? 'text-white/20' : 'text-emerald-400 hover:bg-emerald-500/20 hover:scale-110 shadow-lg'}`}
+          title={currentIndex < history.length - 1 ? `تقدم إلى النسخة التالية (${formatArabicTimestamp(history[currentIndex + 1]?.timestamp)})` : "لا يوجد تقدم"}
         >
           <Redo2 size={12} />
         </button>
@@ -315,8 +450,18 @@ const HistoryInput = ({ itemKey, fieldKey, value, onChange, placeholder }: any) 
 
 const InlineCombobox = ({ value, onChange, options, placeholder }: any) => {
   const [isOpen, setIsOpen] = useState(false);
+  const [openUpward, setOpenUpward] = useState(false);
   const [inputValue, setInputValue] = useState('');
   const containerRef = useRef<HTMLDivElement>(null);
+
+  const toggleOpen = () => {
+    if (!isOpen && containerRef.current) {
+      const rect = containerRef.current.getBoundingClientRect();
+      const spaceBelow = window.innerHeight - rect.bottom;
+      setOpenUpward(spaceBelow < 280);
+    }
+    setIsOpen(!isOpen);
+  };
 
   useEffect(() => {
     if (!isOpen) {
@@ -335,18 +480,32 @@ const InlineCombobox = ({ value, onChange, options, placeholder }: any) => {
   const chipColors = getChipColor(value);
 
   return (
-    <div className="relative w-full min-w-[100px]" ref={containerRef}>
+    <div className={`relative w-full min-w-[100px] ${isOpen ? 'z-[500]' : 'z-10'}`} ref={containerRef}>
       <button
-        onClick={() => setIsOpen(!isOpen)}
+        onClick={toggleOpen}
         className={`w-full flex items-center justify-between gap-2 text-[10px] font-black uppercase tracking-wider focus:outline-none cursor-pointer transition-all rounded-full px-3.5 py-1.5 shadow-md border ${chipColors.bg} ${chipColors.text} ${chipColors.border} hover:brightness-125 hover:scale-[1.02]`}
       >
-        <span className="truncate max-w-[90px]">{value || placeholder || '---'}</span>
+        <div className="flex items-center gap-1.5 truncate max-w-[100px]">
+          {chipColors.dot && (
+            <span
+              className="w-2.5 h-2.5 rounded-full shrink-0 shadow-sm border border-white/20"
+              style={{ backgroundColor: chipColors.dot }}
+            />
+          )}
+          <span className="truncate">{value || placeholder || '---'}</span>
+        </div>
         <ChevronDown size={10} className={`transition-transform duration-300 shrink-0 ${isOpen ? 'rotate-180 opacity-100' : 'opacity-60'}`} />
       </button>
       
       {isOpen && (
-        <div className="absolute top-full mt-2 w-full min-w-[170px] bg-[#0a0e16]/95 border border-white/10 rounded-2xl shadow-[0_10px_40px_rgba(0,0,0,0.5)] py-2 z-[250] scrollbar-hide backdrop-blur-xl max-h-60 overflow-y-auto left-1/2 -translate-x-1/2 animate-fadeIn flex flex-col justify-between">
+        <div className={`absolute ${openUpward ? 'bottom-full mb-2' : 'top-full mt-2'} w-full min-w-[180px] bg-[#0a0e16]/98 border border-white/15 rounded-2xl shadow-[0_15px_50px_rgba(0,0,0,0.8)] py-2 z-[600] scrollbar-hide backdrop-blur-2xl max-h-64 overflow-y-auto left-1/2 -translate-x-1/2 animate-fadeIn flex flex-col justify-between`}>
           <div className="flex-1 overflow-y-auto">
+            <button
+              onClick={() => { onChange(''); setIsOpen(false); }}
+              className={`w-full text-right px-4 py-1.5 text-[10px] font-bold block transition-all text-muted hover:bg-white/5 hover:text-white ${!value || value === 'غير محدد' ? 'text-primary bg-primary/5 font-black' : ''}`}
+            >
+              غير محدد (---)
+            </button>
             {filteredOptions.map((o: string) => {
               const optColors = getChipColor(o);
               return (
@@ -355,15 +514,21 @@ const InlineCombobox = ({ value, onChange, options, placeholder }: any) => {
                   onClick={() => { onChange(o); setIsOpen(false); }}
                   className={`w-full flex items-center justify-center px-3 py-1.5 transition-all hover:bg-white/5 ${value === o ? 'bg-primary/5 border-r-2 border-primary' : ''}`}
                 >
-                  <span className={`px-3 py-1 rounded-full text-[10px] border font-black text-center inline-block max-w-[90%] truncate shadow-sm transition-all ${optColors.bg} ${optColors.text} ${optColors.border} hover:brightness-110`}>
-                    {o}
+                  <span className={`flex items-center gap-2 px-3 py-1 rounded-full text-[10px] border font-black text-center inline-flex max-w-[90%] truncate shadow-sm transition-all ${optColors.bg} ${optColors.text} ${optColors.border} hover:brightness-110`}>
+                    {optColors.dot && (
+                      <span
+                        className="w-2.5 h-2.5 rounded-full shrink-0 shadow-sm border border-white/20"
+                        style={{ backgroundColor: optColors.dot }}
+                      />
+                    )}
+                    <span className="truncate">{o}</span>
                   </span>
                 </button>
               );
             })}
           </div>
           
-          <div className="px-2 pt-2 mt-2 border-t border-white/10 sticky bottom-0 bg-[#0a0e16]/95 z-10 pb-1">
+          <div className="px-2 pt-2 mt-2 border-t border-white/10 sticky bottom-0 bg-[#0a0e16]/98 z-10 pb-1">
              <input 
                 type="text" 
                 placeholder="+ ابحث أو ضف جديد..."
@@ -394,8 +559,18 @@ const InlineCombobox = ({ value, onChange, options, placeholder }: any) => {
 
 const CustomSelect = ({ value, onChange, options, placeholder, isColumn = false }: any) => {
   const [isOpen, setIsOpen] = useState(false);
+  const [openUpward, setOpenUpward] = useState(false);
   const [searchFilter, setSearchFilter] = useState('');
   const containerRef = useRef<HTMLDivElement>(null);
+
+  const toggleOpen = () => {
+    if (!isOpen && containerRef.current) {
+      const rect = containerRef.current.getBoundingClientRect();
+      const spaceBelow = window.innerHeight - rect.bottom;
+      setOpenUpward(spaceBelow < 280);
+    }
+    setIsOpen(!isOpen);
+  };
 
   useEffect(() => {
     if (!isOpen) {
@@ -420,9 +595,9 @@ const CustomSelect = ({ value, onChange, options, placeholder, isColumn = false 
   const chipColors = getChipColor(value === 'All' ? '' : value);
 
   return (
-    <div className="relative" ref={containerRef}>
+    <div className={`relative ${isOpen ? 'z-[500]' : 'z-10'}`} ref={containerRef}>
       <button
-        onClick={() => setIsOpen(!isOpen)}
+        onClick={toggleOpen}
         className={`flex items-center gap-2 text-[10px] font-black uppercase tracking-wider focus:outline-none cursor-pointer transition-all ${
           isColumn 
             ? `rounded-full px-3.5 py-1.5 min-w-[100px] justify-between shadow-md border ${chipColors.bg} ${chipColors.text} ${chipColors.border} hover:brightness-125 hover:scale-[1.02]` 
@@ -435,14 +610,14 @@ const CustomSelect = ({ value, onChange, options, placeholder, isColumn = false 
       <AnimatePresence>
         {isOpen && (
           <motion.div
-            initial={{ opacity: 0, y: -5, scale: 0.95 }}
+            initial={{ opacity: 0, y: openUpward ? 5 : -5, scale: 0.95 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -5, scale: 0.95 }}
+            exit={{ opacity: 0, y: openUpward ? 5 : -5, scale: 0.95 }}
             transition={{ duration: 0.15 }}
-            className={`absolute top-full mt-2 bg-[#0a0e16]/95 border border-white/10 rounded-2xl shadow-[0_10px_40px_rgba(0,0,0,0.5)] py-2 z-[250] backdrop-blur-xl w-max min-w-[160px] max-w-[220px] max-h-64 flex flex-col left-1/2 -translate-x-1/2`}
+            className={`absolute ${openUpward ? 'bottom-full mb-2' : 'top-full mt-2'} bg-[#0a0e16]/98 border border-white/15 rounded-2xl shadow-[0_15px_50px_rgba(0,0,0,0.8)] py-2 z-[600] backdrop-blur-2xl w-max min-w-[160px] max-w-[220px] max-h-64 flex flex-col left-1/2 -translate-x-1/2`}
           >
             {/* Search Input Box */}
-            <div className="px-2 pb-2 border-b border-white/10 sticky top-0 bg-[#0a0e16]/95 z-10">
+            <div className="px-2 pb-2 border-b border-white/10 sticky top-0 bg-[#0a0e16]/98 z-10">
               <input
                 type="text"
                 placeholder="بحث..."
@@ -604,52 +779,110 @@ const SidebarGroup = ({ title, iconEmoji, colorHex, stagesList, activeGid, onSel
   );
 };
 
+// ─── Creator Color Map ────────────────────────────────────────────────────────
+const CREATOR_COLORS: Record<string, { bg: string; text: string; border: string; dot: string }> = {
+  'manar': { bg: 'bg-teal-500/15', text: 'text-teal-300 font-extrabold', border: 'border-teal-500/30', dot: '#5eead4' },
+  'esraa': { bg: 'bg-pink-500/15', text: 'text-pink-300 font-extrabold', border: 'border-pink-500/30', dot: '#f472b6' },
+  'yomna': { bg: 'bg-amber-500/15', text: 'text-amber-300 font-extrabold', border: 'border-amber-500/30', dot: '#fcd34d' },
+  'maram': { bg: 'bg-lime-500/15', text: 'text-lime-300 font-extrabold', border: 'border-lime-500/30', dot: '#a3e635' },
+  'han': { bg: 'bg-sky-500/15', text: 'text-sky-300 font-extrabold', border: 'border-sky-500/30', dot: '#7dd3fc' },
+  'nader': { bg: 'bg-slate-500/15', text: 'text-slate-300 font-extrabold', border: 'border-slate-500/30', dot: '#94a3b8' },
+  'eman': { bg: 'bg-red-500/15', text: 'text-red-300 font-extrabold', border: 'border-red-500/30', dot: '#ef4444' },
+  'noor': { bg: 'bg-amber-900/30', text: 'text-amber-400 font-extrabold', border: 'border-amber-800/40', dot: '#78350f' },
+  'khaled': { bg: 'bg-emerald-500/15', text: 'text-emerald-300 font-extrabold', border: 'border-emerald-500/30', dot: '#34d399' },
+  'awney': { bg: 'bg-emerald-800/30', text: 'text-emerald-300 font-extrabold', border: 'border-emerald-700/40', dot: '#047857' },
+  'shrouk': { bg: 'bg-cyan-800/30', text: 'text-cyan-300 font-extrabold', border: 'border-cyan-700/40', dot: '#0e7490' },
+  'anas': { bg: 'bg-purple-500/15', text: 'text-purple-300 font-extrabold', border: 'border-purple-500/30', dot: '#a855f7' },
+  'ahmed-amr': { bg: 'bg-rose-500/15', text: 'text-rose-300 font-extrabold', border: 'border-rose-500/30', dot: '#fb7185' },
+  'sherif': { bg: 'bg-blue-500/15', text: 'text-blue-300 font-extrabold', border: 'border-blue-500/30', dot: '#60a5fa' },
+  'samir': { bg: 'bg-gray-500/15', text: 'text-gray-300 font-extrabold', border: 'border-gray-500/30', dot: '#9ca3af' },
+  'alaa': { bg: 'bg-cyan-500/15', text: 'text-cyan-300 font-extrabold', border: 'border-cyan-500/30', dot: '#06b6d4' },
+  'ahmed': { bg: 'bg-blue-600/20', text: 'text-blue-300 font-extrabold', border: 'border-blue-500/40', dot: '#2563eb' },
+  'donia': { bg: 'bg-rose-400/15', text: 'text-rose-300 font-extrabold', border: 'border-rose-400/30', dot: '#fda4af' },
+  'alaa zakria': { bg: 'bg-sky-400/15', text: 'text-sky-300 font-extrabold', border: 'border-sky-400/30', dot: '#38bdf8' },
+  'esraa naga': { bg: 'bg-pink-400/15', text: 'text-pink-300 font-extrabold', border: 'border-pink-400/30', dot: '#f472b6' },
+  'nada': { bg: 'bg-fuchsia-500/15', text: 'text-fuchsia-300 font-extrabold', border: 'border-fuchsia-500/30', dot: '#d946ef' },
+  'abdelkerim': { bg: 'bg-amber-950/40', text: 'text-amber-500 font-extrabold', border: 'border-amber-900/50', dot: '#9a3412' },
+  'sohaila': { bg: 'bg-slate-400/15', text: 'text-slate-200 font-extrabold', border: 'border-slate-400/30', dot: '#cbd5e1' },
+  'hesham': { bg: 'bg-zinc-800/60', text: 'text-zinc-200 font-extrabold', border: 'border-zinc-700/50', dot: '#18181b' },
+  'a.medhat': { bg: 'bg-emerald-600/20', text: 'text-emerald-300 font-extrabold', border: 'border-emerald-500/30', dot: '#059669' },
+  'ramy': { bg: 'bg-gray-500/15', text: 'text-gray-300 font-extrabold', border: 'border-gray-500/30', dot: '#9ca3af' },
+  'manar awad': { bg: 'bg-pink-400/15', text: 'text-pink-300 font-extrabold', border: 'border-pink-400/30', dot: '#fbcfe8' },
+  'habiba': { bg: 'bg-emerald-400/15', text: 'text-emerald-300 font-extrabold', border: 'border-emerald-400/30', dot: '#10b981' },
+  'taher': { bg: 'bg-sky-500/15', text: 'text-sky-300 font-extrabold', border: 'border-sky-500/30', dot: '#0ea5e9' },
+  'ramy elnaggar': { bg: 'bg-blue-600/20', text: 'text-blue-300 font-extrabold', border: 'border-blue-500/40', dot: '#1d4ed8' },
+  'khalil': { bg: 'bg-sky-500/15', text: 'text-sky-300 font-extrabold', border: 'border-sky-500/30', dot: '#38bdf8' },
+  'adham': { bg: 'bg-purple-500/15', text: 'text-purple-300 font-extrabold', border: 'border-purple-500/30', dot: '#c084fc' },
+  'hassanien': { bg: 'bg-emerald-500/15', text: 'text-emerald-300 font-extrabold', border: 'border-emerald-500/30', dot: '#4ade80' },
+};
+
 // ─── Chip Colors ──────────────────────────────────────────────────────────────
 const getChipColor = (val: string) => {
-  if (!val) return { bg: 'bg-white/5', text: 'text-muted-foreground/60', border: 'border-white/5' };
-  const v = val.toUpperCase();
+  if (!val) return { bg: 'bg-white/5', text: 'text-muted-foreground/60', border: 'border-white/5', dot: '' };
+  const raw = String(val).trim();
+  const lower = raw.toLowerCase();
+  const upper = raw.toUpperCase();
   
+  if (CREATOR_COLORS[lower]) {
+    return CREATOR_COLORS[lower];
+  }
+
+  // Type & Format
+  if (lower === 'حواري') {
+    return { bg: 'bg-sky-500/15 shadow-[0_0_10px_rgba(14,165,233,0.1)]', text: 'text-sky-300 font-extrabold', border: 'border-sky-500/30', dot: '#38bdf8' };
+  }
+  if (lower === 'تمثيلي') {
+    return { bg: 'bg-amber-500/15 shadow-[0_0_10px_rgba(245,158,11,0.1)]', text: 'text-amber-300 font-extrabold', border: 'border-amber-500/30', dot: '#fb923c' };
+  }
+  if (upper === 'REEL') {
+    return { bg: 'bg-blue-600/20 shadow-[0_0_10px_rgba(37,99,235,0.15)]', text: 'text-blue-300 font-extrabold', border: 'border-blue-500/40', dot: '#2563eb' };
+  }
+  if (upper === 'VIDEO') {
+    return { bg: 'bg-red-700/20 shadow-[0_0_10px_rgba(220,38,38,0.15)]', text: 'text-red-300 font-extrabold', border: 'border-red-600/40', dot: '#dc2626' };
+  }
+
   // Reels Branches
-  if (v.includes('DESOUK') || v.includes('دسور') || v.includes('دسوق')) 
-    return { bg: 'bg-emerald-500/10 shadow-[0_0_10px_rgba(16,185,129,0.05)]', text: 'text-emerald-400 font-extrabold', border: 'border-emerald-500/20' };
-  if (v.includes('ALEXANDRIA') || v.includes('ALEX') || v.includes('اسكندريه') || v.includes('الاسكندرية')) 
-    return { bg: 'bg-blue-500/10 shadow-[0_0_10px_rgba(59,130,246,0.05)]', text: 'text-blue-400 font-extrabold', border: 'border-blue-500/20' };
-  if (v.includes('CAIRO') || v.includes('القاهره') || v.includes('القاهرة')) 
-    return { bg: 'bg-rose-500/10 shadow-[0_0_10px_rgba(244,63,94,0.05)]', text: 'text-rose-400 font-extrabold', border: 'border-rose-500/20' };
-  if (v.includes('ONLINE') || v.includes('أونلاين') || v.includes('اونلاين')) 
-    return { bg: 'bg-purple-500/10 shadow-[0_0_10px_rgba(168,85,247,0.05)]', text: 'text-purple-400 font-extrabold', border: 'border-purple-500/20' };
+  if (upper.includes('DESOUK') || upper.includes('دسور') || upper.includes('دسوق')) 
+    return { bg: 'bg-emerald-500/10 shadow-[0_0_10px_rgba(16,185,129,0.05)]', text: 'text-emerald-400 font-extrabold', border: 'border-emerald-500/20', dot: '#10b981' };
+  if (upper.includes('ALEXANDRIA') || upper.includes('ALEX') || upper.includes('اسكندريه') || upper.includes('الاسكندرية')) 
+    return { bg: 'bg-blue-500/10 shadow-[0_0_10px_rgba(59,130,246,0.05)]', text: 'text-blue-400 font-extrabold', border: 'border-blue-500/20', dot: '#3b82f6' };
+  if (upper.includes('CAIRO') || upper.includes('القاهره') || upper.includes('القاهرة')) 
+    return { bg: 'bg-rose-500/10 shadow-[0_0_10px_rgba(244,63,94,0.05)]', text: 'text-rose-400 font-extrabold', border: 'border-rose-500/20', dot: '#f43f5e' };
+  if (upper.includes('ONLINE') || upper.includes('أونلاين') || upper.includes('اونلاين')) 
+    return { bg: 'bg-purple-500/10 shadow-[0_0_10px_rgba(168,85,247,0.05)]', text: 'text-purple-400 font-extrabold', border: 'border-purple-500/20', dot: '#a855f7' };
 
   // Year level colors
-  if (v.includes('M3') || v.includes('MIDDLE 3')) 
-    return { bg: 'bg-teal-500/10 shadow-[0_0_10px_rgba(20,184,166,0.05)]', text: 'text-teal-400 font-extrabold', border: 'border-teal-500/20' };
-  if (v.includes('M2') || v.includes('MIDDLE 2')) 
-    return { bg: 'bg-cyan-500/10 shadow-[0_0_10px_rgba(6,182,212,0.05)]', text: 'text-cyan-400 font-extrabold', border: 'border-cyan-500/20' };
-  if (v.includes('M1') || v.includes('MIDDLE 1')) 
-    return { bg: 'bg-sky-500/10 shadow-[0_0_10px_rgba(14,165,233,0.05)]', text: 'text-sky-400 font-extrabold', border: 'border-sky-500/20' };
-  if (v.includes('S3') || v.includes('SENIOR 3')) 
-    return { bg: 'bg-indigo-500/10 shadow-[0_0_10px_rgba(99,102,241,0.05)]', text: 'text-indigo-400 font-extrabold', border: 'border-indigo-500/20' };
-  if (v.includes('S2') || v.includes('SENIOR 2')) 
-    return { bg: 'bg-violet-500/10 shadow-[0_0_10px_rgba(139,92,246,0.05)]', text: 'text-violet-400 font-extrabold', border: 'border-violet-500/20' };
-  if (v.includes('S1') || v.includes('SENIOR 1')) 
-    return { bg: 'bg-fuchsia-500/10 shadow-[0_0_10px_rgba(217,70,239,0.05)]', text: 'text-fuchsia-400 font-extrabold', border: 'border-fuchsia-500/20' };
+  if (upper.includes('M3') || upper.includes('MIDDLE 3')) 
+    return { bg: 'bg-teal-500/10 shadow-[0_0_10px_rgba(20,184,166,0.05)]', text: 'text-teal-400 font-extrabold', border: 'border-teal-500/20', dot: '#14b8a6' };
+  if (upper.includes('M2') || upper.includes('MIDDLE 2')) 
+    return { bg: 'bg-cyan-500/10 shadow-[0_0_10px_rgba(6,182,212,0.05)]', text: 'text-cyan-400 font-extrabold', border: 'border-cyan-500/20', dot: '#06b6d4' };
+  if (upper.includes('M1') || upper.includes('MIDDLE 1')) 
+    return { bg: 'bg-sky-500/10 shadow-[0_0_10px_rgba(14,165,233,0.05)]', text: 'text-sky-400 font-extrabold', border: 'border-sky-500/20', dot: '#0ea5e9' };
+  if (upper.includes('S3') || upper.includes('SENIOR 3')) 
+    return { bg: 'bg-indigo-500/10 shadow-[0_0_10px_rgba(99,102,241,0.05)]', text: 'text-indigo-400 font-extrabold', border: 'border-indigo-500/20', dot: '#6366f1' };
+  if (upper.includes('S2') || upper.includes('SENIOR 2')) 
+    return { bg: 'bg-violet-500/10 shadow-[0_0_10px_rgba(139,92,246,0.05)]', text: 'text-violet-400 font-extrabold', border: 'border-violet-500/20', dot: '#8b5cf6' };
+  if (upper.includes('S1') || upper.includes('SENIOR 1')) 
+    return { bg: 'bg-fuchsia-500/10 shadow-[0_0_10px_rgba(217,70,239,0.05)]', text: 'text-fuchsia-400 font-extrabold', border: 'border-fuchsia-500/20', dot: '#d946ef' };
 
-  if (v.includes('POSTPONED')) return { bg: 'bg-yellow-500/20 shadow-[0_0_15px_rgba(234,179,8,0.2)]', text: 'text-yellow-400 font-extrabold uppercase', border: 'border-yellow-500/40 animate-pulse' };
-  if (v.includes('علوم') || v.includes('KIRO') || v.includes('COMPLETED') || v.includes('SMARTBOARD')) return { bg: 'bg-blue-500/10', text: 'text-blue-400', border: 'border-blue-500/20' };
-  if (v.includes('ماث') || v.includes('2025') || v.includes('BASEL') || v.includes('URGENT') || v.includes('CANCEL')) return { bg: 'bg-rose-500/10', text: 'text-rose-400', border: 'border-rose-500/20' };
-  if (v.includes('رياضه') || v.includes('PENDING') || v.includes('IN PROGRESS')) return { bg: 'bg-amber-500/10', text: 'text-amber-400', border: 'border-amber-500/20' };
-  if (v.includes('ساينس') || v.includes('HASSANEN') || v.includes('DONE')) return { bg: 'bg-emerald-500/10', text: 'text-emerald-400', border: 'border-emerald-500/20' };
-  if (v.includes('دراسات') || v.includes('LOW')) return { bg: 'bg-orange-500/10', text: 'text-orange-400', border: 'border-orange-500/20' };
+  if (upper.includes('POSTPONED')) return { bg: 'bg-yellow-500/20 shadow-[0_0_15px_rgba(234,179,8,0.2)]', text: 'text-yellow-400 font-extrabold uppercase', border: 'border-yellow-500/40 animate-pulse', dot: '#eab308' };
+  if (upper.includes('علوم') || upper.includes('KIRO') || upper.includes('COMPLETED') || upper.includes('SMARTBOARD')) return { bg: 'bg-blue-500/10', text: 'text-blue-400', border: 'border-blue-500/20', dot: '#3b82f6' };
+  if (upper.includes('ماث') || upper.includes('2025') || upper.includes('BASEL') || upper.includes('URGENT') || upper.includes('CANCEL')) return { bg: 'bg-rose-500/10', text: 'text-rose-400', border: 'border-rose-500/20', dot: '#f43f5e' };
+  if (upper.includes('رياضه') || upper.includes('PENDING') || upper.includes('IN PROGRESS')) return { bg: 'bg-amber-500/10', text: 'text-amber-400', border: 'border-amber-500/20', dot: '#f59e0b' };
+  if (upper.includes('ساينس') || upper.includes('HASSANEN') || upper.includes('DONE')) return { bg: 'bg-emerald-500/10', text: 'text-emerald-400', border: 'border-emerald-500/20', dot: '#10b981' };
+  if (upper.includes('دراسات') || upper.includes('LOW')) return { bg: 'bg-orange-500/10', text: 'text-orange-400', border: 'border-orange-500/20', dot: '#f97316' };
   
-  // Default slate-like grey pill for other values (like employee, sohaila, etc.)
-  return { bg: 'bg-slate-500/10 border border-slate-500/20 shadow-[0_0_10px_rgba(100,116,139,0.05)]', text: 'text-slate-300 font-bold', border: 'border-slate-500/20' };
+  // Default slate-like grey pill for other values (like employee, etc.)
+  return { bg: 'bg-slate-500/10 border border-slate-500/20 shadow-[0_0_10px_rgba(100,116,139,0.05)]', text: 'text-slate-300 font-bold', border: 'border-slate-500/20', dot: '' };
 };
 
 // ─── Chip component ───────────────────────────────────────────────────────────
 const Chip = ({ value }: { value: string }) => {
   const colors = getChipColor(value);
   return (
-    <span className={`chip-base ${colors.bg} ${colors.text} ${colors.border}`}>
-      {value || '---'}
+    <span className={`chip-base inline-flex items-center gap-1.5 ${colors.bg} ${colors.text} ${colors.border}`}>
+      {colors.dot && <span className="w-2 h-2 rounded-full shrink-0 shadow-sm border border-white/20" style={{ backgroundColor: colors.dot }} />}
+      <span>{value || '---'}</span>
     </span>
   );
 };
@@ -1075,7 +1308,9 @@ const TagmeRow = ({
           itemKey={item.uniqueKey || generateKey(item)}
           fieldKey="mktg_notes"
           value={item.notesMarketing || ''}
-          onChange={(val: string) => onUpdateMarketingNotes(item.uniqueKey || generateKey(item), val)}
+          updatedAt={item.notesMarketingUpdatedAt || item.updatedAt}
+          updatedBy={item.notesMarketingUpdatedBy}
+          onChange={(val: string, nowIso?: string, user?: string) => onUpdateMarketingNotes(item.uniqueKey || generateKey(item), val, user)}
           placeholder="أضف ملاحظة..."
           disabled={!(profile?.role && PERMISSIONS.canEditNotes(profile.role))}
         />
@@ -1088,6 +1323,9 @@ const TagmeRow = ({
           className={`bg-white/5 border border-white/10 hover:border-emerald-500/50 rounded-xl px-3 py-2 text-xs font-bold text-white outline-none transition-all shadow-lg focus:ring-2 focus:ring-emerald-500/50 ${profile?.role && PERMISSIONS.canEditEditors(profile.role) ? 'cursor-pointer hover:bg-white/10' : 'cursor-not-allowed opacity-50'}`}
         >
           <option value="غير محدد" className="bg-[#0b1019] text-muted">غير محدد</option>
+          {item.editor && item.editor !== 'غير محدد' && !editorsList.includes(item.editor) && (
+            <option value={item.editor} className="bg-[#0b1019] text-white font-bold">{item.editor}</option>
+          )}
           {editorsList.map((editor: string) => (
             <option key={editor} value={editor} className="bg-[#0b1019] text-white font-bold">{editor}</option>
           ))}
@@ -1163,12 +1401,12 @@ const TagmeRow = ({
 };
 
 // ─── Stage Row (Junior/Middle/Senior) ─────────────────────────────────────────
-const StageRow = ({ item, index, tagmeTransfers, onTagmeToggle, activeLabel, isGlowing, onUpdateDate, onUpdateWeek, onUpdateThumbnailLink, onUpdateTime, onUpdateYoutubeLink, onUpdateUploaded }: any) => {
+const StageRow = ({ item, index, tagmeTransfers, onTagmeToggle, activeLabel, isGlowing, onUpdateDate, onUpdateWeek, onUpdateThumbnailLink, onUpdateTime, onUpdateYoutubeLink, onUpdateUploaded, onToggleDelivered }: any) => {
   const { profile } = useAuth();
   const rowKey = item.uniqueKey || generateKey(item);
   const itemKey = 'tgm-' + rowKey;
-  const isTagmeChecked = (tagmeTransfers || []).some((i: any) => i.uniqueKey === itemKey);
-  const [received, setReceived] = useState(item.check2);
+  const isTagmeChecked = item.isTagme3a === true || (tagmeTransfers || []).some((i: any) => i.uniqueKey === itemKey);
+  const [received, setReceived] = useState(item.delivered === true || item.check2 === true || item.received === true);
   const [weekVal, setWeekVal] = useState(item.week || '');
   const [dateVal, setDateVal] = useState(item.date || item.id || '');
   const [thumbnailVal, setThumbnailVal] = useState(item.thumbnailLink || '');
@@ -1177,6 +1415,10 @@ const StageRow = ({ item, index, tagmeTransfers, onTagmeToggle, activeLabel, isG
   const [youtubeVal, setYoutubeVal] = useState(item.youtubeLink || '');
   const [isEditingYoutube, setIsEditingYoutube] = useState(false);
   const [isUploaded, setIsUploaded] = useState(item.uploaded === true || item.uploaded === 'true' || item.uploaded === 'TRUE');
+
+  useEffect(() => {
+    setReceived(item.delivered === true || item.check2 === true || item.received === true);
+  }, [item.delivered, item.check2, item.received]);
 
   useEffect(() => {
     setThumbnailVal(item.thumbnailLink || '');
@@ -1316,7 +1558,11 @@ const StageRow = ({ item, index, tagmeTransfers, onTagmeToggle, activeLabel, isG
       </td>
       <td className="px-6 py-5 text-center">
         <button
-          onClick={() => setReceived(!received)}
+          onClick={() => {
+            const nextVal = !received;
+            setReceived(nextVal);
+            if (onToggleDelivered) onToggleDelivered(rowKey, nextVal);
+          }}
           disabled={!(profile?.role && PERMISSIONS.canAddEntry(profile.role))}
           className={`w-10 h-10 rounded-xl flex items-center justify-center mx-auto transition-all duration-300 ${received ? 'bg-blue-500 text-white shadow-lg shadow-blue-500/20' : 'bg-white/5 text-muted hover:bg-blue-500/10 hover:text-blue-400'} ${!(profile?.role && PERMISSIONS.canAddEntry(profile.role)) && 'opacity-50 cursor-not-allowed'}`}
         >
@@ -1736,7 +1982,9 @@ const ShootingRow = ({ item, index, activeGid, onToggleFilmed, loadingFilmedCode
     notes: item.notes || '',
     driveRaw: item.driveRaw || '',
     editorCol: item.editorCol || '',
-    driveFinal: item.driveFinal || ''
+    driveFinal: item.driveFinal || '',
+    filmed: item.filmed === true || item.filmed === 'TRUE',
+    filmingDate: item.filmingDate || ''
   });
   const [isSaving, setIsSaving] = useState(false);
   const [isEditingScript, setIsEditingScript] = useState(false);
@@ -1744,8 +1992,6 @@ const ShootingRow = ({ item, index, activeGid, onToggleFilmed, loadingFilmedCode
   const [isEditingFinal, setIsEditingFinal] = useState(false);
   const [copied, setCopied] = useState(false);
   const { profile } = useAuth();
-
-
 
   // Sync editForm if item changes from outside (e.g. after save)
   useEffect(() => {
@@ -1762,7 +2008,9 @@ const ShootingRow = ({ item, index, activeGid, onToggleFilmed, loadingFilmedCode
       notes: item.notes || '',
       driveRaw: item.driveRaw || '',
       editorCol: item.editorCol || '',
-      driveFinal: item.driveFinal || ''
+      driveFinal: item.driveFinal || '',
+      filmed: item.filmed === true || item.filmed === 'TRUE',
+      filmingDate: item.filmingDate || ''
     });
   }, [item]);
 
@@ -1787,7 +2035,7 @@ const ShootingRow = ({ item, index, activeGid, onToggleFilmed, loadingFilmedCode
       }
     });
     const nextSeq = maxSeq + 1;
-    return `${prefix}${nextSeq.toString().padStart(2, '0')} v6`.toLowerCase();
+    return `${prefix}${nextSeq.toString().padStart(2, '0')} v7`.toLowerCase();
   }, [editForm, item, liveData, activeGid]);
 
   const handleFieldChange = async (fieldName: string, value: string) => {
@@ -1802,7 +2050,7 @@ const ShootingRow = ({ item, index, activeGid, onToggleFilmed, loadingFilmedCode
       const currentPrefix = `${item.year}-${item.teacher}-${item.extraName}-`.toLowerCase().replace(/\s+/g, ' ');
       if (prefix !== currentPrefix) {
         const currentSheetData = Array.isArray(liveData) ? liveData : [];
-        let maxSeq = -1;
+        let maxSeq = 0;
         currentSheetData.forEach((row: any) => {
           if (row.id && row.id.toLowerCase().startsWith(prefix) && row.id !== item.id) {
             const parts = row.id.split('-');
@@ -1816,7 +2064,7 @@ const ShootingRow = ({ item, index, activeGid, onToggleFilmed, loadingFilmedCode
           }
         });
         const nextSeq = maxSeq + 1;
-        newCode = `${prefix}${nextSeq.toString().padStart(2, '0')} v6`.toLowerCase();
+        newCode = `${prefix}${nextSeq.toString().padStart(2, '0')} v7`.toLowerCase();
       }
     }
 
@@ -1835,18 +2083,19 @@ const ShootingRow = ({ item, index, activeGid, onToggleFilmed, loadingFilmedCode
     // 3. Call the update api with the final values
     if (!onUpdateShootingRow) return;
     setIsSaving(true);
+    const rowCode = item.code || item.id;
     const rowData = [
       item.date,
       updatedForm.branch,
       updatedForm.year,
       updatedForm.teacher,
       updatedForm.extraName,
-      newCode,
+      newCode || rowCode,
       updatedForm.script,
       updatedForm.type,
       updatedForm.format,
-      item.filmed ? 'TRUE' : 'FALSE',
-      item.filmingDate,
+      updatedForm.filmed ? 'TRUE' : 'FALSE',
+      updatedForm.filmingDate || item.filmingDate || '',
       updatedForm.by,
       updatedForm.storage,
       updatedForm.notes,
@@ -1858,7 +2107,7 @@ const ShootingRow = ({ item, index, activeGid, onToggleFilmed, loadingFilmedCode
       item.missingDetails ? 'TRUE' : 'FALSE'
     ];
     try {
-      await onUpdateShootingRow(item.id, rowData);
+      await onUpdateShootingRow(rowCode, rowData);
     } catch(e) {
       console.error(e);
     } finally {
@@ -2013,44 +2262,47 @@ const ShootingRow = ({ item, index, activeGid, onToggleFilmed, loadingFilmedCode
         <button
           onClick={() => {
             if (activeGid === '1939073164') return;
-            const nextFilmed = !item.filmed;
+            const nextFilmed = !editForm.filmed;
             const todayStr = new Date().toLocaleDateString('en-US');
-            const targetFilmingDate = (nextFilmed && !item.filmingDate) ? todayStr : item.filmingDate;
+            const targetFilmingDate = (nextFilmed && !editForm.filmingDate) ? todayStr : editForm.filmingDate;
+            const updatedForm = { ...editForm, filmed: nextFilmed, filmingDate: targetFilmingDate || '' };
+            setEditForm(updatedForm);
+            const rowCode = item.code || item.id;
             if (onUpdateShootingRow) {
               const rowData = [
                 item.date,
-                editForm.branch,
-                editForm.year,
-                editForm.teacher,
-                editForm.extraName,
-                item.id,
-                editForm.script,
-                editForm.type,
-                editForm.format,
+                updatedForm.branch,
+                updatedForm.year,
+                updatedForm.teacher,
+                updatedForm.extraName,
+                rowCode,
+                updatedForm.script,
+                updatedForm.type,
+                updatedForm.format,
                 nextFilmed ? 'TRUE' : 'FALSE',
                 targetFilmingDate || '',
-                editForm.by,
-                editForm.storage,
-                editForm.notes,
-                editForm.driveRaw,
-                editForm.editorCol,
+                updatedForm.by,
+                updatedForm.storage,
+                updatedForm.notes,
+                updatedForm.driveRaw,
+                updatedForm.editorCol,
                 item.done ? 'TRUE' : 'FALSE',
-                editForm.driveFinal,
+                updatedForm.driveFinal,
                 item.canceled ? 'TRUE' : 'FALSE',
                 item.missingDetails ? 'TRUE' : 'FALSE'
               ];
-              onUpdateShootingRow(item.id, rowData);
+              onUpdateShootingRow(rowCode, rowData);
             } else {
-              onToggleFilmed && onToggleFilmed(item, nextFilmed);
+              onToggleFilmed && onToggleFilmed({ ...item, ...updatedForm }, nextFilmed);
             }
           }}
-          className={`w-6 h-6 rounded-md flex items-center justify-center mx-auto transition-all duration-300 ${activeGid === '1939073164' ? 'cursor-default' : 'cursor-pointer'} ${loadingFilmedCode === item.id && activeGid !== '1939073164' ? 'opacity-50 pointer-events-none' : ''} ${
-            (item.filmed || activeGid === '1939073164') ? 'bg-emerald-500 text-white shadow-[0_0_10px_rgba(16,185,129,0.5)]' : 'bg-white/10 text-muted hover:bg-emerald-500/30 hover:text-emerald-300'
+          className={`w-6 h-6 rounded-md flex items-center justify-center mx-auto transition-all duration-300 ${activeGid === '1939073164' ? 'cursor-default' : 'cursor-pointer'} ${loadingFilmedCode === (item.code || item.id) && activeGid !== '1939073164' ? 'opacity-50 pointer-events-none' : ''} ${
+            (editForm.filmed || activeGid === '1939073164') ? 'bg-emerald-500 text-white shadow-[0_0_10px_rgba(16,185,129,0.5)]' : 'bg-white/10 text-muted hover:bg-emerald-500/30 hover:text-emerald-300'
           }`}
         >
-          {loadingFilmedCode === item.id && activeGid !== '1939073164' ? (
+          {loadingFilmedCode === (item.code || item.id) && activeGid !== '1939073164' ? (
             <span className="w-3 h-3 border-2 border-white/50 border-t-white rounded-full animate-spin"></span>
-          ) : (item.filmed || activeGid === '1939073164') ? (
+          ) : (editForm.filmed || activeGid === '1939073164') ? (
             <CheckCircle2 size={14} />
           ) : null}
         </button>
@@ -2061,13 +2313,14 @@ const ShootingRow = ({ item, index, activeGid, onToggleFilmed, loadingFilmedCode
           value={item.filmingDate || ''}
           onChange={(e) => {
             const newDate = e.target.value;
+            const rowCode = item.code || item.id;
             const rowData = [
               item.date,
               editForm.branch,
               editForm.year,
               editForm.teacher,
               editForm.extraName,
-              item.id,
+              rowCode,
               editForm.script,
               editForm.type,
               editForm.format,
@@ -2083,7 +2336,7 @@ const ShootingRow = ({ item, index, activeGid, onToggleFilmed, loadingFilmedCode
               item.canceled ? 'TRUE' : 'FALSE',
               item.missingDetails ? 'TRUE' : 'FALSE'
             ];
-            onUpdateShootingRow && onUpdateShootingRow(item.id, rowData);
+            onUpdateShootingRow && onUpdateShootingRow(rowCode, rowData);
           }}
           placeholder="M/D/YYYY"
           className="w-24 bg-white/5 border border-white/10 hover:bg-white/10 rounded-xl px-2 py-1 text-xs font-mono font-bold text-center text-blue-300 outline-none focus:border-emerald-500 transition-all"
@@ -2097,7 +2350,7 @@ const ShootingRow = ({ item, index, activeGid, onToggleFilmed, loadingFilmedCode
       </AutofillCell>
       <AutofillCell colKey="notes" rowIndex={index} value={editForm.notes} autofillDrag={autofillDrag} setAutofillDrag={setAutofillDrag} onApply={onApplyAutofill} activeCell={activeCell} setActiveCell={setActiveCell} liveDataLength={liveData?.length} className="px-5 py-5 text-center text-xs font-bold text-white/90 arabic-text">
         <HistoryInput
-          itemKey={item.id}
+          itemKey={item.code || item.id}
           fieldKey="shooting_notes"
           value={editForm.notes}
           onChange={(val: string) => handleFieldChange('notes', val)}
@@ -2170,7 +2423,8 @@ const ShootingRow = ({ item, index, activeGid, onToggleFilmed, loadingFilmedCode
           <td className="px-3 py-5 text-center">
             <button
               onClick={async () => {
-                if (!item.id) { alert("لا يمكن تعديل هذا الصف لعدم وجود كود (Code)"); return; }
+                const rowCode = item.code || item.id;
+                if (!rowCode) { alert("لا يمكن تعديل هذا الصف لعدم وجود كود (Code)"); return; }
                 if (!onUpdateShootingRow) return;
                 setIsSaving(true);
                 const nextMissing = !isMissing;
@@ -2180,7 +2434,7 @@ const ShootingRow = ({ item, index, activeGid, onToggleFilmed, loadingFilmedCode
                   editForm.year,
                   editForm.teacher,
                   editForm.extraName,
-                  item.id,
+                  rowCode,
                   editForm.script,
                   editForm.type,
                   editForm.format,
@@ -2197,7 +2451,7 @@ const ShootingRow = ({ item, index, activeGid, onToggleFilmed, loadingFilmedCode
                   nextMissing ? 'TRUE' : 'FALSE'
                 ];
                 try {
-                  await onUpdateShootingRow(item.id, rowData);
+                  await onUpdateShootingRow(rowCode, rowData);
                 } catch(e) {
                   console.error(e);
                 } finally {
@@ -2216,7 +2470,8 @@ const ShootingRow = ({ item, index, activeGid, onToggleFilmed, loadingFilmedCode
           <td className="px-3 py-5 text-center">
             <button
               onClick={async () => {
-                if (!item.id) { alert("لا يمكن تعديل هذا الصف لعدم وجود كود (Code)"); return; }
+                const rowCode = item.code || item.id;
+                if (!rowCode) { alert("لا يمكن تعديل هذا الصف لعدم وجود كود (Code)"); return; }
                 const nextDone = !isDone;
                 if (nextDone) {
                   const finalVal = String(editForm.driveFinal || '').trim();
@@ -2238,7 +2493,7 @@ const ShootingRow = ({ item, index, activeGid, onToggleFilmed, loadingFilmedCode
                   editForm.year,
                   editForm.teacher,
                   editForm.extraName,
-                  item.id,
+                  rowCode,
                   editForm.script,
                   editForm.type,
                   editForm.format,
@@ -2255,7 +2510,7 @@ const ShootingRow = ({ item, index, activeGid, onToggleFilmed, loadingFilmedCode
                   item.missingDetails ? 'TRUE' : 'FALSE'
                 ];
                 try {
-                  await onUpdateShootingRow(item.id, rowData);
+                  await onUpdateShootingRow(rowCode, rowData);
                 } catch(e) {
                   console.error(e);
                 } finally {
@@ -2274,7 +2529,8 @@ const ShootingRow = ({ item, index, activeGid, onToggleFilmed, loadingFilmedCode
           <td className="px-3 py-5 text-center">
             <button
               onClick={async () => {
-                if (!item.id) { alert("لا يمكن تعديل هذا الصف لعدم وجود كود (Code)"); return; }
+                const rowCode = item.code || item.id;
+                if (!rowCode) { alert("لا يمكن تعديل هذا الصف لعدم وجود كود (Code)"); return; }
                 if (!onUpdateShootingRow) return;
                 setIsSaving(true);
                 const nextCanceled = !isCanceled;
@@ -2284,7 +2540,7 @@ const ShootingRow = ({ item, index, activeGid, onToggleFilmed, loadingFilmedCode
                   editForm.year,
                   editForm.teacher,
                   editForm.extraName,
-                  item.id,
+                  rowCode,
                   editForm.script,
                   editForm.type,
                   editForm.format,
@@ -2301,7 +2557,7 @@ const ShootingRow = ({ item, index, activeGid, onToggleFilmed, loadingFilmedCode
                   item.missingDetails ? 'TRUE' : 'FALSE'
                 ];
                 try {
-                  await onUpdateShootingRow(item.id, rowData);
+                  await onUpdateShootingRow(rowCode, rowData);
                 } catch(e) {
                   console.error(e);
                 } finally {
@@ -2376,6 +2632,93 @@ const ShootingRow = ({ item, index, activeGid, onToggleFilmed, loadingFilmedCode
             </div>
           )}
         </div>
+      </td>
+
+      {/* Shared Link Checkbox (Check) */}
+      <td className="px-3 py-5 text-center">
+        {(() => {
+          const itemKey = item.id || generateKey(item);
+          const isSharedChecked = localStorage.getItem(`shared_check_${itemKey}`) === 'true';
+          return (
+            <button
+              onClick={() => {
+                const nextState = !isSharedChecked;
+                localStorage.setItem(`shared_check_${itemKey}`, String(nextState));
+                // Force state update by triggering liveData shallow change
+                setLiveData((prev: any[]) => prev ? [...prev] : prev);
+              }}
+              className={`w-6 h-6 rounded-md flex items-center justify-center mx-auto transition-all duration-300 cursor-pointer ${
+                isSharedChecked 
+                  ? 'bg-cyan-500 text-white shadow-[0_0_10px_rgba(6,182,212,0.5)]' 
+                  : 'bg-white/10 text-muted hover:bg-cyan-500/30 hover:text-cyan-300'
+              }`}
+              title="Shared Check"
+            >
+              {isSharedChecked && <CheckCircle2 size={14} />}
+            </button>
+          );
+        })()}
+      </td>
+
+      {/* Shared Link URL Input & Display */}
+      <td className="px-4 py-5 text-center">
+        {(() => {
+          const itemKey = item.id || generateKey(item);
+          const sharedUrl = localStorage.getItem(`shared_link_${itemKey}`) || '';
+          const isEditingShared = activeCell?.colKey === 'sharedLink' && activeCell?.rowIndex === index;
+
+          return (
+            <div className="flex items-center justify-center gap-1.5">
+              {isEditingShared ? (
+                <input
+                  autoFocus
+                  type="text"
+                  defaultValue={sharedUrl}
+                  onBlur={(e) => {
+                    localStorage.setItem(`shared_link_${itemKey}`, e.target.value.trim());
+                    setActiveCell(null);
+                    setLiveData((prev: any[]) => prev ? [...prev] : prev);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.currentTarget.blur();
+                    }
+                  }}
+                  className="w-full max-w-[150px] bg-white/5 border border-white/10 hover:bg-white/10 rounded-xl px-3 py-1.5 text-xs font-bold text-center text-white/90 outline-none transition-all focus:bg-[#0b1019] focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/30 text-left"
+                  placeholder="Paste Shared Link..."
+                />
+              ) : (
+                <>
+                  {sharedUrl ? (
+                    (() => {
+                      const parsed = parseDriveLink(sharedUrl);
+                      return (
+                        <a
+                          href={parsed.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="px-3 py-1.5 rounded-xl bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-400 font-mono text-[11px] underline cursor-pointer shadow-sm shrink-0 truncate max-w-[200px]"
+                          title={parsed.url}
+                        >
+                          {parsed.text}
+                        </a>
+                      );
+                    })()
+                  ) : (
+                    <span className="text-muted/40 text-xs px-2 shrink-0">---</span>
+                  )}
+                  <button
+                    onClick={() => setActiveCell({ colKey: 'sharedLink', rowIndex: index })}
+                    className="p-1.5 rounded-full bg-white/5 hover:bg-white/15 text-muted hover:text-white transition-all scale-95 cursor-pointer shrink-0"
+                    title="تعديل Shared Link"
+                  >
+                    <Pencil size={11} />
+                  </button>
+                </>
+              )}
+            </div>
+          );
+        })()}
       </td>
     </motion.tr>
   );
@@ -3280,8 +3623,10 @@ const TagmeAnalyticsDashboard = ({ combinedData, tagmeTransfers, loading, taskSt
 };
 
 // ─── App ──────────────────────────────────────────────────────────────────────
-function App() {
-  const { profile, signOut, session } = useAuth();
+export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
+  const isDemo = isDemoMode || (typeof window !== 'undefined' && (window.location.search.includes('demo=true') || window.location.pathname.includes('demo')));
+  const { profile: authProfile, signOut, session } = useAuth();
+  const profile = authProfile || (isDemo ? { id: 'demo-admin', name: 'ADMIN (DEMO)', role: 'admin', default_mode: 'operations' } as any : null);
   const [rolePermissions, setRolePermissions] = useState<any>(DEFAULT_ROLE_PERMISSIONS);
 
   // Determine initial mode from profile.default_mode
@@ -3329,7 +3674,15 @@ function App() {
   const isReelsStage = ['1436746012', '1939073164', '0', '798246690'].includes(activeGid);
   const isStage = !isOperations && !isTagme3at && !isAnalyticsTagme && !isReelsAnalytics && !isDesignersMode;
 
-  const sheetGidToFetch = isAnalyticsTagme 
+  const isSupabaseLiveTab = !isDemo && (
+    activeGid === '1535230545' || 
+    ['497207661', '96752860', '346788121', '458352282', '2113852114', '2089699920', '1640460225', '595027661', '286303232'].includes(activeGid) ||
+    ['1436746012', '1939073164', '0'].includes(activeGid)
+  );
+
+  const sheetGidToFetch = isSupabaseLiveTab
+    ? ''
+    : isAnalyticsTagme 
     ? '1535230545' 
     : isReelsAnalytics 
     ? '1436746012' 
@@ -3468,9 +3821,35 @@ function App() {
   const [teacherFilter, setTeacherFilter] = useState('All');
   const [yearFilter, setYearFilter] = useState('All');
   const [termFilter, setTermFilter] = useState('All');
+  const [activeAcademicTerm, setActiveAcademicTerm] = useState<'T1' | 'T2'>(() => {
+    return (localStorage.getItem('active_academic_term') as 'T1' | 'T2') || 'T1';
+  });
   const [bypassYearTerm, setBypassYearTerm] = useState(false);
   const [tagmeViewMode, setTagmeViewMode] = useState<'SIMPLE' | 'DETAILED'>('SIMPLE');
   const [colFilters, setColFilters] = useState<Record<string, string>>({});
+
+  const handleAdminTermChange = (term: 'T1' | 'T2') => {
+    setActiveAcademicTerm(term);
+    localStorage.setItem('active_academic_term', term);
+    toast.success(`تم تحويل الترم النشط للنظام إلى: ${term === 'T1' ? 'الترم الأول (T1)' : 'الترم الثاني (T2)'}`);
+
+    const token = session?.access_token || profile?.id;
+    if (token) {
+      fetch('/api/task-metadata', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ field: 'active_academic_term', metadata: { term } })
+      }).catch(e => console.error(e));
+    }
+
+    if (globalChannelRef.current && profile?.name) {
+      globalChannelRef.current.send({
+        type: 'broadcast',
+        event: 'update',
+        payload: { itemKey: 'term-config', taskName: 'Active Term', message: `🔒 تم تحديد الترم النشط: ${term}`, type: 'term_change', field: 'active_academic_term', dict: { term } }
+      });
+    }
+  };
 
   useEffect(() => {
     setBypassYearTerm(false);
@@ -3503,9 +3882,675 @@ function App() {
   const [activeToast, setActiveToast] = useState<{ item: any, stage: { gid: string, label: string }, uniqueKey: string } | null>(null);
   const [selectedForMerge, setSelectedForMerge] = useState<any[]>([]);
 
+  // ─── Direct Supabase Database for Tagme3at (tagme3at_26) ───────────────────
+  const [tagmeDbRows, setTagmeDbRows] = useState<any[]>([]);
+  const [isTagmeDbLoading, setIsTagmeDbLoading] = useState(false);
+
+  const fetchTagmeDb = async () => {
+    setIsTagmeDbLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('tagme3at_26')
+        .select('*')
+        .order('id', { ascending: false });
+
+      if (error) throw error;
+      if (data) {
+        const mapped = data.map((i: any) => ({
+          uniqueKey: i.unique_key,
+          id: i.unique_key,
+          name: i.name || '',
+          filingName: i.filing_name || '',
+          opSheet: i.op_sheet || '',
+          branch: i.branch || '',
+          date: i.date || '',
+          notesMarketing: i.notes_marketing || '',
+          notesMarketingUpdatedAt: i.notes_marketing_updated_at || i.updated_at,
+          notesMarketingUpdatedBy: i.notes_marketing_updated_by || '',
+          editor: i.editor || '',
+          notesEditors: i.notes_editors || '',
+          notesEditorsUpdatedAt: i.notes_editors_updated_at || i.updated_at,
+          notesEditorsUpdatedBy: i.notes_editors_updated_by || '',
+          done: i.done === true,
+          priority: i.priority === true,
+          cancel: i.cancel === true,
+          thumbnailLink: i.thumbnail_link || '',
+          time: i.time || '',
+          youtubeLink: i.youtube_link || '',
+          uploaded: i.uploaded === true,
+          isTransfer: i.is_transfer === true,
+          updatedAt: i.updated_at
+        }));
+        setTagmeDbRows(mapped);
+      }
+    } catch (e) {
+      console.error('Error fetching tagme3at_26 from Supabase:', e);
+    } finally {
+      setIsTagmeDbLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!isDemo && (isTagme3at || isAnalyticsTagme)) {
+      fetchTagmeDb();
+    }
+  }, [isDemo, activeGid, isTagme3at, isAnalyticsTagme]);
+
+  // Realtime subscription on tagme3at_26
+  useEffect(() => {
+    if (isDemo) return;
+
+    const channel = supabase
+      .channel('tagme3at_26_realtime')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'tagme3at_26' },
+        (payload: any) => {
+          if (payload.eventType === 'INSERT') {
+            const newItem = {
+              uniqueKey: payload.new.unique_key,
+              id: payload.new.unique_key,
+              name: payload.new.name || '',
+              filingName: payload.new.filing_name || '',
+              opSheet: payload.new.op_sheet || '',
+              branch: payload.new.branch || '',
+              date: payload.new.date || '',
+              notesMarketing: payload.new.notes_marketing || '',
+              notesMarketingUpdatedAt: payload.new.notes_marketing_updated_at || payload.new.updated_at,
+              notesMarketingUpdatedBy: payload.new.notes_marketing_updated_by || '',
+              editor: payload.new.editor || '',
+              notesEditors: payload.new.notes_editors || '',
+              notesEditorsUpdatedAt: payload.new.notes_editors_updated_at || payload.new.updated_at,
+              notesEditorsUpdatedBy: payload.new.notes_editors_updated_by || '',
+              done: payload.new.done === true,
+              priority: payload.new.priority === true,
+              cancel: payload.new.cancel === true,
+              thumbnailLink: payload.new.thumbnail_link || '',
+              time: payload.new.time || '',
+              youtubeLink: payload.new.youtube_link || '',
+              uploaded: payload.new.uploaded === true,
+              isTransfer: payload.new.is_transfer === true,
+              updatedAt: payload.new.updated_at
+            };
+            setTagmeDbRows(prev => [newItem, ...prev.filter(x => x.uniqueKey !== newItem.uniqueKey)]);
+          } else if (payload.eventType === 'UPDATE') {
+            const updated = {
+              uniqueKey: payload.new.unique_key,
+              id: payload.new.unique_key,
+              name: payload.new.name || '',
+              filingName: payload.new.filing_name || '',
+              opSheet: payload.new.op_sheet || '',
+              branch: payload.new.branch || '',
+              date: payload.new.date || '',
+              notesMarketing: payload.new.notes_marketing || '',
+              notesMarketingUpdatedAt: payload.new.notes_marketing_updated_at || payload.new.updated_at,
+              notesMarketingUpdatedBy: payload.new.notes_marketing_updated_by || '',
+              editor: payload.new.editor || '',
+              notesEditors: payload.new.notes_editors || '',
+              notesEditorsUpdatedAt: payload.new.notes_editors_updated_at || payload.new.updated_at,
+              notesEditorsUpdatedBy: payload.new.notes_editors_updated_by || '',
+              done: payload.new.done === true,
+              priority: payload.new.priority === true,
+              cancel: payload.new.cancel === true,
+              thumbnailLink: payload.new.thumbnail_link || '',
+              time: payload.new.time || '',
+              youtubeLink: payload.new.youtube_link || '',
+              uploaded: payload.new.uploaded === true,
+              isTransfer: payload.new.is_transfer === true,
+              updatedAt: payload.new.updated_at
+            };
+            setTagmeDbRows(prev => prev.map(x => x.uniqueKey === updated.uniqueKey ? updated : x));
+          } else if (payload.eventType === 'DELETE') {
+            const delKey = payload.old?.unique_key;
+            if (delKey) {
+              setTagmeDbRows(prev => prev.filter(x => x.uniqueKey !== delKey));
+            }
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [isDemo]);
+
+  // Helper for direct Supabase updates
+  const updateTagme3atDbField = async (itemKey: string, field: string, value: any) => {
+    const dbFieldMap: Record<string, string> = {
+      editor: 'editor',
+      notesMarketing: 'notes_marketing',
+      notesEditors: 'notes_editors',
+      done: 'done',
+      priority: 'priority',
+      cancel: 'cancel',
+      uploaded: 'uploaded',
+      thumbnailLink: 'thumbnail_link',
+      youtubeLink: 'youtube_link',
+      time: 'time',
+      name: 'name',
+      opSheet: 'op_sheet',
+      branch: 'branch',
+      date: 'date'
+    };
+
+    const col = dbFieldMap[field] || field;
+    const nowIso = new Date().toISOString();
+    const currentUser = profile?.name || localStorage.getItem('user_editor_name') || 'مستخدم';
+
+    // Optimistic UI update
+    setTagmeDbRows(prev => prev.map(item => {
+      if (item.uniqueKey === itemKey) {
+        const next = { ...item, [field]: value };
+        if (field === 'notesMarketing') {
+          next.notesMarketingUpdatedAt = nowIso;
+          next.notesMarketingUpdatedBy = currentUser;
+        }
+        if (field === 'notesEditors') {
+          next.notesEditorsUpdatedAt = nowIso;
+          next.notesEditorsUpdatedBy = currentUser;
+        }
+        return next;
+      }
+      return item;
+    }));
+
+    try {
+      const updatePayload: any = {
+        [col]: value,
+        updated_at: nowIso
+      };
+      if (field === 'notesMarketing') {
+        updatePayload.notes_marketing_updated_at = nowIso;
+        updatePayload.notes_marketing_updated_by = currentUser;
+      }
+      if (field === 'notesEditors') {
+        updatePayload.notes_editors_updated_at = nowIso;
+        updatePayload.notes_editors_updated_by = currentUser;
+      }
+
+      const { error } = await supabase
+        .from('tagme3at_26')
+        .update(updatePayload)
+        .eq('unique_key', itemKey);
+
+      if (error) {
+        console.error('Error updating tagme3at_26 in Supabase:', error);
+      }
+    } catch (err) {
+      console.error('Exception updating tagme3at_26 in Supabase:', err);
+    }
+  };
+
+  // ─── Direct Supabase Database for Stage Sheets (stage_j4_26 -> stage_s3_26) ─────
+  const STAGE_TABLE_MAP: Record<string, string> = {
+    '497207661': 'stage_j4_26',
+    '96752860': 'stage_j5_26',
+    '346788121': 'stage_j6_26',
+    '458352282': 'stage_m1_26',
+    '2113852114': 'stage_m2_26',
+    '2089699920': 'stage_m3_26',
+    '1640460225': 'stage_s1_26',
+    '595027661': 'stage_s2_26',
+    '286303232': 'stage_s3_26',
+  };
+
+  const [stageDbRows, setStageDbRows] = useState<any[]>([]);
+  const [isStageDbLoading, setIsStageDbLoading] = useState(false);
+
+  const stageTable = STAGE_TABLE_MAP[activeGid];
+  const isStageTab = !!stageTable;
+
+  const fetchStageDb = async (gid: string) => {
+    const tbl = STAGE_TABLE_MAP[gid];
+    if (!tbl) return;
+    setIsStageDbLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from(tbl)
+        .select('*')
+        .order('id', { ascending: false });
+
+      if (error) throw error;
+      if (data) {
+        const mapped = data.map((i: any) => ({
+          uniqueKey: i.unique_key,
+          id: i.unique_key,
+          week: i.week || '',
+          date: i.date || '',
+          name: i.name || '',
+          filingName: i.filing_name || '',
+          subject: i.subject || '',
+          branch: i.branch || '',
+          opSheet: i.op_sheet || '',
+          isTagme3a: i.is_tagme3a === true,
+          delivered: i.delivered === true,
+          thumbnailLink: i.thumbnail_link || '',
+          time: i.time || '',
+          youtubeLink: i.youtube_link || '',
+          uploaded: i.uploaded === true,
+          createdAt: i.created_at,
+          updatedAt: i.updated_at
+        }));
+        setStageDbRows(mapped);
+      }
+    } catch (e) {
+      console.error(`Error fetching ${tbl} from Supabase:`, e);
+    } finally {
+      setIsStageDbLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!isDemo && isStageTab) {
+      fetchStageDb(activeGid);
+    }
+  }, [isDemo, activeGid, isStageTab]);
+
+  // Realtime subscription on active stage table
+  useEffect(() => {
+    if (isDemo || !isStageTab) return;
+    const tbl = STAGE_TABLE_MAP[activeGid];
+    if (!tbl) return;
+
+    const channel = supabase
+      .channel(`${tbl}_realtime`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: tbl },
+        (payload: any) => {
+          if (payload.eventType === 'INSERT') {
+            const newItem = {
+              uniqueKey: payload.new.unique_key,
+              id: payload.new.unique_key,
+              week: payload.new.week || '',
+              date: payload.new.date || '',
+              name: payload.new.name || '',
+              filingName: payload.new.filing_name || '',
+              subject: payload.new.subject || '',
+              branch: payload.new.branch || '',
+              opSheet: payload.new.op_sheet || '',
+              isTagme3a: payload.new.is_tagme3a === true,
+              delivered: payload.new.delivered === true,
+              thumbnailLink: payload.new.thumbnail_link || '',
+              time: payload.new.time || '',
+              youtubeLink: payload.new.youtube_link || '',
+              uploaded: payload.new.uploaded === true,
+              createdAt: payload.new.created_at,
+              updatedAt: payload.new.updated_at
+            };
+            setStageDbRows(prev => [newItem, ...prev.filter(x => x.uniqueKey !== newItem.uniqueKey)]);
+          } else if (payload.eventType === 'UPDATE') {
+            const updated = {
+              uniqueKey: payload.new.unique_key,
+              id: payload.new.unique_key,
+              week: payload.new.week || '',
+              date: payload.new.date || '',
+              name: payload.new.name || '',
+              filingName: payload.new.filing_name || '',
+              subject: payload.new.subject || '',
+              branch: payload.new.branch || '',
+              opSheet: payload.new.op_sheet || '',
+              isTagme3a: payload.new.is_tagme3a === true,
+              delivered: payload.new.delivered === true,
+              thumbnailLink: payload.new.thumbnail_link || '',
+              time: payload.new.time || '',
+              youtubeLink: payload.new.youtube_link || '',
+              uploaded: payload.new.uploaded === true,
+              createdAt: payload.new.created_at,
+              updatedAt: payload.new.updated_at
+            };
+            setStageDbRows(prev => prev.map(x => x.uniqueKey === updated.uniqueKey ? updated : x));
+          } else if (payload.eventType === 'DELETE') {
+            const delKey = payload.old?.unique_key;
+            if (delKey) {
+              setStageDbRows(prev => prev.filter(x => x.uniqueKey !== delKey));
+            }
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [isDemo, activeGid, isStageTab]);
+
+  const updateStageDbField = async (gid: string, itemKey: string, field: string, value: any) => {
+    const tbl = STAGE_TABLE_MAP[gid];
+    if (!tbl) return;
+
+    const dbFieldMap: Record<string, string> = {
+      week: 'week',
+      date: 'date',
+      name: 'name',
+      filingName: 'filing_name',
+      subject: 'subject',
+      branch: 'branch',
+      opSheet: 'op_sheet',
+      isTagme3a: 'is_tagme3a',
+      delivered: 'delivered',
+      thumbnailLink: 'thumbnail_link',
+      time: 'time',
+      youtubeLink: 'youtube_link',
+      uploaded: 'uploaded'
+    };
+
+    const col = dbFieldMap[field] || field;
+
+    // Optimistic UI update
+    setStageDbRows(prev => prev.map(item => {
+      if (item.uniqueKey === itemKey) {
+        return { ...item, [field]: value };
+      }
+      return item;
+    }));
+
+    try {
+      const { error } = await supabase
+        .from(tbl)
+        .update({
+          [col]: value,
+          updated_at: new Date().toISOString()
+        })
+        .eq('unique_key', itemKey);
+
+      if (error) {
+        console.error(`Error updating ${tbl} in Supabase:`, error);
+      }
+    } catch (err) {
+      console.error(`Exception updating ${tbl} in Supabase:`, err);
+    }
+  };
+
+  // ─── Direct Supabase Database for Reels Sheets (reels_shooting_26, reels_ve_26, reels_cuts_26) ─────
+  const REELS_TABLE_MAP: Record<string, string> = {
+    '1436746012': 'reels_shooting_26',
+    '1939073164': 'reels_ve_26',
+    '0': 'reels_cuts_26',
+  };
+
+  const [reelsDbRows, setReelsDbRows] = useState<any[]>([]);
+  const [isReelsDbLoading, setIsReelsDbLoading] = useState(false);
+
+  const reelsTable = REELS_TABLE_MAP[activeGid];
+  const isReelsTableTab = !!reelsTable;
+
+  const fetchReelsDb = async (gid: string) => {
+    const tbl = REELS_TABLE_MAP[gid];
+    if (!tbl) return;
+    setIsReelsDbLoading(true);
+    try {
+      // If loading VE tab, automatically sync and ensure all filmed tasks from Shooting tab exist in VE, and remove any unfilmed tasks
+      if (gid === '1939073164') {
+        const { data: filmedShooting } = await supabase
+          .from('reels_shooting_26')
+          .select('*')
+          .eq('filmed', true);
+
+        const filmedCodes = (filmedShooting || []).map(s => s.code).filter(Boolean);
+
+        // 1. Delete any row in VE that is no longer filmed in shooting
+        const { data: currentVe } = await supabase.from('reels_ve_26').select('code');
+        if (currentVe && currentVe.length > 0) {
+          for (const v of currentVe) {
+            if (!filmedCodes.includes(v.code)) {
+              await supabase.from('reels_ve_26').delete().eq('code', v.code);
+            }
+          }
+        }
+
+        // 2. Upsert all filmed shooting rows into VE
+        if (filmedShooting && filmedShooting.length > 0) {
+          for (const sRow of filmedShooting) {
+            const veRecord = {
+              code: sRow.code,
+              date: sRow.date || new Date().toLocaleDateString('en-US'),
+              branch: sRow.branch || '',
+              year: sRow.year || '',
+              teacher: sRow.teacher || '',
+              extra_name: sRow.extra_name || '',
+              script: sRow.script || '',
+              type: sRow.type || '',
+              format: sRow.format || '',
+              filmed: true,
+              filming_date: sRow.filming_date || new Date().toLocaleDateString('en-US'),
+              by: sRow.by || '',
+              storage: sRow.storage || '',
+              notes: sRow.notes || '',
+              drive_raw: sRow.drive_raw || '',
+              editor_col: sRow.editor_col || 'غير محدد',
+              done: sRow.done === true,
+              drive_final: sRow.drive_final || '',
+              canceled: sRow.canceled === true,
+              missing_details: sRow.missing_details === true,
+              updated_at: new Date().toISOString()
+            };
+            await supabase.from('reels_ve_26').upsert(veRecord, { onConflict: 'code' });
+          }
+        }
+      }
+
+      const { data, error } = await supabase
+        .from(tbl)
+        .select('*')
+        .order('id', { ascending: false });
+
+      if (error) throw error;
+      if (data) {
+        let mapped: any[] = [];
+        if (gid === '0') {
+          mapped = data.map((i: any) => ({
+            id: i.code,
+            code: i.code,
+            date: i.date || '',
+            branch: i.branch || '',
+            year: i.year || '',
+            typeCol: i.type_col || 'CUT',
+            creator: i.creator || '',
+            dataFiles: i.data_files || '',
+            script: i.script || '',
+            type: i.type || '',
+            format: i.format || '',
+            creatorNotes: i.creator_notes || '',
+            editorNotes: i.editor_notes || '',
+            missingDetails: i.missing_details === true,
+            problem: i.problem === true,
+            done: i.done === true,
+            editor: i.editor || '',
+            driveFinal: i.drive_final || '',
+            canceled: i.canceled === true,
+            uniqueKey: i.code,
+            createdAt: i.created_at,
+            updatedAt: i.updated_at
+          }));
+        } else {
+          mapped = data.map((i: any) => ({
+            id: i.code,
+            code: i.code,
+            date: i.date || '',
+            branch: i.branch || '',
+            year: i.year || '',
+            teacher: i.teacher || '',
+            extraName: i.extra_name || '',
+            script: i.script || '',
+            type: i.type || '',
+            format: i.format || '',
+            filmed: i.filmed === true,
+            filmingDate: i.filming_date || '',
+            by: i.by || '',
+            storage: i.storage || '',
+            notes: i.notes || '',
+            driveRaw: i.drive_raw || '',
+            editorCol: i.editor_col || '',
+            done: i.done === true,
+            driveFinal: i.drive_final || '',
+            canceled: i.canceled === true,
+            missingDetails: i.missing_details === true,
+            uniqueKey: i.code,
+            createdAt: i.created_at,
+            updatedAt: i.updated_at
+          }));
+        }
+        setReelsDbRows(mapped);
+      }
+    } catch (e) {
+      console.error(`Error fetching ${tbl} from Supabase:`, e);
+    } finally {
+      setIsReelsDbLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (!isDemo && isReelsTableTab) {
+      fetchReelsDb(activeGid);
+    }
+  }, [isDemo, activeGid, isReelsTableTab]);
+
+  // Realtime subscription on active reels table
+  useEffect(() => {
+    if (isDemo || !isReelsTableTab) return;
+    const tbl = REELS_TABLE_MAP[activeGid];
+    if (!tbl) return;
+
+    const channel = supabase
+      .channel(`${tbl}_realtime`)
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: tbl },
+        (payload: any) => {
+          if (payload.eventType === 'INSERT') {
+            const i = payload.new;
+            let newItem: any;
+            if (activeGid === '0') {
+              newItem = {
+                id: i.code,
+                code: i.code,
+                date: i.date || '',
+                branch: i.branch || '',
+                year: i.year || '',
+                typeCol: i.type_col || 'CUT',
+                creator: i.creator || '',
+                dataFiles: i.data_files || '',
+                script: i.script || '',
+                type: i.type || '',
+                format: i.format || '',
+                creatorNotes: i.creator_notes || '',
+                editorNotes: i.editor_notes || '',
+                missingDetails: i.missing_details === true,
+                problem: i.problem === true,
+                done: i.done === true,
+                editor: i.editor || '',
+                driveFinal: i.drive_final || '',
+                canceled: i.canceled === true,
+                uniqueKey: i.code,
+                createdAt: i.created_at,
+                updatedAt: i.updated_at
+              };
+            } else {
+              newItem = {
+                id: i.code,
+                code: i.code,
+                date: i.date || '',
+                branch: i.branch || '',
+                year: i.year || '',
+                teacher: i.teacher || '',
+                extraName: i.extra_name || '',
+                script: i.script || '',
+                type: i.type || '',
+                format: i.format || '',
+                filmed: i.filmed === true,
+                filmingDate: i.filming_date || '',
+                by: i.by || '',
+                storage: i.storage || '',
+                notes: i.notes || '',
+                driveRaw: i.drive_raw || '',
+                editorCol: i.editor_col || '',
+                done: i.done === true,
+                driveFinal: i.drive_final || '',
+                canceled: i.canceled === true,
+                missingDetails: i.missing_details === true,
+                uniqueKey: i.code,
+                createdAt: i.created_at,
+                updatedAt: i.updated_at
+              };
+            }
+            setReelsDbRows(prev => [newItem, ...prev.filter(x => x.code !== newItem.code)]);
+          } else if (payload.eventType === 'UPDATE') {
+            const i = payload.new;
+            let updated: any;
+            if (activeGid === '0') {
+              updated = {
+                id: i.code,
+                code: i.code,
+                date: i.date || '',
+                branch: i.branch || '',
+                year: i.year || '',
+                typeCol: i.type_col || 'CUT',
+                creator: i.creator || '',
+                dataFiles: i.data_files || '',
+                script: i.script || '',
+                type: i.type || '',
+                format: i.format || '',
+                creatorNotes: i.creator_notes || '',
+                editorNotes: i.editor_notes || '',
+                missingDetails: i.missing_details === true,
+                problem: i.problem === true,
+                done: i.done === true,
+                editor: i.editor || '',
+                driveFinal: i.drive_final || '',
+                canceled: i.canceled === true,
+                uniqueKey: i.code,
+                createdAt: i.created_at,
+                updatedAt: i.updated_at
+              };
+            } else {
+              updated = {
+                id: i.code,
+                code: i.code,
+                date: i.date || '',
+                branch: i.branch || '',
+                year: i.year || '',
+                teacher: i.teacher || '',
+                extraName: i.extra_name || '',
+                script: i.script || '',
+                type: i.type || '',
+                format: i.format || '',
+                filmed: i.filmed === true,
+                filmingDate: i.filming_date || '',
+                by: i.by || '',
+                storage: i.storage || '',
+                notes: i.notes || '',
+                driveRaw: i.drive_raw || '',
+                editorCol: i.editor_col || '',
+                done: i.done === true,
+                driveFinal: i.drive_final || '',
+                canceled: i.canceled === true,
+                missingDetails: i.missing_details === true,
+                uniqueKey: i.code,
+                createdAt: i.created_at,
+                updatedAt: i.updated_at
+              };
+            }
+            setReelsDbRows(prev => prev.map(x => x.code === updated.code ? updated : x));
+          } else if (payload.eventType === 'DELETE') {
+            const delCode = payload.old?.code;
+            if (delCode) {
+              setReelsDbRows(prev => prev.filter(x => x.code !== delCode));
+            }
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [isDemo, activeGid, isReelsTableTab]);
+
   const [tagmeTransfers, setTagmeTransfers] = useState<any[]>([]);
   const [activeTagmeToast, setActiveTagmeToast] = useState<{ item: any, stage: { gid: string, label: string }, uniqueKey: string } | null>(null);
-const [activeVeToast, setActiveVeToast] = useState<{ item: any } | null>(null);
+  const [activeVeToast, setActiveVeToast] = useState<{ item: any } | null>(null);
 
   const [assignedEditors, setAssignedEditors] = useState<Record<string, string>>(() => {
     const saved = localStorage.getItem('assigned_editors');
@@ -3619,9 +4664,100 @@ const [activeVeToast, setActiveVeToast] = useState<{ item: any } | null>(null);
     return {};
   });
 
+  const [localEntries, setLocalEntries] = useState<{ [gid: string]: any[] }>({});
+
+  const combinedData = useMemo(() => {
+    const currentLocal = localEntries[activeGid] || [];
+    let baseList = [];
+    if (isOperations) baseList = [...currentLocal, ...liveData];
+    else if (isTagme3at || isAnalyticsTagme) {
+      if (!isDemo) {
+        // EXCLUSIVELY FROM SUPABASE tagme3at_26 TABLE
+        baseList = tagmeDbRows;
+      } else {
+        baseList = [...currentLocal, ...tagmeTransfers, ...liveData];
+      }
+    } else if (isStageTab && !isDemo) {
+      // EXCLUSIVELY FROM SUPABASE STAGE TABLES (stage_j4_26 -> stage_s3_26)
+      // Pure Supabase: exactly and only what exists in the database table
+      baseList = stageDbRows;
+    } else if (isReelsTableTab && !isDemo) {
+      // EXCLUSIVELY FROM SUPABASE REELS TABLES (reels_shooting_26, reels_ve_26, reels_cuts_26)
+      // Pure Supabase: single authoritative source of truth for reels
+      baseList = reelsDbRows;
+    } else {
+      const transfers = youtubeItems[activeGid] || [];
+      baseList = [...currentLocal, ...transfers, ...liveData];
+    }
+
+    return baseList.map(item => {
+      const key = item.uniqueKey || generateKey(item);
+      const updated = { ...item };
+
+      // For Tagme3at, Stage, and Reels tables in live mode, Supabase is the authoritative single source of truth
+      if (!isDemo && (isTagme3at || isAnalyticsTagme || isStageTab || isReelsTableTab)) {
+        return updated;
+      }
+
+      if (assignedEditors[key] !== undefined) {
+        updated.editor = assignedEditors[key];
+      }
+      if (editorNotes[key] !== undefined) {
+        updated.notesEditors = editorNotes[key];
+      }
+      if (marketingNotes[key] !== undefined) {
+        updated.notesMarketing = marketingNotes[key];
+      }
+      if (assignedOpSheets[key] !== undefined) {
+        updated.opSheet = assignedOpSheets[key];
+      }
+      if (assignedBranches[key] !== undefined) {
+        updated.branch = assignedBranches[key];
+      }
+      if (assignedDates[key] !== undefined) {
+        updated.date = assignedDates[key];
+      }
+      if (assignedWeeks[key] !== undefined) {
+        updated.week = assignedWeeks[key];
+      }
+      if (assignedBunnyLinks[key] !== undefined) {
+        updated.linkBunny = assignedBunnyLinks[key];
+      }
+      if (assignedThumbnailLinks[key] !== undefined) {
+        updated.thumbnailLink = assignedThumbnailLinks[key];
+      }
+      if (assignedTimes[key] !== undefined) {
+        updated.time = assignedTimes[key];
+      }
+      if (assignedYoutubeLinks[key] !== undefined) {
+        updated.youtubeLink = assignedYoutubeLinks[key];
+      }
+      if (uploadedStatuses[key] !== undefined) {
+        updated.uploaded = uploadedStatuses[key];
+      }
+
+      // Apply cuts_overrides saved in localStorage so changes persist instantly on refresh
+      try {
+        const rawOverrides = localStorage.getItem('cuts_overrides');
+        if (rawOverrides) {
+          const overrides = JSON.parse(rawOverrides);
+          const itemCode = updated.id || key;
+          if (overrides[itemCode]) {
+            Object.assign(updated, overrides[itemCode]);
+          }
+        }
+      } catch {}
+
+      return updated;
+    });
+  }, [liveData, youtubeItems, tagmeTransfers, localEntries, activeGid, isOperations, isTagme3at, isStageTab, isReelsTableTab, stageDbRows, tagmeDbRows, reelsDbRows, isDemo, assignedEditors, editorNotes, marketingNotes, assignedOpSheets, assignedBranches, assignedDates, assignedWeeks, assignedBunnyLinks, assignedThumbnailLinks, assignedTimes, assignedYoutubeLinks, uploadedStatuses]);
+
   const handleUpdateWeek = (itemKey: string, val: string) => {
     setAssignedWeeks(prev => {
       const updated = { ...prev, [itemKey]: val };
+      if (!isDemo && isStageTab) {
+        updateStageDbField(activeGid, itemKey, 'week', val);
+      }
       const taskName = findTaskName(itemKey);
       syncState('assigned_weeks', updated, itemKey, taskName, 'week', `🗓️ تم تعديل الأسبوع إلى: ${val || 'غير محدد'}`);
       return updated;
@@ -3631,6 +4767,11 @@ const [activeVeToast, setActiveVeToast] = useState<{ item: any } | null>(null);
   const handleUpdateDate = (itemKey: string, val: string) => {
     setAssignedDates(prev => {
       const updated = { ...prev, [itemKey]: val };
+      if (!isDemo && activeGid === '1535230545') {
+        updateTagme3atDbField(itemKey, 'date', val);
+      } else if (!isDemo && isStageTab) {
+        updateStageDbField(activeGid, itemKey, 'date', val);
+      }
       const taskName = findTaskName(itemKey);
       syncState('assigned_dates', updated, itemKey, taskName, 'date', `📅 تم تعديل التاريخ إلى: ${val || 'غير محدد'}`);
       return updated;
@@ -3649,6 +4790,11 @@ const [activeVeToast, setActiveVeToast] = useState<{ item: any } | null>(null);
   const handleUpdateThumbnailLink = (itemKey: string, val: string) => {
     setAssignedThumbnailLinks(prev => {
       const updated = { ...prev, [itemKey]: val };
+      if (!isDemo && activeGid === '1535230545') {
+        updateTagme3atDbField(itemKey, 'thumbnailLink', val);
+      } else if (!isDemo && isStageTab) {
+        updateStageDbField(activeGid, itemKey, 'thumbnailLink', val);
+      }
       const taskName = findTaskName(itemKey);
       syncState('assigned_thumbnail_links', updated, itemKey, taskName, 'thumbnail_link', `🖼️ تم تحديث رابط الثمنيل`);
       return updated;
@@ -3658,6 +4804,11 @@ const [activeVeToast, setActiveVeToast] = useState<{ item: any } | null>(null);
   const handleUpdateTime = (itemKey: string, val: string) => {
     setAssignedTimes(prev => {
       const updated = { ...prev, [itemKey]: val };
+      if (!isDemo && activeGid === '1535230545') {
+        updateTagme3atDbField(itemKey, 'time', val);
+      } else if (!isDemo && isStageTab) {
+        updateStageDbField(activeGid, itemKey, 'time', val);
+      }
       const taskName = findTaskName(itemKey);
       syncState('assigned_times', updated, itemKey, taskName, 'time', `⏱️ تم تحديث وقت الدرس إلى: ${val}`);
       return updated;
@@ -3667,6 +4818,11 @@ const [activeVeToast, setActiveVeToast] = useState<{ item: any } | null>(null);
   const handleUpdateYoutubeLink = (itemKey: string, val: string) => {
     setAssignedYoutubeLinks(prev => {
       const updated = { ...prev, [itemKey]: val };
+      if (!isDemo && activeGid === '1535230545') {
+        updateTagme3atDbField(itemKey, 'youtubeLink', val);
+      } else if (!isDemo && isStageTab) {
+        updateStageDbField(activeGid, itemKey, 'youtubeLink', val);
+      }
       const taskName = findTaskName(itemKey);
       syncState('assigned_youtube_links', updated, itemKey, taskName, 'youtube_link', `📺 تم تحديث رابط اليوتيوب`);
       return updated;
@@ -3676,10 +4832,21 @@ const [activeVeToast, setActiveVeToast] = useState<{ item: any } | null>(null);
   const handleUpdateUploaded = (itemKey: string, val: boolean) => {
     setUploadedStatuses(prev => {
       const updated = { ...prev, [itemKey]: val };
+      if (!isDemo && activeGid === '1535230545') {
+        updateTagme3atDbField(itemKey, 'uploaded', val);
+      } else if (!isDemo && isStageTab) {
+        updateStageDbField(activeGid, itemKey, 'uploaded', val);
+      }
       const taskName = findTaskName(itemKey);
       syncState('uploaded_statuses', updated, itemKey, taskName, 'uploaded', val ? `📤 تم الرفع بنجاح` : `↩️ تم إلغاء رفع التجميعة`);
       return updated;
     });
+  };
+
+  const handleToggleDelivered = (itemKey: string, delivered: boolean) => {
+    if (!isDemo && isStageTab) {
+      updateStageDbField(activeGid, itemKey, 'delivered', delivered);
+    }
   };
 
   const syncState = async (field: string, dict: any, itemKey: string, taskName: string, type: string, message: string) => {
@@ -3687,23 +4854,36 @@ const [activeVeToast, setActiveVeToast] = useState<{ item: any } | null>(null);
     const token = session?.access_token || profile?.id;
     if (token) {
       if (activeGid === '1535230545' && itemKey && field !== 'tagme3at_transfers' && field !== 'youtube_transfers' && field !== 'assigned_bunny_links') {
-        let updatePayload: any = {};
-        if (field === 'editor_notes') updatePayload = { notesEditors: dict[itemKey] };
-        else if (field === 'marketing_notes') updatePayload = { notesMarketing: dict[itemKey] };
-        else if (field === 'assigned_editors') updatePayload = { editor: dict[itemKey] };
-        else if (field === 'task_statuses') updatePayload = { done: dict[itemKey] === 'done' };
-        else if (field === 'task_priorities') updatePayload = { priority: dict[itemKey] === true };
-        else if (field === 'assigned_thumbnail_links') updatePayload = { thumbnailLink: dict[itemKey] };
-        else if (field === 'assigned_times') updatePayload = { time: dict[itemKey] };
-        else if (field === 'assigned_youtube_links') updatePayload = { youtubeLink: dict[itemKey] };
-        else if (field === 'uploaded_statuses') updatePayload = { uploaded: dict[itemKey] === true };
+        let dbPayload: any = {};
+        if (field === 'editor_notes') dbPayload = { notes_editors: dict[itemKey] };
+        else if (field === 'marketing_notes') dbPayload = { notes_marketing: dict[itemKey] };
+        else if (field === 'assigned_editors') dbPayload = { editor: dict[itemKey] };
+        else if (field === 'assigned_opsheets') dbPayload = { op_sheet: dict[itemKey] };
+        else if (field === 'assigned_branches') dbPayload = { branch: dict[itemKey] };
+        else if (field === 'assigned_dates') dbPayload = { date: dict[itemKey] };
+        else if (field === 'task_statuses') dbPayload = { done: dict[itemKey]?.done === true || dict[itemKey] === 'done' };
+        else if (field === 'task_priorities') dbPayload = { priority: dict[itemKey] === true };
+        else if (field === 'assigned_thumbnail_links') dbPayload = { thumbnail_link: dict[itemKey] };
+        else if (field === 'assigned_times') dbPayload = { time: dict[itemKey] };
+        else if (field === 'assigned_youtube_links') dbPayload = { youtube_link: dict[itemKey] };
+        else if (field === 'uploaded_statuses') dbPayload = { uploaded: dict[itemKey] === true };
         
-        if (Object.keys(updatePayload).length > 0) {
-          fetch(`/api/tagme3at/${itemKey}`, {
+        if (Object.keys(dbPayload).length > 0 && !isDemo) {
+          // 1. Direct Supabase Client update
+          supabase
+            .from('tagme3at_26')
+            .update({ ...dbPayload, updated_at: new Date().toISOString() })
+            .eq('unique_key', itemKey)
+            .then(({ error }) => {
+              if (error) console.error('Supabase tagme3at_26 direct update error:', error);
+            });
+
+          // 2. Also call API endpoint
+          fetch('/api/tagme3at', {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-            body: JSON.stringify(updatePayload)
-          }).catch(e => console.error('SQL Sync Error:', e));
+            body: JSON.stringify({ uniqueKey: itemKey, updates: dbPayload })
+          }).catch(e => console.error('API Tagme3at sync error:', e));
         }
       }
 
@@ -3746,6 +4926,10 @@ const [activeVeToast, setActiveVeToast] = useState<{ item: any } | null>(null);
             if (m.tagme3at_transfers) { setTagmeTransfers(m.tagme3at_transfers); localStorage.setItem('tagme3at_transfers', JSON.stringify(m.tagme3at_transfers)); }
             if (m.youtube_transfers) { setYoutubeItems(m.youtube_transfers); localStorage.setItem('youtube_transfers', JSON.stringify(m.youtube_transfers)); }
             if (m.assigned_bunny_links) { setAssignedBunnyLinks(m.assigned_bunny_links); localStorage.setItem('assigned_bunny_links', JSON.stringify(m.assigned_bunny_links)); }
+            if (m.active_academic_term?.term) {
+              setActiveAcademicTerm(m.active_academic_term.term);
+              localStorage.setItem('active_academic_term', m.active_academic_term.term);
+            }
          }
       })
       .catch(e => console.error(e));
@@ -3903,15 +5087,21 @@ const [activeVeToast, setActiveVeToast] = useState<{ item: any } | null>(null);
   const handleUpdateEditor = (itemKey: string, newEditor: string) => {
     setAssignedEditors(prev => {
       const updated = { ...prev, [itemKey]: newEditor };
+      if (!isDemo && activeGid === '1535230545') {
+        updateTagme3atDbField(itemKey, 'editor', newEditor);
+      }
       const taskName = findTaskName(itemKey);
       syncState('assigned_editors', updated, itemKey, taskName, 'editor', `👤 تم إسناد التجميعة للمحرر: ${newEditor}`);
       return updated;
     });
   };
 
-  const handleUpdateEditorNotes = (itemKey: string, noteText: string, editorName?: string) => {
+  const handleUpdateEditorNotes = (itemKey: string, noteText: string, editorName?: string, customTimestamp?: string, customAuthor?: string) => {
     setEditorNotes(prev => {
       const updated = { ...prev, [itemKey]: noteText };
+      if (!isDemo && activeGid === '1535230545') {
+        updateTagme3atDbField(itemKey, 'notesEditors', noteText, customTimestamp, customAuthor);
+      }
       if (noteText.trim()) {
         const taskName = findTaskName(itemKey);
         syncState('editor_notes', updated, itemKey, taskName, 'note', `📝 ملاحظة جديدة: "${noteText.slice(0, 60)}${noteText.length > 60 ? '...' : ''}"`);
@@ -3926,9 +5116,12 @@ const [activeVeToast, setActiveVeToast] = useState<{ item: any } | null>(null);
     });
   };
 
-  const handleUpdateMarketingNotes = (itemKey: string, noteText: string, editorName?: string) => {
+  const handleUpdateMarketingNotes = (itemKey: string, noteText: string, editorName?: string, customTimestamp?: string, customAuthor?: string) => {
     setMarketingNotes(prev => {
       const updated = { ...prev, [itemKey]: noteText };
+      if (!isDemo && activeGid === '1535230545') {
+        updateTagme3atDbField(itemKey, 'notesMarketing', noteText, customTimestamp, customAuthor);
+      }
       if (noteText.trim()) {
         const taskName = findTaskName(itemKey);
         syncState('marketing_notes', updated, itemKey, taskName, 'marketing_note', `💬 ملاحظة تسويق: "${noteText.slice(0, 60)}${noteText.length > 60 ? '...' : ''}"`);
@@ -3953,6 +5146,15 @@ const [activeVeToast, setActiveVeToast] = useState<{ item: any } | null>(null);
       unpriority: '➖ تم إزالة الأولوية القصوى عن التجميعة',
     };
     const message = msgMap[type] || `تغيير في التجميعة`;
+
+    if (!isDemo && activeGid === '1535230545') {
+      if (type === 'done') updateTagme3atDbField(itemKey, 'done', true);
+      else if (type === 'undone') updateTagme3atDbField(itemKey, 'done', false);
+      else if (type === 'priority') updateTagme3atDbField(itemKey, 'priority', true);
+      else if (type === 'unpriority') updateTagme3atDbField(itemKey, 'priority', false);
+      else if (type === 'cancel') updateTagme3atDbField(itemKey, 'cancel', true);
+      else if (type === 'uncancel') updateTagme3atDbField(itemKey, 'cancel', false);
+    }
 
     if (type === 'priority' || type === 'unpriority') {
        const isPri = type === 'priority';
@@ -3980,6 +5182,9 @@ const [activeVeToast, setActiveVeToast] = useState<{ item: any } | null>(null);
   const handleUpdateOpSheet = (itemKey: string, val: string) => {
     setAssignedOpSheets(prev => {
       const updated = { ...prev, [itemKey]: val };
+      if (!isDemo && activeGid === '1535230545') {
+        updateTagme3atDbField(itemKey, 'opSheet', val);
+      }
       const taskName = findTaskName(itemKey);
       syncState('assigned_opsheets', updated, itemKey, taskName, 'opsheet', `📂 تم تعديل المرحلة إلى: ${val || 'غير محدد'}`);
       return updated;
@@ -3989,6 +5194,9 @@ const [activeVeToast, setActiveVeToast] = useState<{ item: any } | null>(null);
   const handleUpdateBranch = (itemKey: string, val: string) => {
     setAssignedBranches(prev => {
       const updated = { ...prev, [itemKey]: val };
+      if (!isDemo && activeGid === '1535230545') {
+        updateTagme3atDbField(itemKey, 'branch', val);
+      }
       const taskName = findTaskName(itemKey);
       syncState('assigned_branches', updated, itemKey, taskName, 'branch', `🏢 تم تحويل الفرع إلى: ${val || 'غير محدد'}`);
       return updated;
@@ -4052,7 +5260,6 @@ const [activeVeToast, setActiveVeToast] = useState<{ item: any } | null>(null);
     return Array.from(set).sort();
   }, [liveData, activeGid]);
 
-  const [localEntries, setLocalEntries] = useState<{ [gid: string]: any[] }>({});
   const [showAddModal, setShowAddModal] = useState(false);
   const [addForm, setAddForm] = useState({ name: '', filingName: '', val: '', id: '', subject: '', extra: '', editor: '', notesMarketing: '' });
   const [shootingAddForm, setShootingAddForm] = useState({
@@ -4071,11 +5278,12 @@ const [activeVeToast, setActiveVeToast] = useState<{ item: any } | null>(null);
     const prefix = activeGid === '0'
       ? `${shootingAddForm.year}-cut-${shootingAddForm.extraName}-`.toLowerCase().replace(/\s+/g, ' ')
       : `${shootingAddForm.year}-${shootingAddForm.teacher}-${shootingAddForm.extraName}-`.toLowerCase().replace(/\s+/g, ' ');
-    const currentSheetData = Array.isArray(liveData) ? liveData : [];
-    let maxSeq = -1;
+    const currentSheetData = Array.isArray(combinedData) ? combinedData : [];
+    let maxSeq = 0;
     currentSheetData.forEach((row: any) => {
-      if (row.id && row.id.toLowerCase().startsWith(prefix)) {
-        const parts = row.id.split('-');
+      const rowId = row.code || row.id || '';
+      if (rowId && rowId.toLowerCase().startsWith(prefix)) {
+        const parts = rowId.split('-');
         if (parts.length >= 4) {
           const seqStr = parts[3].split(' ')[0];
           const seq = parseInt(seqStr, 10);
@@ -4086,8 +5294,8 @@ const [activeVeToast, setActiveVeToast] = useState<{ item: any } | null>(null);
       }
     });
     const nextSeq = maxSeq + 1;
-    return `${prefix}${nextSeq.toString().padStart(2, '0')} v6`.toLowerCase();
-  }, [shootingAddForm, liveData, activeGid]);
+    return `${prefix}${nextSeq.toString().padStart(2, '0')} v7`.toLowerCase();
+  }, [shootingAddForm, combinedData, activeGid]);
 
   const [colorfulTabs, setColorfulTabs] = useState(false);
   const [visibleRecordsLimit, setVisibleRecordsLimit] = useState(200);
@@ -4117,125 +5325,349 @@ const [activeVeToast, setActiveVeToast] = useState<{ item: any } | null>(null);
         toast.error("يرجى إدخال رابط السكريبت");
         return;
       }
-      if (!shootingAddForm.scriptName) {
-        toast.error("يرجى إدخال اسم السكريبت");
+      
+      if (!shootingAddForm.scriptName || !shootingAddForm.scriptName.trim()) {
+        toast.error("يرجى كتابة اسم السكريبت أو الضغط على زر (توليد اسم 🪄)");
         return;
       }
+      
+      const effectiveScriptName = shootingAddForm.scriptName.trim();
+
       if (!generatedCode) {
         toast.error("فشل في توليد الكود التلقائي");
         return;
       }
 
-      const token = session?.access_token || profile?.id;
-      if (!token) {
-        toast.error("يرجى تسجيل الدخول أولاً");
-        return;
+      const scriptValue = shootingAddForm.scriptLink.trim()
+        ? `=HYPERLINK("${shootingAddForm.scriptLink.trim()}", "${effectiveScriptName}")`
+        : effectiveScriptName;
+
+      const tbl = REELS_TABLE_MAP[activeGid];
+
+      if (activeGid === '0') {
+        // CUTS
+        const newCut = {
+          date: new Date().toLocaleDateString('en-US'),
+          branch: shootingAddForm.branch,
+          year: shootingAddForm.year,
+          typeCol: 'CUT',
+          creator: shootingAddForm.extraName,
+          code: generatedCode,
+          id: generatedCode,
+          dataFiles: '',
+          script: scriptValue,
+          type: shootingAddForm.type,
+          format: shootingAddForm.format,
+          creatorNotes: '',
+          editorNotes: '',
+          missingDetails: false,
+          problem: false,
+          done: false,
+          editor: '',
+          driveFinal: '',
+          canceled: false,
+          uniqueKey: generatedCode
+        };
+
+        if (!isDemo && tbl) {
+          try {
+            const { error } = await supabase.from(tbl).insert([{
+              date: newCut.date,
+              branch: newCut.branch,
+              year: newCut.year,
+              type_col: newCut.typeCol,
+              creator: newCut.creator,
+              code: newCut.code,
+              data_files: '',
+              script: newCut.script,
+              type: newCut.type,
+              format: newCut.format,
+              creator_notes: '',
+              editor_notes: '',
+              missing_details: false,
+              problem: false,
+              done: false,
+              editor: '',
+              drive_final: '',
+              canceled: false,
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString()
+            }]);
+
+            if (error) {
+              console.error(`Error inserting into ${tbl}:`, error);
+              toast.error("حدث خطأ أثناء الإضافة في قاعدة البيانات: " + error.message);
+              return;
+            }
+
+            setReelsDbRows(prev => [newCut, ...prev.filter(x => x.code !== newCut.code)]);
+          } catch (err: any) {
+            console.error(err);
+            toast.error("حدث خطأ أثناء الإضافة: " + err.message);
+            return;
+          }
+        }
+      } else {
+        // Shooting & Ve
+        const newShooting = {
+          date: new Date().toLocaleDateString('en-US'),
+          branch: shootingAddForm.branch,
+          year: shootingAddForm.year,
+          teacher: shootingAddForm.teacher,
+          extraName: shootingAddForm.extraName,
+          code: generatedCode,
+          id: generatedCode,
+          script: scriptValue,
+          type: shootingAddForm.type,
+          format: shootingAddForm.format,
+          filmed: false,
+          filmingDate: '',
+          by: '',
+          storage: '',
+          notes: '',
+          driveRaw: '',
+          editorCol: '',
+          done: false,
+          driveFinal: '',
+          canceled: false,
+          missingDetails: false,
+          uniqueKey: generatedCode
+        };
+
+        if (!isDemo && tbl) {
+          try {
+            const { error } = await supabase.from(tbl).insert([{
+              date: newShooting.date,
+              branch: newShooting.branch,
+              year: newShooting.year,
+              teacher: newShooting.teacher,
+              extra_name: newShooting.extraName,
+              code: newShooting.code,
+              script: newShooting.script,
+              type: newShooting.type,
+              format: newShooting.format,
+              filmed: false,
+              filming_date: '',
+              by: '',
+              storage: '',
+              notes: '',
+              drive_raw: '',
+              editor_col: '',
+              done: false,
+              drive_final: '',
+              canceled: false,
+              missing_details: false,
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString()
+            }]);
+
+            if (error) {
+              console.error(`Error inserting into ${tbl}:`, error);
+              toast.error("حدث خطأ أثناء الإضافة في قاعدة البيانات: " + error.message);
+              return;
+            }
+
+            setReelsDbRows(prev => [newShooting, ...prev.filter(x => x.code !== newShooting.code)]);
+          } catch (err: any) {
+            console.error(err);
+            toast.error("حدث خطأ أثناء الإضافة: " + err.message);
+            return;
+          }
+        }
       }
 
-      toast.loading("جاري إضافة مهمة السكريبت الجديدة...", { id: 'add-reels-toast' });
-      try {
-        const scriptValue = shootingAddForm.scriptLink.trim()
-          ? `=HYPERLINK("${shootingAddForm.scriptLink.trim()}", "${shootingAddForm.scriptName.trim()}")`
-          : shootingAddForm.scriptName.trim();
-
-        let rowData: any[] = [];
-        if (activeGid === '0') {
-          // Cuts sheet has 18 columns (A to R)
-          rowData = [
-            new Date().toLocaleDateString('en-US'), // 0: Date
-            shootingAddForm.branch,                // 1: Branch
-            shootingAddForm.year,                  // 2: Year
-            'CUT',                                 // 3: TypeCol (static 'CUT')
-            shootingAddForm.extraName,             // 4: Creator
-            generatedCode,                         // 5: Code / id
-            '',                                    // 6: Data Files (empty)
-            scriptValue,                           // 7: Script
-            shootingAddForm.type,                  // 8: Type
-            shootingAddForm.format,                // 9: Format
-            '',                                    // 10: Creator Notes
-            '',                                    // 11: Editor Notes
-            'FALSE',                               // 12: Missing Details
-            'FALSE',                               // 13: Problem
-            'FALSE',                               // 14: Done
-            '',                                    // 15: Editor
-            '',                                    // 16: Drive Final
-            'FALSE'                                // 17: Canceled
-          ];
-        } else {
-          // Shooting / VE / Counter has 18 columns (A to R)
-          rowData = [
-            new Date().toLocaleDateString('en-US'), // 0: Date
-            shootingAddForm.branch,                // 1: Branch
-            shootingAddForm.year,                  // 2: السنة
-            shootingAddForm.teacher,               // 3: المدرس
-            shootingAddForm.extraName,             // 4: Column 5
-            generatedCode,                         // 5: code
-            scriptValue,                           // 6: السكريبت
-            shootingAddForm.type,                  // 7: النوع
-            shootingAddForm.format,                // 8: المقاس
-            'FALSE',                               // 9: اتصور؟
-            '',                                    // 10: تاريخ التصوير
-            '',                                    // 11: BY
-            '',                                    // 12: STORAGE
-            '',                                    // 13: NOTES
-            '',                                    // 14: Drive Link (Raw)
-            '',                                    // 15: EDITOR
-            'FALSE',                               // 16: DONE?
-            ''                                     // 17: Drive Link (Final)
-          ];
-        }
-
-        const res = await fetch('/api/reels/add', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${token}`
-          },
-          body: JSON.stringify({ rowData, gid: activeGid })
+      // Broadcast new entry over WebSocket to other clients
+      if (globalChannelRef.current && profile?.name) {
+        globalChannelRef.current.send({
+          type: 'broadcast',
+          event: 'update',
+          payload: {
+            itemKey: generatedCode,
+            taskName: scriptValue || generatedCode,
+            message: activeGid === '0' 
+              ? `🎬 تم إضافة مهمة مونتاج (Cut) جديدة: "${scriptValue || generatedCode}"`
+              : `🆕 تم إضافة سكريبت جديد: "${scriptValue || generatedCode}"`,
+            type: 'new_entry',
+            from: profile.name,
+            activeGid
+          }
         });
+      }
 
-        if (!res.ok) {
-          throw new Error('Failed to append row to Google Sheets');
+      toast.success(activeGid === '0' ? "تم إضافة الريل الجديد بنجاح في Supabase! 🎉" : "تم إضافة السكريبت الجديد بنجاح في Supabase! 🎉");
+
+      // Reset and close
+      setShowAddModal(false);
+      setShootingAddForm(prev => ({
+        ...prev,
+        scriptName: '',
+        scriptLink: ''
+      }));
+      return;
+    }
+
+    if (!addForm.name) return;
+
+    if (activeGid === '1535230545') {
+      const newKey = 'tgm-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6);
+      const newTagme = {
+        uniqueKey: newKey,
+        id: newKey,
+        name: addForm.name.trim(),
+        filingName: addForm.filingName?.trim() || '---',
+        opSheet: addForm.val?.trim() || 'Senior 1',
+        branch: addForm.extra?.trim() || 'يوتيوب العمليات (تجميعة)',
+        date: addForm.id?.trim() || new Date().toISOString().split('T')[0],
+        notesMarketing: addForm.notesMarketing?.trim() || '',
+        editor: addForm.editor?.trim() || 'غير محدد',
+        notesEditors: '',
+        done: false,
+        priority: false,
+        cancel: false,
+        thumbnailLink: '',
+        time: '',
+        youtubeLink: '',
+        uploaded: false,
+        isTransfer: false,
+        updatedAt: new Date().toISOString()
+      };
+
+      if (!isDemo) {
+        try {
+          // 1. Direct insert to Supabase tagme3at_26 table
+          const { error } = await supabase.from('tagme3at_26').insert([{
+            unique_key: newKey,
+            name: newTagme.name,
+            filing_name: newTagme.filingName,
+            op_sheet: newTagme.opSheet,
+            branch: newTagme.branch,
+            date: newTagme.date,
+            notes_marketing: newTagme.notesMarketing,
+            editor: newTagme.editor,
+            notes_editors: '',
+            done: false,
+            priority: false,
+            cancel: false,
+            thumbnail_link: '',
+            time: '',
+            youtube_link: '',
+            uploaded: false,
+            is_transfer: false,
+            updated_at: new Date().toISOString()
+          }]);
+
+          if (error) {
+            console.error('Error inserting into tagme3at_26:', error);
+            toast.error(`حدث خطأ أثناء الحفظ في قاعدة البيانات: ${error.message}`);
+            return;
+          }
+
+          // 2. Optimistic UI update
+          setTagmeDbRows(prev => [newTagme, ...prev.filter(x => x.uniqueKey !== newKey)]);
+
+          // 3. Broadcast to all clients
+          if (globalChannelRef.current && profile?.name) {
+            globalChannelRef.current.send({
+              type: 'broadcast',
+              event: 'update',
+              payload: {
+                itemKey: newKey,
+                taskName: newTagme.name,
+                message: `➕ تم إضافة تجميعة جديدة: "${newTagme.name}"`,
+                type: 'tagme_add',
+                from: profile.name,
+                activeGid
+              }
+            });
+          }
+        } catch (err: any) {
+          console.error('Exception inserting into tagme3at_26:', err);
+          toast.error(`فشل الإضافة: ${err.message}`);
+          return;
+        }
+      }
+
+      setShowAddModal(false);
+      setAddForm({ name: '', filingName: '', val: '', id: '', subject: '', extra: '', editor: '', notesMarketing: '' });
+      toast.success(`تم حفظ وإضافة التجميعة "${newTagme.name}" بنجاح في Supabase! 🎉`);
+      return;
+    }
+
+    if (isStageTab && !isDemo) {
+      const newKey = `stg-${activeGid}-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+      const newStageItem = {
+        uniqueKey: newKey,
+        id: newKey,
+        week: 'أسبوع 1',
+        date: addForm.id?.trim() || new Date().toISOString().split('T')[0],
+        name: addForm.name.trim(),
+        filingName: addForm.filingName?.trim() || addForm.name.trim(),
+        subject: addForm.subject?.trim() || 'عام',
+        branch: addForm.extra?.trim() || 'القاهرة',
+        opSheet: addForm.val?.trim() || activeLabel || '2025 - 2026',
+        isTagme3a: false,
+        delivered: false,
+        thumbnailLink: '',
+        time: '',
+        youtubeLink: '',
+        uploaded: false,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+
+      try {
+        const { error } = await supabase.from(stageTable).insert([{
+          unique_key: newKey,
+          week: newStageItem.week,
+          date: newStageItem.date,
+          name: newStageItem.name,
+          filing_name: newStageItem.filingName,
+          subject: newStageItem.subject,
+          branch: newStageItem.branch,
+          op_sheet: newStageItem.opSheet,
+          is_tagme3a: false,
+          delivered: false,
+          thumbnail_link: '',
+          time: '',
+          youtube_link: '',
+          uploaded: false,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        }]);
+
+        if (error) {
+          console.error(`Error inserting into ${stageTable}:`, error);
+          toast.error(`خطأ أثناء الحفظ في قاعدة البيانات: ${error.message}`);
+          return;
         }
 
-        // Broadcast new entry over WebSocket to other clients
+        setStageDbRows(prev => [newStageItem, ...prev.filter(x => x.uniqueKey !== newKey)]);
+
         if (globalChannelRef.current && profile?.name) {
           globalChannelRef.current.send({
             type: 'broadcast',
             event: 'update',
             payload: {
-              itemKey: generatedCode,
-              taskName: scriptValue || generatedCode,
-              message: activeGid === '0' 
-                ? `🎬 تم إضافة مهمة مونتاج (Cut) جديدة: "${scriptValue || generatedCode}"`
-                : `🆕 تم إضافة سكريبت جديد: "${scriptValue || generatedCode}"`,
-              type: 'new_entry',
+              itemKey: newKey,
+              taskName: newStageItem.name,
+              message: `➕ تم إضافة درس جديد في ${activeLabel}: "${newStageItem.name}"`,
+              type: 'stage_add',
               from: profile.name,
               activeGid
             }
           });
         }
 
-        toast.success(activeGid === '0' ? "تم إضافة الريل الجديد بنجاح في Google Sheets! 🎉" : "تم إضافة السكريبت الجديد بنجاح في Supabase و Google Sheets! 🎉", { id: 'add-reels-toast' });
-
-        // Reset and close
         setShowAddModal(false);
-        setShootingAddForm(prev => ({
-          ...prev,
-          scriptName: '',
-          scriptLink: ''
-        }));
-
-        // Refresh the table to show the new row
-        refresh();
+        setAddForm({ name: '', filingName: '', val: '', id: '', subject: '', extra: '', editor: '', notesMarketing: '' });
+        toast.success(`تم حفظ وإضافة الدرس بنجاح في جدول Supabase (${stageTable})! 🚀`);
       } catch (err: any) {
         console.error(err);
-        toast.error("حدث خطأ أثناء الإضافة: " + err.message, { id: 'add-reels-toast' });
+        toast.error(`فشل الإضافة: ${err.message}`);
       }
       return;
     }
 
-    if (!addForm.name) return;
     const newItem = {
       ...addForm,
       uniqueKey: 'local-' + Date.now(),
@@ -4328,10 +5760,7 @@ const [activeVeToast, setActiveVeToast] = useState<{ item: any } | null>(null);
   }, []);
 
   const handleApplyAutofill = async (colKey: string, startIdx: number, endIdx: number, value: any) => {
-    const token = session?.access_token || profile?.id;
-    if (!token) return;
-
-    const data = Array.isArray(liveData) ? liveData : [];
+    const data = Array.isArray(combinedData) ? combinedData : [];
     const start = Math.min(startIdx, endIdx);
     const end = Math.max(startIdx, endIdx);
     
@@ -4339,7 +5768,18 @@ const [activeVeToast, setActiveVeToast] = useState<{ item: any } | null>(null);
     if (rowsToUpdate.length === 0) return;
 
     // 1. Optimistic UI update (Instant feedback!)
+    setReelsDbRows(prev => {
+      const updated = [...prev];
+      for (let i = start; i <= end; i++) {
+        if (updated[i]) {
+          updated[i] = { ...updated[i], [colKey]: value };
+        }
+      }
+      return updated;
+    });
+
     setLiveData((prev: any[]) => {
+      if (!Array.isArray(prev)) return prev;
       const updated = [...prev];
       for (let i = start; i <= end; i++) {
         if (updated[i]) {
@@ -4352,13 +5792,49 @@ const [activeVeToast, setActiveVeToast] = useState<{ item: any } | null>(null);
     // 2. Show instant success toast!
     toast.success("تم تطبيق التعبئة التلقائية وحفظ البيانات بنجاح!", { id: 'autofill-toast' });
 
-    // 3. Fire a single batch update to the backend asynchronously without blocking the UI thread
+    // 3. Supabase Direct Update
+    if (!isDemo && isReelsTableTab) {
+      const tbl = REELS_TABLE_MAP[activeGid];
+      if (tbl) {
+        const dbColMap: Record<string, string> = {
+          branch: 'branch',
+          year: 'year',
+          teacher: 'teacher',
+          extraName: 'extra_name',
+          type: 'type',
+          format: 'format',
+          by: 'by',
+          storage: 'storage',
+          script: 'script',
+          notes: 'notes',
+          driveRaw: 'drive_raw',
+          editorCol: 'editor_col',
+          driveFinal: 'drive_final',
+          creator: 'creator',
+          dataFiles: 'data_files',
+          creatorNotes: 'creator_notes',
+          editorNotes: 'editor_notes',
+          editor: 'editor',
+          typeCol: 'type_col'
+        };
+        const col = dbColMap[colKey] || colKey;
+
+        Promise.all(rowsToUpdate.map((r: any) => {
+          const itemCode = r.code || r.id;
+          return supabase.from(tbl).update({ [col]: value, updated_at: new Date().toISOString() }).eq('code', itemCode);
+        })).catch(err => console.error("Error updating Supabase on autofill:", err));
+        return;
+      }
+    }
+
+    const token = session?.access_token || profile?.id;
+    if (!token) return;
+
     const batchUpdates = rowsToUpdate.map((item) => {
       const updatedItem = { ...item, [colKey]: value };
       let rowData: any[] = [];
 
       if (activeGid === '0') {
-        // Cuts sheet row data structure
         rowData = [
           updatedItem.date || '',
           updatedItem.branch || '',
@@ -4380,7 +5856,6 @@ const [activeVeToast, setActiveVeToast] = useState<{ item: any } | null>(null);
           updatedItem.canceled ? 'TRUE' : 'FALSE'
         ];
       } else {
-        // Shooting / Ve sheet row data structure
         rowData = [
           updatedItem.date || '',
           updatedItem.branch || '',
@@ -4415,6 +5890,12 @@ const [activeVeToast, setActiveVeToast] = useState<{ item: any } | null>(null);
     }).catch(err => console.error("Autofill background batch update error:", err));
   };
 
+  const [activeVisibleRecordsLimit, setActiveVisibleRecordsLimit] = useState<number>(400);
+
+  useEffect(() => {
+    setActiveVisibleRecordsLimit(400);
+  }, [activeGid, searchQuery, statusFilter, teacherFilter, yearFilter, termFilter, colFilters]);
+
   useEffect(() => {
     if (!autofillDrag) return;
     const handleGlobalMouseUp = () => {
@@ -4427,6 +5908,201 @@ const [activeVeToast, setActiveVeToast] = useState<{ item: any } | null>(null);
   }, [autofillDrag]);
 
   const handleUpdateShootingRow = async (oldCode: string, newRowData: any[]) => {
+    const tbl = REELS_TABLE_MAP[activeGid];
+
+    let updatedItem: any;
+    let dbPayload: any;
+    if (activeGid === '0') {
+      const isDone = newRowData[14] === 'TRUE' || newRowData[14] === true;
+      const isProblem = newRowData[13] === 'TRUE' || newRowData[13] === true;
+      const isMissing = newRowData[12] === 'TRUE' || newRowData[12] === true;
+      const isCanceled = newRowData[17] === 'TRUE' || newRowData[17] === true;
+      const newCode = newRowData[5] || oldCode;
+
+      updatedItem = {
+        date: newRowData[0] || '',
+        branch: newRowData[1] || '',
+        year: newRowData[2] || '',
+        typeCol: newRowData[3] || 'CUT',
+        creator: newRowData[4] || '',
+        id: newCode,
+        code: newCode,
+        dataFiles: newRowData[6] || '',
+        script: newRowData[7] || '',
+        type: newRowData[8] || '',
+        format: newRowData[9] || '',
+        creatorNotes: newRowData[10] || '',
+        editorNotes: newRowData[11] || '',
+        missingDetails: isMissing,
+        problem: isProblem,
+        done: isDone,
+        editor: newRowData[15] || '',
+        driveFinal: newRowData[16] || '',
+        canceled: isCanceled,
+        uniqueKey: newCode
+      };
+
+      dbPayload = {
+        date: updatedItem.date,
+        branch: updatedItem.branch,
+        year: updatedItem.year,
+        type_col: updatedItem.typeCol,
+        creator: updatedItem.creator,
+        code: newCode,
+        data_files: updatedItem.dataFiles,
+        script: updatedItem.script,
+        type: updatedItem.type,
+        format: updatedItem.format,
+        creator_notes: updatedItem.creatorNotes,
+        editor_notes: updatedItem.editorNotes,
+        missing_details: isMissing,
+        problem: isProblem,
+        done: isDone,
+        editor: updatedItem.editor,
+        drive_final: updatedItem.driveFinal,
+        canceled: isCanceled,
+        updated_at: new Date().toISOString()
+      };
+    } else {
+      const isFilmed = newRowData[9] === 'TRUE' || newRowData[9] === true;
+      const isDone = newRowData[16] === 'TRUE' || newRowData[16] === true;
+      const isCanceled = newRowData[18] === 'TRUE' || newRowData[18] === true;
+      const isMissing = newRowData[19] === 'TRUE' || newRowData[19] === true;
+      const newCode = newRowData[5] || oldCode;
+
+      updatedItem = {
+        date: newRowData[0] || '',
+        branch: newRowData[1] || '',
+        year: newRowData[2] || '',
+        teacher: newRowData[3] || '',
+        extraName: newRowData[4] || '',
+        id: newCode,
+        code: newCode,
+        script: newRowData[6] || '',
+        type: newRowData[7] || '',
+        format: newRowData[8] || '',
+        filmed: isFilmed,
+        filmingDate: newRowData[10] || '',
+        by: newRowData[11] || '',
+        storage: newRowData[12] || '',
+        notes: newRowData[13] || '',
+        driveRaw: newRowData[14] || '',
+        editorCol: newRowData[15] || '',
+        done: isDone,
+        driveFinal: newRowData[17] || '',
+        canceled: isCanceled,
+        missingDetails: isMissing,
+        uniqueKey: newCode
+      };
+
+      dbPayload = {
+        date: updatedItem.date,
+        branch: updatedItem.branch,
+        year: updatedItem.year,
+        teacher: updatedItem.teacher,
+        extra_name: updatedItem.extraName,
+        code: newCode,
+        script: updatedItem.script,
+        type: updatedItem.type,
+        format: updatedItem.format,
+        filmed: isFilmed,
+        filming_date: updatedItem.filmingDate,
+        by: updatedItem.by,
+        storage: updatedItem.storage,
+        notes: updatedItem.notes,
+        drive_raw: updatedItem.driveRaw,
+        editor_col: updatedItem.editorCol,
+        done: isDone,
+        drive_final: updatedItem.driveFinal,
+        canceled: isCanceled,
+        missing_details: isMissing,
+        updated_at: new Date().toISOString()
+      };
+    }
+
+    // 1. Optimistic UI update
+    setReelsDbRows(prev => prev.map(r => (r.code === oldCode || r.id === oldCode) ? updatedItem : r));
+    setLiveData((prev: any[]) => {
+      if (!Array.isArray(prev)) return prev;
+      return prev.map((row: any) => (row.id === oldCode || row.code === oldCode) ? updatedItem : row);
+    });
+
+    // 2. Direct Supabase Update
+    if (!isDemo && tbl) {
+      try {
+        const { error } = await supabase
+          .from(tbl)
+          .update(dbPayload)
+          .eq('code', oldCode);
+
+        if (error) {
+          console.error(`Error updating ${tbl} in Supabase:`, error);
+          toast.error(`خطأ أثناء الحفظ في قاعدة البيانات: ${error.message}`);
+        } else {
+          toast.success("تم تحديث الصف بنجاح في Supabase! 🚀");
+        }
+
+        // Automatic copy / sync to Ve table (reels_ve_26) when filmed in Shooting tab
+        if (activeGid === '1436746012') {
+          if (isFilmed) {
+            setActiveVeToast({ item: updatedItem });
+            const veRecord = {
+              code: updatedItem.code || updatedItem.id,
+              date: updatedItem.date || new Date().toISOString().split('T')[0],
+              branch: updatedItem.branch || '',
+              year: updatedItem.year || '',
+              teacher: updatedItem.teacher || '',
+              extra_name: updatedItem.extraName || '',
+              script: updatedItem.script || '',
+              type: updatedItem.type || '',
+              format: updatedItem.format || '',
+              filmed: true,
+              filming_date: updatedItem.filmingDate || new Date().toLocaleDateString('en-US'),
+              by: updatedItem.by || '',
+              storage: updatedItem.storage || '',
+              notes: updatedItem.notes || '',
+              drive_raw: updatedItem.driveRaw || '',
+              editor_col: updatedItem.editorCol || 'غير محدد',
+              done: false,
+              drive_final: updatedItem.driveFinal || '',
+              canceled: false,
+              missing_details: false,
+              updated_at: new Date().toISOString()
+            };
+            const { error: veErr } = await supabase
+              .from('reels_ve_26')
+              .upsert(veRecord, { onConflict: 'code' });
+            if (veErr) {
+              console.error("Error copying to reels_ve_26:", veErr);
+            } else {
+              toast.success("تم نقل ومزامنة الريل تلقائياً إلى شيت VE! 🎬");
+            }
+          } else {
+            await supabase.from('reels_ve_26').delete().or(`code.eq."${oldCode}",code.eq."${newCode}",code.eq."${updatedItem.code}"`);
+            toast.info("تمت إزالة الريل من شيت VE لإلغاء التصوير");
+          }
+        }
+
+        // Two-way sync: If editing in VE tab, sync notes and shared fields back to Shooting tab!
+        if (activeGid === '1939073164') {
+          await supabase.from('reels_shooting_26').update({
+            notes: updatedItem.notes,
+            by: updatedItem.by,
+            storage: updatedItem.storage,
+            type: updatedItem.type,
+            format: updatedItem.format,
+            editor_col: updatedItem.editorCol,
+            done: isDone,
+            drive_final: updatedItem.driveFinal,
+            updated_at: new Date().toISOString()
+          }).or(`code.eq."${oldCode}",code.eq."${newCode}",code.eq."${updatedItem.code}"`);
+        }
+      } catch (err: any) {
+        console.error(err);
+      }
+      return;
+    }
+
     const token = session?.access_token || profile?.id;
     if (!token) return;
     try {
@@ -4437,82 +6113,6 @@ const [activeVeToast, setActiveVeToast] = useState<{ item: any } | null>(null);
       });
       if (!res.ok) { const text = await res.text(); throw new Error('Failed to update row: ' + res.status + ' ' + text); }
 
-      // Update local liveData state instantly for seamless UI consistency!
-      setLiveData((prev: any[]) => {
-        if (!Array.isArray(prev)) return prev;
-        return prev.map((row: any) => {
-          if (row.id === oldCode) {
-            if (activeGid === '0') {
-              return {
-                ...row,
-                branch: newRowData[1],
-                year: newRowData[2],
-                typeCol: newRowData[3],
-                creator: newRowData[4],
-                id: newRowData[5], // new code
-                dataFiles: newRowData[6],
-                script: newRowData[7],
-                type: newRowData[8],
-                format: newRowData[9],
-                creatorNotes: newRowData[10],
-                editorNotes: newRowData[11],
-                missingDetails: newRowData[12] === 'TRUE' || newRowData[12] === true,
-                problem: newRowData[13] === 'TRUE' || newRowData[13] === true,
-                done: newRowData[14] === 'TRUE' || newRowData[14] === true,
-                editor: newRowData[15],
-                driveFinal: newRowData[16],
-                canceled: newRowData[17] === 'TRUE' || newRowData[17] === true
-              };
-            } else {
-              return {
-                ...row,
-                branch: newRowData[1],
-                year: newRowData[2],
-                teacher: newRowData[3],
-                extraName: newRowData[4],
-                id: newRowData[5], // new code
-                script: newRowData[6],
-                type: newRowData[7],
-                format: newRowData[8],
-                filmed: newRowData[9] === 'TRUE' || newRowData[9] === true,
-                filmingDate: newRowData[10],
-                by: newRowData[11],
-                storage: newRowData[12],
-                notes: newRowData[13],
-                driveRaw: newRowData[14],
-                editorCol: newRowData[15],
-                done: newRowData[16] === 'TRUE' || newRowData[16] === true,
-                driveFinal: newRowData[17],
-                canceled: newRowData[18] === 'TRUE' || newRowData[18] === true,
-                missingDetails: newRowData[19] === 'TRUE' || newRowData[19] === true
-              };
-            }
-          }
-          return row;
-        });
-      });
-
-      // Broadcast update notification to all subscribed users
-      const taskObj = Array.isArray(liveData) ? liveData.find((r: any) => r.id === oldCode) : null;
-      const rawScript = taskObj?.script || oldCode;
-      let taskName = oldCode;
-      if (rawScript) {
-        const s = String(rawScript).trim();
-        const hyperlinkMatch = s.match(/=HYPERLINK\s*\(\s*(['"])(.*?)\1\s*,\s*(['"])(.*?)\3\s*\)/i);
-        if (hyperlinkMatch) {
-          taskName = hyperlinkMatch[4].trim();
-        } else {
-          taskName = s;
-        }
-      }
-
-      broadcastTaskUpdate(
-        oldCode,
-        taskName,
-        `📝 حدث تحديث على المهمة بواسطة (${profile?.name || 'مستخدم'})`,
-        'row_update'
-      );
-
       toast.success("تم تحديث الصف بنجاح!");
     } catch (err: any) {
       console.error(err);
@@ -4521,42 +6121,172 @@ const [activeVeToast, setActiveVeToast] = useState<{ item: any } | null>(null);
   };
 
   const handleFilmedToggle = async (item: any, isFilmed: boolean) => {
-    if (!item.id) {
+    const itemCode = item.code || item.id;
+    if (!itemCode) {
       alert("لا يمكن تعديل هذا الصف لعدم وجود كود (Code)");
       return;
     }
+
+    const tbl = REELS_TABLE_MAP[activeGid];
+    const todayStr = new Date().toLocaleDateString('en-US');
+    const filmingDate = isFilmed ? (item.filmingDate || todayStr) : item.filmingDate;
+
+    // Optimistic UI update
+    setReelsDbRows(prev => prev.map(row => (row.id === itemCode || row.code === itemCode) ? { ...row, filmed: isFilmed, filmingDate } : row));
+    setLiveData((prev: any[]) => prev.map((row: any) => (row.id === itemCode || row.code === itemCode) ? { ...row, filmed: isFilmed, filmingDate } : row));
+    
+    if (isFilmed && activeGid === '1436746012') {
+      setActiveVeToast({ item: { ...item, filmed: isFilmed, filmingDate } });
+    }
+
+    if (!isDemo && tbl) {
+      try {
+        const { error } = await supabase
+          .from(tbl)
+          .update({ filmed: isFilmed, filming_date: filmingDate, updated_at: new Date().toISOString() })
+          .eq('code', itemCode);
+
+        if (error) throw error;
+        toast.success(isFilmed ? "تم تحديد التصوير بنجاح! 🎥" : "تم إلغاء تحديد التصوير");
+
+        if (activeGid === '1436746012') {
+          if (isFilmed) {
+            const veRecord = {
+              code: itemCode,
+              date: item.date || new Date().toISOString().split('T')[0],
+              branch: item.branch || '',
+              year: item.year || '',
+              teacher: item.teacher || '',
+              extra_name: item.extraName || '',
+              script: item.script || '',
+              type: item.type || '',
+              format: item.format || '',
+              filmed: true,
+              filming_date: filmingDate,
+              by: item.by || '',
+              storage: item.storage || '',
+              notes: item.notes || '',
+              drive_raw: item.driveRaw || '',
+              editor_col: item.editorCol || 'غير محدد',
+              done: false,
+              drive_final: item.driveFinal || '',
+              canceled: false,
+              missing_details: false,
+              updated_at: new Date().toISOString()
+            };
+            const { error: veErr } = await supabase
+              .from('reels_ve_26')
+              .upsert(veRecord, { onConflict: 'code' });
+            if (veErr) {
+              console.error("Error copying to reels_ve_26:", veErr);
+            } else {
+              toast.success("تم نقل ومزامنة الريل تلقائياً إلى شيت VE! 🎬");
+            }
+          } else {
+            await supabase.from('reels_ve_26').delete().eq('code', itemCode);
+          }
+        }
+      } catch (err: any) {
+        console.error(err);
+        toast.error("حدث خطأ أثناء التحديث: " + err.message);
+      }
+      return;
+    }
+
     const token = session?.access_token || profile?.id;
     if (!token) return;
 
-    // Optimistic UI update for instant feedback
-    setLiveData((prev: any[]) => prev.map((row: any) => row.id === item.id ? { ...row, filmed: isFilmed } : row));
-    
-    // Show toast immediately if checked
-    if (isFilmed) {
-      setActiveVeToast({ item });
-    }
-
     try {
-      // We still set a background loading state if needed, but not block the UI
       const res = await fetch('/api/reels/filmed', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify({ code: item.id, filmed: isFilmed })
+        body: JSON.stringify({ code: itemCode, filmed: isFilmed })
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to update filmed status');
-      
-      // Optionally refresh in the background silently
-      refresh(true); // pass true for silent refresh if supported
+      refresh(true);
     } catch (err: any) {
-      // Revert optimistic update on failure
-      setLiveData((prev: any[]) => prev.map((row: any) => row.id === item.id ? { ...row, filmed: !isFilmed } : row));
+      setLiveData((prev: any[]) => prev.map((row: any) => (row.id === itemCode || row.code === itemCode) ? { ...row, filmed: !isFilmed } : row));
       alert(err.message || "حدث خطأ أثناء التحديث");
     }
   };
 
   const handleTagmeToggle = (item: any, sheetLabel: string, isChecked: boolean) => {
-    const uniqueKey = 'tgm-' + (item.uniqueKey || generateKey(item));
+    const rawKey = item.uniqueKey || generateKey(item);
+    const uniqueKey = 'tgm-' + rawKey;
+
+    // 1. Update is_tagme3a in the active stage table in Supabase!
+    if (!isDemo && isStageTab) {
+      updateStageDbField(activeGid, rawKey, 'isTagme3a', isChecked);
+    }
+
+    const dbRecord = {
+      unique_key: uniqueKey,
+      name: item.name || '',
+      filing_name: item.filingName || '---',
+      op_sheet: item.opSheet || sheetLabel,
+      branch: item.extra || item.branch || 'يوتيوب العمليات (تجميعة)',
+      date: item.date || item.id || new Date().toISOString().split('T')[0],
+      notes_marketing: item.notesMarketing || '',
+      editor: item.editor || 'غير محدد',
+      notes_editors: item.notesEditors || '',
+      done: false,
+      priority: false,
+      cancel: false,
+      thumbnail_link: item.thumbnailLink || '',
+      time: item.time || '',
+      youtube_link: item.youtubeLink || '',
+      uploaded: false,
+      is_transfer: true,
+      updated_at: new Date().toISOString()
+    };
+
+    if (!isDemo) {
+      if (isChecked) {
+        // 1. Direct Supabase Client upsert to tagme3at_26
+        supabase
+          .from('tagme3at_26')
+          .upsert(dbRecord, { onConflict: 'unique_key' })
+          .then(({ error }) => {
+            if (error) console.error('Error upserting tagme3at_26 transfer:', error);
+          });
+
+        // 2. Optimistic local state update for instant UI feedback
+        const mappedTagme = {
+          uniqueKey: dbRecord.unique_key,
+          id: dbRecord.unique_key,
+          name: dbRecord.name,
+          filingName: dbRecord.filing_name,
+          opSheet: dbRecord.op_sheet,
+          branch: dbRecord.branch,
+          date: dbRecord.date,
+          notesMarketing: dbRecord.notes_marketing,
+          editor: dbRecord.editor,
+          notesEditors: dbRecord.notes_editors,
+          done: false,
+          priority: false,
+          cancel: false,
+          thumbnailLink: dbRecord.thumbnail_link,
+          time: dbRecord.time,
+          youtubeLink: dbRecord.youtube_link,
+          uploaded: false,
+          isTransfer: true,
+          updatedAt: dbRecord.updated_at
+        };
+        setTagmeDbRows(prev => [mappedTagme, ...prev.filter(x => x.uniqueKey !== uniqueKey)]);
+      } else {
+        // Direct Supabase Client delete from tagme3at_26
+        supabase
+          .from('tagme3at_26')
+          .delete()
+          .eq('unique_key', uniqueKey)
+          .then(({ error }) => {
+            if (error) console.error('Error deleting tagme3at_26 transfer:', error);
+          });
+
+        setTagmeDbRows(prev => prev.filter(x => x.uniqueKey !== uniqueKey));
+      }
+    }
 
     setTagmeTransfers(prev => {
       let updatedList;
@@ -4588,10 +6318,10 @@ const [activeVeToast, setActiveVeToast] = useState<{ item: any } | null>(null);
       const token = session?.access_token || profile?.id;
       if (token) {
         if (isChecked && updatedList.length > 0) {
-          const itemToPost = updatedList[0]; // Assuming newTagme is prepended
-          fetch('/api/tagme3at', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }, body: JSON.stringify(itemToPost) });
+          const itemToPost = updatedList[0];
+          fetch('/api/tagme3at', { method: 'POST', headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` }, body: JSON.stringify(itemToPost) }).catch(() => {});
         } else if (!isChecked) {
-          fetch(`/api/tagme3at/${uniqueKey}`, { method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` } });
+          fetch(`/api/tagme3at?uniqueKey=${uniqueKey}`, { method: 'DELETE', headers: { 'Authorization': `Bearer ${token}` } }).catch(() => {});
         }
       }
 
@@ -4641,7 +6371,7 @@ const [activeVeToast, setActiveVeToast] = useState<{ item: any } | null>(null);
     });
   };
 
-  const handleExecuteMerge = () => {
+  const handleExecuteMerge = async () => {
     if (selectedForMerge.length === 0) return;
     const sample = selectedForMerge[0];
     const stage = getTargetStageGid(sample);
@@ -4653,19 +6383,60 @@ const [activeVeToast, setActiveVeToast] = useState<{ item: any } | null>(null);
     const totalDurationStr = calculateTotalDuration(selectedForMerge).replace('⏱️ إجمالي الوقت: ', '').trim();
 
     const mergedItem = {
+      uniqueKey: uniqueKey,
+      id: uniqueKey,
       name: combinedCodes,
       filingName: combinedNames,
       val: sample.year || sample.term || 'YouTube Merge',
-      id: sample.date || sample.teacher || '---',
+      idVal: sample.date || sample.teacher || '---',
+      date: sample.date || new Date().toISOString().split('T')[0],
       subject: getSubjectFromFiling(combinedCodes),
       extra: 'يوتيوب العمليات (تجميعة)',
+      branch: 'يوتيوب العمليات (تجميعة)',
       opSheet: 'العمليات',
       check1: false,
       check2: false,
-      uniqueKey: uniqueKey,
       isYoutubeTransfer: true,
-      time: totalDurationStr !== '--:--' ? totalDurationStr : ''
+      time: totalDurationStr !== '--:--' ? totalDurationStr : '',
+      week: 'أسبوع 1',
+      isTagme3a: false,
+      delivered: false,
+      thumbnailLink: '',
+      youtubeLink: '',
+      uploaded: false,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
     };
+
+    const targetTable = STAGE_TABLE_MAP[stage.gid];
+    if (!isDemo && targetTable) {
+      try {
+        await supabase.from(targetTable).insert([{
+          unique_key: uniqueKey,
+          name: mergedItem.name,
+          filing_name: mergedItem.filingName,
+          week: mergedItem.week,
+          date: mergedItem.date,
+          subject: mergedItem.subject,
+          branch: mergedItem.branch,
+          op_sheet: mergedItem.opSheet,
+          is_tagme3a: false,
+          delivered: false,
+          thumbnail_link: '',
+          time: mergedItem.time,
+          youtube_link: '',
+          uploaded: false,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString()
+        }]);
+
+        if (activeGid === stage.gid) {
+          setStageDbRows(prev => [mergedItem, ...prev.filter(x => x.uniqueKey !== uniqueKey)]);
+        }
+      } catch (err) {
+        console.error('Error inserting merged lesson to Supabase stage table:', err);
+      }
+    }
 
     setYoutubeItems(prev => {
       const list = prev[stage.gid] || [];
@@ -4691,29 +6462,78 @@ const [activeVeToast, setActiveVeToast] = useState<{ item: any } | null>(null);
     }
   }, []);
 
-  const handleYoutubeToggle = (item: any, isChecked: boolean) => {
+  const handleYoutubeToggle = async (item: any, isChecked: boolean) => {
     const stage = getTargetStageGid(item);
     const uniqueKey = 'yt-' + (item.uniqueKey || generateKey(item));
+    const targetTable = STAGE_TABLE_MAP[stage.gid];
+
+    const itemDuration = item.exactDuration || formatDuration((item.finalMinutes && String(item.finalMinutes).trim() !== '0') ? item.finalMinutes : item.rawMinutes) || item.time || '';
+    const newItem = {
+      uniqueKey: uniqueKey,
+      id: uniqueKey,
+      name: `[يوتيوب] ${item.filingName || item.name}`,
+      filingName: item.name,
+      val: item.year || item.term || 'YouTube',
+      idVal: item.date || item.teacher || '---',
+      date: item.date || new Date().toISOString().split('T')[0],
+      subject: getSubjectFromFiling(item.filingName),
+      extra: 'يوتيوب العمليات',
+      branch: 'يوتيوب العمليات',
+      opSheet: 'العمليات',
+      check1: false,
+      check2: false,
+      isYoutubeTransfer: true,
+      time: itemDuration,
+      week: 'أسبوع 1',
+      isTagme3a: false,
+      delivered: false,
+      thumbnailLink: '',
+      youtubeLink: '',
+      uploaded: false,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+
+    if (!isDemo && targetTable) {
+      try {
+        if (isChecked) {
+          await supabase.from(targetTable).upsert([{
+            unique_key: uniqueKey,
+            name: newItem.name,
+            filing_name: newItem.filingName,
+            week: newItem.week,
+            date: newItem.date,
+            subject: newItem.subject,
+            branch: newItem.branch,
+            op_sheet: newItem.opSheet,
+            is_tagme3a: false,
+            delivered: false,
+            thumbnail_link: '',
+            time: newItem.time,
+            youtube_link: '',
+            uploaded: false,
+            created_at: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          }], { onConflict: 'unique_key' });
+
+          if (activeGid === stage.gid) {
+            setStageDbRows(prev => [newItem, ...prev.filter(x => x.uniqueKey !== uniqueKey)]);
+          }
+        } else {
+          await supabase.from(targetTable).delete().eq('unique_key', uniqueKey);
+          if (activeGid === stage.gid) {
+            setStageDbRows(prev => prev.filter(x => x.uniqueKey !== uniqueKey));
+          }
+        }
+      } catch (err) {
+        console.error('Error updating stage table in Supabase for youtube transfer:', err);
+      }
+    }
 
     setYoutubeItems(prev => {
       const currentList = prev[stage.gid] || [];
       let updatedList;
       if (isChecked) {
-        const itemDuration = item.exactDuration || formatDuration((item.finalMinutes && String(item.finalMinutes).trim() !== '0') ? item.finalMinutes : item.rawMinutes) || item.time || '';
-        const newItem = {
-          name: `[يوتيوب] ${item.filingName || item.name}`,
-          filingName: item.name,
-          val: item.year || item.term || 'YouTube',
-          id: item.date || item.teacher || '---',
-          subject: getSubjectFromFiling(item.filingName),
-          extra: 'يوتيوب العمليات',
-          opSheet: 'العمليات',
-          check1: false,
-          check2: false,
-          uniqueKey: uniqueKey,
-          isYoutubeTransfer: true,
-          time: itemDuration
-        };
         if (!currentList.some(i => i.uniqueKey === uniqueKey)) {
           updatedList = [newItem, ...currentList];
         } else {
@@ -4831,72 +6651,6 @@ const [activeVeToast, setActiveVeToast] = useState<{ item: any } | null>(null);
     { label: 'CUTS', gid: '0', icon: Video, colorHex: '#ff7843' },
     { label: 'احصائيات الريلز', gid: 'reels-analytics', icon: BarChart3, colorHex: '#818cf8' },
   ];
-
-  const combinedData = useMemo(() => {
-    const currentLocal = localEntries[activeGid] || [];
-    let baseList = [];
-    if (isOperations) baseList = [...currentLocal, ...liveData];
-    else if (isTagme3at) baseList = [...currentLocal, ...tagmeTransfers, ...liveData];
-    else {
-      const transfers = youtubeItems[activeGid] || [];
-      baseList = [...currentLocal, ...transfers, ...liveData];
-    }
-
-    return baseList.map(item => {
-      const key = item.uniqueKey || generateKey(item);
-      const updated = { ...item };
-      if (assignedEditors[key] !== undefined) {
-        updated.editor = assignedEditors[key];
-      }
-      if (editorNotes[key] !== undefined) {
-        updated.notesEditors = editorNotes[key];
-      }
-      if (marketingNotes[key] !== undefined) {
-        updated.notesMarketing = marketingNotes[key];
-      }
-      if (assignedOpSheets[key] !== undefined) {
-        updated.opSheet = assignedOpSheets[key];
-      }
-      if (assignedBranches[key] !== undefined) {
-        updated.branch = assignedBranches[key];
-      }
-      if (assignedDates[key] !== undefined) {
-        updated.date = assignedDates[key];
-      }
-      if (assignedWeeks[key] !== undefined) {
-        updated.week = assignedWeeks[key];
-      }
-      if (assignedBunnyLinks[key] !== undefined) {
-        updated.linkBunny = assignedBunnyLinks[key];
-      }
-      if (assignedThumbnailLinks[key] !== undefined) {
-        updated.thumbnailLink = assignedThumbnailLinks[key];
-      }
-      if (assignedTimes[key] !== undefined) {
-        updated.time = assignedTimes[key];
-      }
-      if (assignedYoutubeLinks[key] !== undefined) {
-        updated.youtubeLink = assignedYoutubeLinks[key];
-      }
-      if (uploadedStatuses[key] !== undefined) {
-        updated.uploaded = uploadedStatuses[key];
-      }
-
-      // Apply cuts_overrides saved in localStorage so changes persist instantly on refresh
-      try {
-        const rawOverrides = localStorage.getItem('cuts_overrides');
-        if (rawOverrides) {
-          const overrides = JSON.parse(rawOverrides);
-          const itemCode = updated.id || key;
-          if (overrides[itemCode]) {
-            Object.assign(updated, overrides[itemCode]);
-          }
-        }
-      } catch {}
-
-      return updated;
-    });
-  }, [liveData, youtubeItems, tagmeTransfers, localEntries, activeGid, isOperations, isTagme3at, assignedEditors, editorNotes, marketingNotes, assignedOpSheets, assignedBranches, assignedDates, assignedWeeks, assignedBunnyLinks, assignedThumbnailLinks, assignedTimes, assignedYoutubeLinks, uploadedStatuses]);
 
   useEffect(() => {
     if (combinedData.length === 0) return;
@@ -5127,7 +6881,14 @@ const [activeVeToast, setActiveVeToast] = useState<{ item: any } | null>(null);
       for (const key in colFilters) {
         const val = colFilters[key];
         if (val && val !== 'All') {
-          if (String(item[key]) !== val) return false;
+          if (key === 'check1') {
+            const itemKey = 'tgm-' + (item.uniqueKey || generateKey(item));
+            const isTagmeChecked = item.isTagme3a === true || item.check1 === true || String(item.check1).toLowerCase() === 'true' || (tagmeTransfers || []).some((i: any) => i.uniqueKey === itemKey);
+            const filterBool = val === 'TRUE';
+            if (isTagmeChecked !== filterBool) return false;
+          } else {
+            if (String(item[key]) !== val) return false;
+          }
         }
       }
 
@@ -5326,6 +7087,8 @@ const [activeVeToast, setActiveVeToast] = useState<{ item: any } | null>(null);
           </>
         )}
         <th className="px-4 py-4 text-center th-style">Drive Link (Final)</th>
+        <th className="px-3 py-4 text-center th-style">Check</th>
+        <th className="px-4 py-4 text-center th-style">Shared Link</th>
       </>
     );
     // Stage tabs (Junior 4 .. Senior 3)
@@ -5347,23 +7110,149 @@ const [activeVeToast, setActiveVeToast] = useState<{ item: any } | null>(null);
     );
   };
 
+  const ALL_YEARS_LIST = ['j4', 'j5', 'j6', 'm1', 'm2', 'm3', 's1', 's2', 's3', 'x'];
+
+  const ALL_TEACHERS_LIST = [
+    'Hossam Elashry',
+    'Mahmoud Gaber',
+    'shady',
+    'samir',
+    'abo-elkomsan',
+    'zakaria',
+    'sakr',
+    'mesbah',
+    'yasser',
+    'khalil',
+    'elshamy',
+    'elsamdy',
+    'helmy',
+    'ahmed-hassan',
+    'ahmed-saad',
+    'teacherX',
+    'elmasry',
+    'daved',
+    'abdalah-reda',
+    'muslim',
+    'kotb',
+    'soliman',
+    'nour-elhoda',
+    'fady',
+    'ahmed-salah',
+    'rodaina',
+    'eslam',
+    'karim',
+    'employee',
+    'salah-khalf',
+    'magdy',
+    'aliaa',
+    'x',
+    'abd-elkader',
+    'elhelw',
+    'radwa-sc',
+    'radwa-ar',
+    'ahmed-bakr',
+    'caroline',
+    'bishoy',
+    'AMR',
+    'rowan',
+    'teacher s1',
+    'teacher s2',
+    'teacher s3',
+    'teacher m1',
+    'teacher m2',
+    'teacher m3',
+    'teacher j1',
+    'teacher j2',
+    'teacher j3',
+    'teacher j4',
+    'teacher j5',
+    'teacher j6',
+    'teacher senior x',
+    'teacher junior x',
+    'teacher middle x',
+    'ahmed sabry',
+    'amgad khedr',
+    'tamer elaraby',
+    'review',
+    'ali yousef',
+    'gasser mostafa',
+    'rewida',
+    'attef ramzy',
+    'mohamed khamis',
+    'abduallah yousry',
+    'amr abou elkheir',
+    'ahmed yahia',
+    'khaled barakat',
+    'mohamed hossam',
+    'Ekramy',
+    'ibrahim hassan',
+    'Ali Mahmoud',
+    'Eslam Abdelazeem',
+    'mohamed ebrahiem',
+    'rowida',
+    'abanoub',
+    'yasmia attallah',
+    'nour essam',
+    'Mohamed Esmail',
+    'fatma ibrahim',
+    'bosy magdy',
+    'eslam morsy',
+    'ehab soliman',
+    'ahmed salem',
+    'hany elrfay',
+    'ahmed-abdallah',
+    'mohamed ismail',
+    'alaa abd elhakim',
+    'salah khalaf',
+    'mina fayez',
+    'Nesreen',
+    'omer hussein',
+    'karolin',
+    'atef ramzy',
+    'mina',
+    'alaa abdelhakem',
+    'abdelrahman magdy',
+    'huda farouk',
+    'Hazem Abdallah',
+    'Junior X',
+    'mahetab',
+    'eslam abdelgalil',
+    'saleh abozeed',
+    'waleed elarby',
+    'ehab - sakr',
+    'rwan kabbary',
+    'mohamed ali'
+  ];
+
+  const ALL_CREATORS_LIST = [
+    'manar', 'esraa', 'yomna', 'maram', 'han', 'nader', 'eman', 'noor', 'khaled', 'awney',
+    'shrouk', 'anas', 'ahmed-amr', 'sherif', 'samir', 'alaa', 'Ahmed', 'Donia', 'alaa zakria',
+    'Esraa naga', 'nada', 'abdelkerim', 'sohaila', 'Hesham', 'A.Medhat', 'Ramy', 'manar awad',
+    'Habiba', 'Taher', 'Ramy Elnaggar'
+  ];
+
+  const ALL_TYPES_LIST = ['حواري', 'تمثيلي'];
+  const ALL_FORMATS_LIST = ['REEL', 'VIDEO'];
+  const ALL_BYS_LIST = ['Khalil', 'Ahmed', 'RAMY', 'Habiba', 'ADHAM', 'Hassanien'];
+  const ALL_STORAGES_LIST = ['Alexandria', 'Desouk', 'Cairo'];
+
   const { uniqueBranches, uniqueYears, uniqueTeachers, uniqueExtraNames, uniqueTypes, uniqueFormats, uniqueBys, uniqueStorages } = useMemo(() => {
-    const data = Array.isArray(liveData) ? liveData : [];
+    const data = Array.isArray(combinedData) ? combinedData : [];
     const getUnique = (key: string) => Array.from(new Set(data.map((r: any) => String(r[key] || '').trim()).filter(Boolean))).sort();
     return {
       uniqueBranches: ['Alexandria', 'Cairo', 'Desouk'],
-      uniqueYears: getUnique('year'),
-      uniqueTeachers: getUnique('teacher'),
-      uniqueExtraNames: activeGid === '0' ? getUnique('creator') : getUnique('extraName'),
-      uniqueTypes: getUnique('type'),
-      uniqueFormats: getUnique('format'),
-      uniqueBys: getUnique('by'),
-      uniqueStorages: getUnique('storage'),
+      uniqueYears: Array.from(new Set([...ALL_YEARS_LIST, ...getUnique('year').map(y => y.toLowerCase())])),
+      uniqueTeachers: Array.from(new Set([...ALL_TEACHERS_LIST, ...getUnique('teacher')])),
+      uniqueExtraNames: Array.from(new Set([...ALL_CREATORS_LIST, ...(activeGid === '0' ? getUnique('creator') : getUnique('extraName'))])),
+      uniqueTypes: activeGid === '0' ? Array.from(new Set(['CUT', ...getUnique('type')])) : Array.from(new Set([...ALL_TYPES_LIST, ...getUnique('type').filter(t => t.toUpperCase() !== 'CUT')])),
+      uniqueFormats: Array.from(new Set([...ALL_FORMATS_LIST, ...getUnique('format')])),
+      uniqueBys: Array.from(new Set([...ALL_BYS_LIST, ...getUnique('by')])),
+      uniqueStorages: Array.from(new Set([...ALL_STORAGES_LIST, ...getUnique('storage')])),
     };
-  }, [liveData, activeGid]);
+  }, [combinedData, activeGid]);
 
   const yearOptions = useMemo(() => {
-    const list = new Set(['s3', 's2', 's1', 'x']);
+    const list = new Set(ALL_YEARS_LIST);
     uniqueYears.forEach(y => {
       if (y && y.trim()) list.add(y.trim().toLowerCase());
     });
@@ -5371,7 +7260,7 @@ const [activeVeToast, setActiveVeToast] = useState<{ item: any } | null>(null);
   }, [uniqueYears]);
 
   const teacherOptions = useMemo(() => {
-    const list = new Set(['Hossam Elashry', 'Mahmoud Gaber', 'Employee', 'Bishoy']);
+    const list = new Set(ALL_TEACHERS_LIST);
     uniqueTeachers.forEach(t => {
       if (t && t.trim()) list.add(t.trim());
     });
@@ -5379,6 +7268,14 @@ const [activeVeToast, setActiveVeToast] = useState<{ item: any } | null>(null);
   }, [uniqueTeachers]);
 
   const colSpan = isOperations ? 7 : isTagme3at ? (tagmeViewMode === 'SIMPLE' ? 8 : 13) : activeGid === '0' ? 18 : activeGid === '1939073164' ? 20 : ['1436746012', '798246690'].includes(activeGid) ? 16 : 7;
+
+  const effectiveLoading = !isDemo && isTagme3at 
+    ? isTagmeDbLoading 
+    : !isDemo && isStageTab 
+    ? isStageDbLoading 
+    : !isDemo && isReelsTableTab 
+    ? isReelsDbLoading 
+    : loading;
 
   return (
     <div className="flex min-h-screen bg-[#05070a] text-foreground selection:bg-primary/30">
@@ -5733,6 +7630,20 @@ const [activeVeToast, setActiveVeToast] = useState<{ item: any } | null>(null);
               )}
             </div>
 
+            {/* Demo Sheets Link Button (Admin / Manager only) */}
+            {profile?.role && PERMISSIONS.canManageUsers(profile.role) && (
+              <a
+                href="/demo.html"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="px-4 py-3 rounded-2xl bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-300 text-xs font-black uppercase tracking-wider flex items-center gap-2 shadow-lg shadow-amber-500/5 transition-all hover:scale-105 active:scale-95 cursor-pointer"
+                title="فتح النسخة التجريبية المتصلة بالشيتات الأصلية للشرح (للأدمن فقط)"
+              >
+                <FileSpreadsheet size={16} className="text-amber-400" />
+                <span>🟡 (DEMO) نسخة الشرح</span>
+              </a>
+            )}
+
             {profile?.role && PERMISSIONS.canSync(profile.role) && (
               <button onClick={() => refresh()} className="btn-glass px-7 py-3.5 rounded-2xl flex items-center gap-3 text-xs font-black uppercase tracking-widest cursor-pointer hover:scale-105 active:scale-95 transition-all">
                 <RefreshCw size={18} className={loading ? 'animate-spin' : ''} />
@@ -5852,30 +7763,63 @@ const [activeVeToast, setActiveVeToast] = useState<{ item: any } | null>(null);
                         )}
                       </div>
 
-                      <div className="grid grid-cols-2 gap-4">
-                        <div>
+                      <div className="grid grid-cols-2 gap-4 items-end">
+                        <div className="relative">
                           <label className="block text-xs font-bold text-muted mb-1.5 arabic-text">النوع (Type)</label>
-                          <input
-                            type="text"
+                          <InlineCombobox
+                            options={uniqueTypes}
                             value={shootingAddForm.type}
-                            onChange={e => setShootingAddForm({...shootingAddForm, type: e.target.value})}
-                            className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-primary transition-colors font-bold text-sm"
+                            onChange={(val: string) => setShootingAddForm({...shootingAddForm, type: val})}
+                            placeholder="اختر النوع"
                           />
                         </div>
-                        <div>
+                        <div className="relative">
                           <label className="block text-xs font-bold text-muted mb-1.5 arabic-text">المقاس (Format)</label>
-                          <input
-                            type="text"
+                          <InlineCombobox
+                            options={uniqueFormats}
                             value={shootingAddForm.format}
-                            onChange={e => setShootingAddForm({...shootingAddForm, format: e.target.value})}
-                            className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-primary transition-colors font-bold text-sm"
+                            onChange={(val: string) => setShootingAddForm({...shootingAddForm, format: val})}
+                            placeholder="اختر المقاس"
                           />
                         </div>
                       </div>
 
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
-                          <label className="block text-xs font-bold text-muted mb-1.5 arabic-text">اسم السكريبت (Script Name)</label>
+                          <div className="flex items-center justify-between mb-1.5">
+                            <label className="block text-xs font-bold text-muted arabic-text">اسم السكريبت (Script Name)</label>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                let generated = '';
+                                if (shootingAddForm.scriptLink) {
+                                  try {
+                                    const parsed = parseScriptValue(shootingAddForm.scriptLink);
+                                    if (parsed && parsed.text && !parsed.text.startsWith('http') && !parsed.text.includes('document/d/')) {
+                                      generated = parsed.text;
+                                    }
+                                  } catch {}
+                                }
+                                if (!generated) {
+                                  if (activeGid === '0') {
+                                    generated = `${shootingAddForm.year?.toUpperCase() || ''} Cut - ${shootingAddForm.extraName || 'ريل'}`;
+                                  } else {
+                                    const t = shootingAddForm.teacher ? `مستر ${shootingAddForm.teacher}` : 'الدرس';
+                                    const y = shootingAddForm.year ? shootingAddForm.year.toUpperCase() : '';
+                                    const tp = shootingAddForm.type ? `(${shootingAddForm.type})` : '';
+                                    generated = `اسكريبت ${t} - ${y} ${tp}`.trim();
+                                  }
+                                }
+                                setShootingAddForm(prev => ({ ...prev, scriptName: generated }));
+                                toast.success(`تم توليد الاسم: ${generated}`);
+                              }}
+                              className="text-[10px] font-bold text-purple-400 hover:text-white bg-purple-500/10 hover:bg-purple-600 px-2.5 py-0.5 rounded-lg border border-purple-500/20 transition-all cursor-pointer flex items-center gap-1.5 shadow-sm active:scale-95"
+                              title="توليد اسم تلقائي بناءً على البيانات أو الرابط"
+                            >
+                              <Sparkles size={12} className="text-purple-400 animate-pulse" />
+                              <span>توليد اسم 🪄</span>
+                            </button>
+                          </div>
                           <input
                             type="text"
                             placeholder="مثال: سكريبت مستر حسام"
@@ -5900,6 +7844,86 @@ const [activeVeToast, setActiveVeToast] = useState<{ item: any } | null>(null);
                       <div className="p-4 bg-primary/10 border border-primary/20 rounded-xl mt-4">
                         <label className="block text-xs font-bold text-primary mb-1.5 arabic-text">الكود المتولد تلقائياً (Code)</label>
                         <div className="font-mono text-lg text-white" dir="ltr">{generatedCode || 'جاري الحساب...'}</div>
+                      </div>
+                    </>
+                  ) : isTagme3at ? (
+                    <>
+                      <div>
+                        <label className="block text-xs font-bold text-muted mb-1.5 arabic-text">اسم التجميعة / اسم الدرس *</label>
+                        <input
+                          type="text"
+                          required
+                          placeholder="مثال: تجميعة مراجعة ليلة الامتحان..."
+                          value={addForm.name}
+                          onChange={e => setAddForm({...addForm, name: e.target.value})}
+                          className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-emerald-500 transition-colors font-bold arabic-text text-sm"
+                        />
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-xs font-bold text-muted mb-1.5 arabic-text">المرحلة الدراسية (Op Sheet)</label>
+                          <select
+                            value={addForm.val || 'Senior 1'}
+                            onChange={e => setAddForm({...addForm, val: e.target.value})}
+                            className="w-full bg-[#0b1019] border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-emerald-500 transition-colors font-bold text-sm"
+                          >
+                            {opSheetsList.map((op: string) => (
+                              <option key={op} value={op}>{op}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-bold text-muted mb-1.5 arabic-text">الفرع (Branch)</label>
+                          <select
+                            value={addForm.extra || 'يوتيوب العمليات (تجميعة)'}
+                            onChange={e => setAddForm({...addForm, extra: e.target.value})}
+                            className="w-full bg-[#0b1019] border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-emerald-500 transition-colors font-bold text-sm"
+                          >
+                            <option value="يوتيوب العمليات (تجميعة)">يوتيوب العمليات (تجميعة)</option>
+                            {branchesList.map((b: string) => (
+                              <option key={b} value={b}>{b}</option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-4">
+                        <div>
+                          <label className="block text-xs font-bold text-muted mb-1.5 arabic-text">المونتير المسؤول (Editor)</label>
+                          <select
+                            value={addForm.editor || 'غير محدد'}
+                            onChange={e => setAddForm({...addForm, editor: e.target.value})}
+                            className="w-full bg-[#0b1019] border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-emerald-500 transition-colors font-bold text-sm"
+                          >
+                            <option value="غير محدد">غير محدد</option>
+                            {editorsList.map((ed: string) => (
+                              <option key={ed} value={ed}>{ed}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-bold text-muted mb-1.5 arabic-text">اسم الفايلينج (Filing Name)</label>
+                          <input
+                            type="text"
+                            placeholder="مثال: S1-U2-REV"
+                            value={addForm.filingName}
+                            onChange={e => setAddForm({...addForm, filingName: e.target.value})}
+                            className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-emerald-500 transition-colors font-mono text-xs text-left"
+                            dir="ltr"
+                          />
+                        </div>
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-bold text-muted mb-1.5 arabic-text">ملاحظات التسويق (Marketing Notes)</label>
+                        <input
+                          type="text"
+                          placeholder="ملاحظات قسم التسويق..."
+                          value={addForm.notesMarketing}
+                          onChange={e => setAddForm({...addForm, notesMarketing: e.target.value})}
+                          className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-emerald-500 transition-colors font-bold arabic-text text-sm"
+                        />
                       </div>
                     </>
                   ) : (
@@ -6069,6 +8093,37 @@ const [activeVeToast, setActiveVeToast] = useState<{ item: any } | null>(null);
             >
               <span>مهامي فقط ({currentUserName.split(' ')[0]}) 🎯</span>
             </button>
+
+            {/* Admin Active Term Lock Switcher Control */}
+            {profile?.role && PERMISSIONS.canManageUsers(profile.role) && (
+              <div className="flex items-center gap-2 bg-gradient-to-r from-purple-500/10 to-indigo-500/10 border border-purple-500/30 p-1.5 rounded-2xl shrink-0 shadow-lg shadow-purple-500/5" dir="rtl">
+                <span className="text-[11px] font-black text-purple-300 px-2 flex items-center gap-1.5 arabic-text">
+                  <span>🔒 الترم النشط للنظام:</span>
+                </span>
+                <button
+                  onClick={() => handleAdminTermChange('T1')}
+                  className={`px-3.5 py-2 rounded-xl text-xs font-black transition-all cursor-pointer border ${
+                    activeAcademicTerm === 'T1'
+                      ? 'bg-emerald-500 text-white border-emerald-400 shadow-md shadow-emerald-500/30 scale-105 ring-2 ring-emerald-400/40'
+                      : 'bg-white/5 border-white/10 text-muted/60 hover:bg-white/10 hover:text-white'
+                  }`}
+                  title="تحديد الترم الأول كترم نشط لجميع المستخدمين"
+                >
+                  <span>الترم الأول (T1) ✓</span>
+                </button>
+                <button
+                  onClick={() => handleAdminTermChange('T2')}
+                  className={`px-3.5 py-2 rounded-xl text-xs font-black transition-all cursor-pointer border ${
+                    activeAcademicTerm === 'T2'
+                      ? 'bg-emerald-500 text-white border-emerald-400 shadow-md shadow-emerald-500/30 scale-105 ring-2 ring-emerald-400/40'
+                      : 'bg-white/5 border-white/10 text-muted/60 hover:bg-white/10 hover:text-white'
+                  }`}
+                  title="تحديد الترم الثاني كترم نشط لجميع المستخدمين"
+                >
+                  <span>الترم الثاني (T2) ✓</span>
+                </button>
+              </div>
+            )}
 
 
 
@@ -6281,6 +8336,48 @@ const [activeVeToast, setActiveVeToast] = useState<{ item: any } | null>(null);
               {sortBy === 'addedDate' && (sortOrder === 'asc' ? '🔼' : '🔽')}
             </button>
 
+            {isStage && (
+              <div className="flex items-center gap-1.5 border-r border-white/10 pr-3 mr-1">
+                <span className="font-bold text-emerald-400">تجميعة:</span>
+                <button
+                  onClick={() => {
+                    setColFilters(prev => {
+                      const updated = { ...prev };
+                      if (updated.check1 === 'TRUE') delete updated.check1;
+                      else updated.check1 = 'TRUE';
+                      return updated;
+                    });
+                  }}
+                  className={`px-3 py-1.5 rounded-xl border font-bold transition-all flex items-center gap-1 cursor-pointer ${
+                    colFilters.check1 === 'TRUE'
+                      ? 'bg-emerald-500/30 border-emerald-400 text-emerald-300 font-black scale-105 shadow-lg shadow-emerald-500/20 ring-2 ring-emerald-400/40'
+                      : 'bg-white/5 border-white/10 text-muted hover:bg-emerald-500/10 hover:text-emerald-300'
+                  }`}
+                  title="فلترة الدروس التي تم تجميعها فقط"
+                >
+                  <span>تجميعة ✓</span>
+                </button>
+                <button
+                  onClick={() => {
+                    setColFilters(prev => {
+                      const updated = { ...prev };
+                      if (updated.check1 === 'FALSE') delete updated.check1;
+                      else updated.check1 = 'FALSE';
+                      return updated;
+                    });
+                  }}
+                  className={`px-3 py-1.5 rounded-xl border font-bold transition-all flex items-center gap-1 cursor-pointer ${
+                    colFilters.check1 === 'FALSE'
+                      ? 'bg-amber-500/30 border-amber-400 text-amber-300 font-black scale-105 shadow-lg shadow-amber-500/20 ring-2 ring-amber-400/40'
+                      : 'bg-white/5 border-white/10 text-muted hover:bg-amber-500/10 hover:text-amber-300'
+                  }`}
+                  title="فلترة الدروس التي لم تُجمع بعد"
+                >
+                  <span>لم تُجمع ⏳</span>
+                </button>
+              </div>
+            )}
+
             {sortBy !== 'default' && (
               <button
                 onClick={() => setSortBy('default')}
@@ -6324,19 +8421,19 @@ const [activeVeToast, setActiveVeToast] = useState<{ item: any } | null>(null);
 
           {/* Main Content View (Table vs Analytics) */}
           {isReelsAnalytics ? (
-            <ReelsAnalytics />
+            <ReelsAnalytics isDemo={isDemo} />
           ) : isAnalyticsTagme ? (
             <TagmeAnalyticsDashboard combinedData={combinedData} tagmeTransfers={tagmeTransfers} loading={loading} taskStatuses={taskStatuses} taskPriorities={taskPriorities} />
           ) : isDesignAnalytics ? (
             <DesignAnalytics liveData={liveData} loading={loading} />
           ) : isDesignersPage ? (
             <ErrorBoundary>
-              <DesignersDashboard liveData={liveData} setLiveData={setLiveData} loading={loading} />
+              <DesignersDashboard isDemoMode={isDemo} liveData={liveData} />
             </ErrorBoundary>
           ) : isCardsView ? (
             /* 📱 Responsive Mobile Cards Mode View */
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 p-2 animate-fadeIn" dir="rtl">
-              {filteredData.slice(0, visibleRecordsLimit).map((item: any, idx: number) => {
+              {filteredData.slice(0, activeVisibleRecordsLimit).map((item: any, idx: number) => {
                 const itemKey = item.uniqueKey || generateKey(item);
                 const taskName = item.name || item.filingName || item.script || item.id || 'مهمة بدون عنوان';
                 const isDone = item.done === true || item.done === 'TRUE';
@@ -6407,7 +8504,7 @@ const [activeVeToast, setActiveVeToast] = useState<{ item: any } | null>(null);
             </div>
           ) : (
             <div className="table-container">
-              <div className="overflow-x-auto">
+              <div className="overflow-x-auto min-h-[420px] pb-36">
                 <table className="w-full text-right border-collapse">
                   <thead>
                     <tr className="bg-white/[0.03] border-b border-white/[0.05]">
@@ -6416,7 +8513,7 @@ const [activeVeToast, setActiveVeToast] = useState<{ item: any } | null>(null);
                   </thead>
                   <tbody className="divide-y divide-white/[0.03]">
                     {/* Quick-Add Row for Reels Sheets GIDs */}
-                    {['1436746012', '798246690', '0'].includes(activeGid) && profile?.role && (activeGid === '1436746012' || activeGid === '0' || PERMISSIONS.canAddEntry(profile.role)) && !loading && (
+                    {['1436746012', '798246690', '0'].includes(activeGid) && profile?.role && (activeGid === '1436746012' || activeGid === '0' || PERMISSIONS.canAddEntry(profile.role)) && !effectiveLoading && (
                       <tr 
                         onClick={() => {
                           if (activeGid === '0') {
@@ -6442,7 +8539,7 @@ const [activeVeToast, setActiveVeToast] = useState<{ item: any } | null>(null);
                     )}
 
                     <AnimatePresence mode="popLayout">
-                      {loading ? (
+                      {effectiveLoading ? (
                         <motion.tr initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
                           <td colSpan={colSpan} className="py-40 text-center">
                             <div className="w-12 h-12 border-4 border-primary/20 border-t-primary rounded-full animate-spin mx-auto" />
@@ -6502,27 +8599,52 @@ const [activeVeToast, setActiveVeToast] = useState<{ item: any } | null>(null);
                           
                           <div className="space-y-12 px-8">
                             {/* Term 1 Section */}
-                            <div>
-                              <h4 className="text-lg font-bold arabic-text mb-4 text-right border-r-4 border-primary pr-3">الترم الأول (T1)</h4>
+                            <div className="relative">
+                              <div className="flex items-center justify-between mb-4">
+                                <h4 className="text-lg font-bold arabic-text border-r-4 border-emerald-500 pr-3 flex items-center gap-2">
+                                  <span>الترم الأول (T1)</span>
+                                  {activeAcademicTerm === 'T1' && (
+                                    <span className="bg-emerald-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full shadow-sm">
+                                      الترم النشط أداءً ⚡
+                                    </span>
+                                  )}
+                                </h4>
+                                {activeAcademicTerm !== 'T1' && (
+                                  <span className="bg-rose-500/20 border border-rose-500/40 text-rose-400 text-xs font-black px-3 py-1 rounded-xl flex items-center gap-1.5">
+                                    <XCircle size={14} /> مغلق حالياً (الترم غير نشط)
+                                  </span>
+                                )}
+                              </div>
                               <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
                                 {Object.entries(yearLabels).map(([yearKey, label]) => {
                                   const count = liveData.filter((i: any) => i.teacher === teacherFilter && i.year === yearKey && i.term === 'T1').length;
+                                  const isTermDisabled = activeAcademicTerm !== 'T1';
+
                                   return (
                                     <button
                                       key={`T1-${yearKey}`}
-                                      disabled={count === 0}
+                                      disabled={count === 0 || isTermDisabled}
                                       onClick={() => {
+                                        if (isTermDisabled) return;
                                         setYearFilter(yearKey);
                                         setTermFilter('T1');
                                       }}
-                                      className={`p-6 text-center rounded-2xl group transition-all duration-300 border ${
-                                        count === 0 
-                                          ? 'bg-white/5 border-white/10 opacity-40 cursor-not-allowed' 
-                                          : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20 hover:border-emerald-500/50 hover:shadow-lg hover:shadow-emerald-500/10'
+                                      className={`p-6 text-center rounded-2xl group transition-all duration-300 border relative overflow-hidden ${
+                                        isTermDisabled
+                                          ? 'bg-rose-950/20 border-rose-500/30 text-rose-300/40 cursor-not-allowed opacity-60'
+                                          : count === 0 
+                                            ? 'bg-white/5 border-white/10 opacity-40 cursor-not-allowed' 
+                                            : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20 hover:border-emerald-500/50 hover:shadow-lg hover:shadow-emerald-500/10 cursor-pointer'
                                       }`}
                                     >
+                                      {isTermDisabled && (
+                                        <div className="absolute inset-0 bg-rose-950/60 backdrop-blur-[2px] flex flex-col items-center justify-center gap-1 z-20">
+                                          <XCircle size={32} className="text-rose-500 animate-pulse" />
+                                          <span className="text-[11px] font-black text-rose-300 bg-rose-950/90 border border-rose-500/40 px-2.5 py-0.5 rounded-md">مغلق (الترم الثاني نشط)</span>
+                                        </div>
+                                      )}
                                       <div className={`w-12 h-12 mx-auto rounded-full flex items-center justify-center mb-4 transition-all ${
-                                        count === 0 ? 'bg-white/5 text-muted/30' : 'bg-emerald-500/20 text-emerald-400 group-hover:scale-110'
+                                        isTermDisabled ? 'bg-rose-500/10 text-rose-500' : count === 0 ? 'bg-white/5 text-muted/30' : 'bg-emerald-500/20 text-emerald-400 group-hover:scale-110'
                                       }`}>
                                         <GraduationCap size={24} />
                                       </div>
@@ -6540,27 +8662,52 @@ const [activeVeToast, setActiveVeToast] = useState<{ item: any } | null>(null);
                             </div>
 
                             {/* Term 2 Section */}
-                            <div>
-                              <h4 className="text-lg font-bold arabic-text mb-4 text-right border-r-4 border-secondary pr-3">الترم الثاني (T2)</h4>
+                            <div className="relative pt-4 border-t border-white/5">
+                              <div className="flex items-center justify-between mb-4">
+                                <h4 className="text-lg font-bold arabic-text border-r-4 border-rose-500 pr-3 flex items-center gap-2">
+                                  <span>الترم الثاني (T2)</span>
+                                  {activeAcademicTerm === 'T2' && (
+                                    <span className="bg-emerald-500 text-white text-[10px] font-black px-2 py-0.5 rounded-full shadow-sm">
+                                      الترم النشط أداءً ⚡
+                                    </span>
+                                  )}
+                                </h4>
+                                {activeAcademicTerm !== 'T2' && (
+                                  <span className="bg-rose-500/20 border border-rose-500/40 text-rose-400 text-xs font-black px-3 py-1 rounded-xl flex items-center gap-1.5">
+                                    <XCircle size={14} /> مغلق حالياً (الترم غير نشط)
+                                  </span>
+                                )}
+                              </div>
                               <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
                                 {Object.entries(yearLabels).map(([yearKey, label]) => {
                                   const count = liveData.filter((i: any) => i.teacher === teacherFilter && i.year === yearKey && i.term === 'T2').length;
+                                  const isTermDisabled = activeAcademicTerm !== 'T2';
+
                                   return (
                                     <button
                                       key={`T2-${yearKey}`}
-                                      disabled={count === 0}
+                                      disabled={count === 0 || isTermDisabled}
                                       onClick={() => {
+                                        if (isTermDisabled) return;
                                         setYearFilter(yearKey);
                                         setTermFilter('T2');
                                       }}
-                                      className={`p-6 text-center rounded-2xl group transition-all duration-300 border ${
-                                        count === 0 
-                                          ? 'bg-white/5 border-white/10 opacity-40 cursor-not-allowed' 
-                                          : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20 hover:border-emerald-500/50 hover:shadow-lg hover:shadow-emerald-500/10'
+                                      className={`p-6 text-center rounded-2xl group transition-all duration-300 border relative overflow-hidden ${
+                                        isTermDisabled
+                                          ? 'bg-rose-950/20 border-rose-500/30 text-rose-300/40 cursor-not-allowed opacity-60'
+                                          : count === 0 
+                                            ? 'bg-white/5 border-white/10 opacity-40 cursor-not-allowed' 
+                                            : 'bg-emerald-500/10 border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/20 hover:border-emerald-500/50 hover:shadow-lg hover:shadow-emerald-500/10 cursor-pointer'
                                       }`}
                                     >
+                                      {isTermDisabled && (
+                                        <div className="absolute inset-0 bg-rose-950/60 backdrop-blur-[2px] flex flex-col items-center justify-center gap-1 z-20">
+                                          <XCircle size={32} className="text-rose-500 animate-pulse" />
+                                          <span className="text-[11px] font-black text-rose-300 bg-rose-950/90 border border-rose-500/40 px-2.5 py-0.5 rounded-md">مغلق (الترم الأول نشط)</span>
+                                        </div>
+                                      )}
                                       <div className={`w-12 h-12 mx-auto rounded-full flex items-center justify-center mb-4 transition-all ${
-                                        count === 0 ? 'bg-white/5 text-muted/30' : 'bg-emerald-500/20 text-emerald-400 group-hover:scale-110'
+                                        isTermDisabled ? 'bg-rose-500/10 text-rose-500' : count === 0 ? 'bg-white/5 text-muted/30' : 'bg-emerald-500/20 text-emerald-400 group-hover:scale-110'
                                       }`}>
                                         <GraduationCap size={24} />
                                       </div>
@@ -6579,7 +8726,7 @@ const [activeVeToast, setActiveVeToast] = useState<{ item: any } | null>(null);
                           </div>
                         </td>
                       </motion.tr>
-                    ) : filteredData.length > 0 ? filteredData.slice(0, visibleRecordsLimit).map((item: any, idx: number) => {
+                    ) : filteredData.length > 0 ? filteredData.slice(0, activeVisibleRecordsLimit).map((item: any, idx: number) => {
                       const itemKey = item.uniqueKey || generateKey(item);
                       const isGlowing = glowingKeys.includes(itemKey);
 
@@ -6633,7 +8780,7 @@ const [activeVeToast, setActiveVeToast] = useState<{ item: any } | null>(null);
                       if (['1436746012', '1939073164', '798246690'].includes(activeGid)) {
                         return <ShootingRow key={idx} item={item} index={idx} activeGid={activeGid} onToggleFilmed={handleFilmedToggle} loadingFilmedCode={loadingFilmedCode} onUpdateShootingRow={handleUpdateShootingRow} liveData={liveData} optionsLists={{ branches: uniqueBranches, years: uniqueYears, teachers: uniqueTeachers, extraNames: uniqueExtraNames, types: uniqueTypes, formats: uniqueFormats, bys: uniqueBys, storages: uniqueStorages, editors: editorsList }} autofillDrag={autofillDrag} setAutofillDrag={setAutofillDrag} onApplyAutofill={handleApplyAutofill} activeCell={activeCell} setActiveCell={setActiveCell} toast={toast} isSubscribed={subscribedTasks.includes(item.id)} onToggleSubscribe={toggleSubscribe} />;
                       }
-                      return <StageRow key={idx} item={item} index={idx} tagmeTransfers={tagmeTransfers} onTagmeToggle={handleTagmeToggle} activeLabel={activeLabel} isGlowing={isGlowing} onUpdateDate={handleUpdateDate} onUpdateWeek={handleUpdateWeek} onUpdateThumbnailLink={handleUpdateThumbnailLink} onUpdateTime={handleUpdateTime} onUpdateYoutubeLink={handleUpdateYoutubeLink} onUpdateUploaded={handleUpdateUploaded} />;
+                      return <StageRow key={idx} item={item} index={idx} tagmeTransfers={tagmeTransfers} onTagmeToggle={handleTagmeToggle} activeLabel={activeLabel} isGlowing={isGlowing} onUpdateDate={handleUpdateDate} onUpdateWeek={handleUpdateWeek} onUpdateThumbnailLink={handleUpdateThumbnailLink} onUpdateTime={handleUpdateTime} onUpdateYoutubeLink={handleUpdateYoutubeLink} onUpdateUploaded={handleUpdateUploaded} onToggleDelivered={handleToggleDelivered} />;
                     }) : (
                       <motion.tr initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
                         <td colSpan={colSpan} className="py-40 text-center opacity-30">
@@ -6941,7 +9088,8 @@ const [activeVeToast, setActiveVeToast] = useState<{ item: any } | null>(null);
 }
 
 // ─── Auth Gate ─────────────────────────────────────────────────────────────────
-function AppWithAuth() {
+function AppWithAuth({ isDemoMode = false }: { isDemoMode?: boolean }) {
+  const isDemo = isDemoMode || (typeof window !== 'undefined' && (window.location.search.includes('demo=true') || window.location.pathname.includes('demo')));
   const { user, profile, loading } = useAuth();
 
   if (loading) {
@@ -6955,8 +9103,8 @@ function AppWithAuth() {
     );
   }
 
-  if (!user && !profile) return <LoginPage />;
-  return <App />;
+  if (!user && !profile && !isDemo) return <LoginPage />;
+  return <App isDemoMode={isDemo} />;
 }
 
 // ─── Splash Screen ─────────────────────────────────────────────────────────────
@@ -7030,7 +9178,7 @@ const SplashScreen = ({ onComplete }: { onComplete: () => void }) => {
   );
 };
 
-function RootApp() {
+function RootApp({ isDemoMode = false }: { isDemoMode?: boolean }) {
   const [showSplash, setShowSplash] = useState(true);
 
   return (
@@ -7046,7 +9194,7 @@ function RootApp() {
             transition={{ duration: 0.8 }}
             className="w-full h-full"
           >
-            <AppWithAuth />
+            <AppWithAuth isDemoMode={isDemoMode} />
           </motion.div>
         )}
       </AnimatePresence>
@@ -7054,7 +9202,7 @@ function RootApp() {
   );
 }
 
-export default function Root() {
-  return <RootApp />;
+export default function Root({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
+  return <RootApp isDemoMode={isDemoMode} />;
 }
 

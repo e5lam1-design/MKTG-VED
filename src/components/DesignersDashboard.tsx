@@ -1500,36 +1500,6 @@ export default function DesignersDashboard({ isDemoMode = false, liveData: sheet
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-muted-foreground/70 mb-1.5">الكريتور (Creator)</label>
-                  <select
-                    value={addForm.designer}
-                    onChange={e => setAddForm({...addForm, designer: e.target.value})}
-                    className="w-full bg-[#0b1019] border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-purple-500 transition-colors font-bold text-sm cursor-pointer"
-                  >
-                    {allDesignersList.map(d => (
-                      <option key={d} value={d} className="bg-[#0b1019]">{d}</option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <div className="flex items-center justify-between mb-1.5">
-                    <label className="block text-xs font-bold text-muted-foreground/70">الأولوية (Priority)</label>
-                    <span className="text-[10px] text-white/40 font-mono">تربط التاريخ تلقائياً 🪄</span>
-                  </div>
-                  <select
-                    value={addForm.priority}
-                    onChange={e => handleModalPriorityChange(e.target.value)}
-                    className="w-full bg-[#0b1019] border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-purple-500 transition-colors font-bold text-sm cursor-pointer"
-                  >
-                    {allPrioritiesList.map(p => (
-                      <option key={p} value={p} className="bg-[#0b1019]">{p}</option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between">
@@ -1542,8 +1512,8 @@ export default function DesignersDashboard({ isDemoMode = false, liveData: sheet
                     )}
                   </div>
                   <select
-                    value={addForm.requester}
-                    onChange={e => setAddForm({...addForm, requester: e.target.value})}
+                    value={addForm.designer}
+                    onChange={e => setAddForm({...addForm, designer: e.target.value})}
                     className="w-full bg-[#0b1019] border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-purple-500 transition-colors font-bold text-sm cursor-pointer"
                   >
                     {designerWorkloads.map(item => (
@@ -1557,13 +1527,13 @@ export default function DesignersDashboard({ isDemoMode = false, liveData: sheet
                   <div className="flex flex-wrap items-center gap-1.5 pt-1">
                     <span className="text-[10px] text-white/50 font-bold ml-1">اقتراح ذكي:</span>
                     {designerWorkloads.map(item => {
-                      const isSelected = addForm.requester === item.name;
+                      const isSelected = addForm.designer === item.name;
                       const isFree = item.count === 0;
                       return (
                         <button
                           key={item.name}
                           type="button"
-                          onClick={() => setAddForm({ ...addForm, requester: item.name })}
+                          onClick={() => setAddForm({ ...addForm, designer: item.name })}
                           className={`text-[10px] font-black px-2.5 py-1 rounded-lg border transition-all cursor-pointer flex items-center gap-1.5 ${
                             isSelected
                               ? 'bg-purple-600 border-purple-400 text-white shadow-md scale-105 ring-1 ring-purple-400/50'
@@ -1582,6 +1552,38 @@ export default function DesignersDashboard({ isDemoMode = false, liveData: sheet
                     })}
                   </div>
                 </div>
+
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="block text-xs font-bold text-muted-foreground/70">الأولوية (Priority)</label>
+                    <span className="text-[10px] text-white/40 font-mono">تربط التاريخ تلقائياً 🪄</span>
+                  </div>
+                  <select
+                    value={addForm.priority}
+                    onChange={e => handleModalPriorityChange(e.target.value)}
+                    className="w-full bg-[#0b1019] border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-purple-500 transition-colors font-bold text-sm cursor-pointer"
+                  >
+                    {allPrioritiesList.map(p => (
+                      <option key={p} value={p} className="bg-[#0b1019]">{p}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-muted-foreground/70 mb-1.5">الكريتور / الطالب (Creator)</label>
+                  <select
+                    value={addForm.requester}
+                    onChange={e => setAddForm({...addForm, requester: e.target.value})}
+                    className="w-full bg-[#0b1019] border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-purple-500 transition-colors font-bold text-sm cursor-pointer"
+                  >
+                    {allRequestersList.map(r => (
+                      <option key={r} value={r} className="bg-[#0b1019]">{r}</option>
+                    ))}
+                  </select>
+                </div>
+
                 <div>
                   <label className="block text-xs font-bold text-muted-foreground/70 mb-1.5">النوع (Type)</label>
                   <select

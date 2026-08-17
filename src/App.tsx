@@ -49,6 +49,7 @@ import { UserManagement } from './components/UserManagement';
 import { ReelsAnalytics } from './components/ReelsAnalytics';
 import DesignersDashboard from './components/DesignersDashboard';
 import { DesignAnalytics } from './components/DesignAnalytics';
+import { DesignersTeamManagement } from './components/DesignersTeamManagement';
 import { FeedbackModal } from './components/FeedbackModal';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { supabase, PERMISSIONS, ROLE_LABELS, ROLE_COLORS, DEFAULT_ROLE_PERMISSIONS, setRuntimeRolePermissions } from './lib/supabase';
@@ -3671,7 +3672,8 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
   const isReelsAnalytics = activeGid === 'reels-analytics';
   const isDesignersPage = activeGid === '501319673';
   const isDesignAnalytics = activeGid === 'design-analytics';
-  const isDesignersMode = isDesignersPage || isDesignAnalytics;
+  const isDesignersTeamPage = activeGid === 'designers-team-management';
+  const isDesignersMode = isDesignersPage || isDesignAnalytics || isDesignersTeamPage;
 
   const isReelsStage = ['1436746012', '1939073164', '0', '798246690'].includes(activeGid);
   const isStage = !isOperations && !isTagme3at && !isAnalyticsTagme && !isReelsAnalytics && !isDesignersMode;
@@ -6646,6 +6648,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
   const designersStages = [
     { label: 'Designers', gid: '501319673', icon: Sparkles, colorHex: '#a855f7' },
     { label: 'احصائيات تصاميم', gid: 'design-analytics', icon: BarChart3, colorHex: '#ec4899' },
+    { label: 'إدارة الفريق والقوائم', gid: 'designers-team-management', icon: Users, colorHex: '#06b6d4' },
   ];
 
   const reelsStages = [
@@ -7338,7 +7341,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
           {(() => {
             const MARKETING_LABELS = ['Operations','تجميعات','إحصائيات التجميعات 📊','Junior 4','Junior 5','Junior 6','Middle 1','Middle 2','Middle 3','Senior 1','Senior 2','Senior 3'];
             const REELS_LABELS = ['Shooting','Ve','CUTS','احصائيات الريلز'];
-            const DESIGNERS_LABELS = ['Designers','احصائيات تصاميم'];
+            const DESIGNERS_LABELS = ['Designers','احصائيات تصاميم','إدارة الفريق والقوائم'];
             const tabs = profile?.allowed_tabs ?? [];
             const hasAnyTab = (labels: string[]) => {
               if (!profile || profile.role === 'admin' || profile.role === 'manager') return true;
@@ -8439,6 +8442,10 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
             <TagmeAnalyticsDashboard combinedData={combinedData} tagmeTransfers={tagmeTransfers} loading={loading} taskStatuses={taskStatuses} taskPriorities={taskPriorities} />
           ) : isDesignAnalytics ? (
             <DesignAnalytics liveData={liveData} loading={loading} />
+          ) : isDesignersTeamPage ? (
+            <ErrorBoundary>
+              <DesignersTeamManagement userRole={profile?.role} toast={toast} />
+            </ErrorBoundary>
           ) : isDesignersPage ? (
             <ErrorBoundary>
               <DesignersDashboard isDemoMode={isDemo} liveData={liveData} />

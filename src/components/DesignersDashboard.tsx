@@ -2,11 +2,7 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { Loader2, Search, CheckSquare, Square, ChevronDown, Plus, X, Undo2, Redo2, Layers, Calendar, User, Eye, Sparkles, AlertTriangle, Link, ExternalLink } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useDesignersTasks } from '../hooks/useDesignersTasks';
-
-const DEFAULT_DESIGNERS = ['SHERIF', 'SHROUK', 'ESRAA', 'Hesham', 'Sohaila', 'alaa', 'alaa zakria', 'NOUR', 'NOURHAN', 'KHALED', 'EMAN', 'AWNEY', 'ANAS', 'SAMIR', 'MONA', 'YOMNA', 'MANAR', 'MARAM', 'Esraa nagi', 'A.AMR', 'AHMED', 'nada', 'abdelkerim', 'Donia', 'Esraa Naga', 'A.Medhat'];
-const DEFAULT_PRIORITIES = ['انهارده - ضروري', 'بكرة', 'انهارده - ممكن يتأجل', 'CHECK DEADLINE'];
-const DEFAULT_REQUESTERS = ['Narden', 'AYA', 'MANAR', 'JUMANA'];
-const DEFAULT_TYPES = ['THUMBNAIL', 'YT-COMMUNTIY', 'SOCIAL-MEDIA', 'OTHER'];
+import { useDesignersOptions, DEFAULT_DESIGNERS, DEFAULT_REQUESTERS, DEFAULT_PRIORITIES, DEFAULT_TYPES } from '../hooks/useDesignersOptions';
 
 // Interactive Floating Popover for Review Tasks (Opens Upwards with Distinct Filter Controls)
 const ReviewTasksPopover = ({
@@ -835,34 +831,36 @@ export default function DesignersDashboard({ isDemoMode = false, liveData: sheet
     return !r.done_designer && !r.done;
   };
 
-  // Extract unique options dynamically from localRows & localStorage
+  const { designers: liveDesigners, requesters: liveRequesters, priorities: livePriorities, types: liveTypes } = useDesignersOptions();
+
+  // Extract unique options dynamically from Supabase, localRows & localStorage
   const allDesignersList = useMemo(() => {
-    const stored = getStoredCustomItems('designer', DEFAULT_DESIGNERS);
+    const stored = liveDesigners && liveDesigners.length > 0 ? liveDesigners : getStoredCustomItems('designer', DEFAULT_DESIGNERS);
     if (!Array.isArray(localRows)) return stored;
     const fromRows = localRows.map(r => String(r?.designer || '').trim()).filter(Boolean);
     return Array.from(new Set([...stored, ...fromRows]));
-  }, [localRows]);
+  }, [localRows, liveDesigners]);
 
   const allPrioritiesList = useMemo(() => {
-    const stored = getStoredCustomItems('priority', DEFAULT_PRIORITIES);
+    const stored = livePriorities && livePriorities.length > 0 ? livePriorities : getStoredCustomItems('priority', DEFAULT_PRIORITIES);
     if (!Array.isArray(localRows)) return stored;
     const fromRows = localRows.map(r => String(r?.priority || '').trim()).filter(Boolean);
     return Array.from(new Set([...stored, ...fromRows]));
-  }, [localRows]);
+  }, [localRows, livePriorities]);
 
   const allRequestersList = useMemo(() => {
-    const stored = getStoredCustomItems('requester', DEFAULT_REQUESTERS);
+    const stored = liveRequesters && liveRequesters.length > 0 ? liveRequesters : getStoredCustomItems('requester', DEFAULT_REQUESTERS);
     if (!Array.isArray(localRows)) return stored;
     const fromRows = localRows.map(r => String(r?.requester || '').trim()).filter(Boolean);
     return Array.from(new Set([...stored, ...fromRows]));
-  }, [localRows]);
+  }, [localRows, liveRequesters]);
 
   const allTypesList = useMemo(() => {
-    const stored = getStoredCustomItems('type', DEFAULT_TYPES);
+    const stored = liveTypes && liveTypes.length > 0 ? liveTypes : getStoredCustomItems('type', DEFAULT_TYPES);
     if (!Array.isArray(localRows)) return stored;
     const fromRows = localRows.map(r => String(r?.type || '').trim()).filter(Boolean);
     return Array.from(new Set([...stored, ...fromRows]));
-  }, [localRows]);
+  }, [localRows, liveTypes]);
 
   const tasksAya = useMemo(() => {
     if (!Array.isArray(localRows)) return [];

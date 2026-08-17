@@ -890,34 +890,26 @@ export default function DesignersDashboard({ isDemoMode = false, liveData: sheet
 
   const { designers: liveDesigners, requesters: liveRequesters, priorities: livePriorities, types: liveTypes } = useDesignersOptions();
 
-  // Extract unique options dynamically from Supabase, localRows & localStorage
+  // Extract unique options dynamically from Supabase & fallback to defaults
   const allDesignersList = useMemo(() => {
-    const stored = liveDesigners && liveDesigners.length > 0 ? liveDesigners : getStoredCustomItems('designer', DEFAULT_DESIGNERS);
-    if (!Array.isArray(localRows)) return stored;
-    const fromRows = localRows.map(r => String(r?.designer || '').trim()).filter(Boolean);
-    return Array.from(new Set([...stored, ...fromRows]));
-  }, [localRows, liveDesigners]);
+    if (liveDesigners && liveDesigners.length > 0) return liveDesigners;
+    return getStoredCustomItems('designer', DEFAULT_DESIGNERS);
+  }, [liveDesigners]);
 
   const allPrioritiesList = useMemo(() => {
-    const stored = livePriorities && livePriorities.length > 0 ? livePriorities : getStoredCustomItems('priority', DEFAULT_PRIORITIES);
-    if (!Array.isArray(localRows)) return stored;
-    const fromRows = localRows.map(r => String(r?.priority || '').trim()).filter(Boolean);
-    return Array.from(new Set([...stored, ...fromRows]));
-  }, [localRows, livePriorities]);
+    if (livePriorities && livePriorities.length > 0) return livePriorities;
+    return getStoredCustomItems('priority', DEFAULT_PRIORITIES);
+  }, [livePriorities]);
 
   const allRequestersList = useMemo(() => {
-    const stored = liveRequesters && liveRequesters.length > 0 ? liveRequesters : getStoredCustomItems('requester', DEFAULT_REQUESTERS);
-    if (!Array.isArray(localRows)) return stored;
-    const fromRows = localRows.map(r => String(r?.requester || '').trim()).filter(Boolean);
-    return Array.from(new Set([...stored, ...fromRows]));
-  }, [localRows, liveRequesters]);
+    if (liveRequesters && liveRequesters.length > 0) return liveRequesters;
+    return getStoredCustomItems('requester', DEFAULT_REQUESTERS);
+  }, [liveRequesters]);
 
   const allTypesList = useMemo(() => {
-    const stored = liveTypes && liveTypes.length > 0 ? liveTypes : getStoredCustomItems('type', DEFAULT_TYPES);
-    if (!Array.isArray(localRows)) return stored;
-    const fromRows = localRows.map(r => String(r?.type || '').trim()).filter(Boolean);
-    return Array.from(new Set([...stored, ...fromRows]));
-  }, [localRows, liveTypes]);
+    if (liveTypes && liveTypes.length > 0) return liveTypes;
+    return getStoredCustomItems('type', DEFAULT_TYPES);
+  }, [liveTypes]);
 
   const tasksAya = useMemo(() => {
     if (!Array.isArray(localRows)) return [];

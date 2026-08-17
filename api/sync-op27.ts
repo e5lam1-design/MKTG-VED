@@ -37,9 +37,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const raw = await commonRes.json();
     const { executions = [], teachers = [], sections = [], courses = [] } = raw;
 
-    const teacherMap = new Map(teachers.map((t: any) => [t.id, t]));
-    const sectionMap = new Map(sections.map((s: any) => [s.id, s]));
-    const courseMap = new Map(courses.map((c: any) => [c.id, c]));
+    const teacherMap = new Map<string, any>(teachers.map((t: any) => [t.id, t]));
+    const sectionMap = new Map<string, any>(sections.map((s: any) => [s.id, s]));
+    const courseMap = new Map<string, any>(courses.map((c: any) => [c.id, c]));
 
     // 3. Format tasks
     const formattedTasks = executions.map((ex: any, idx: number) => {

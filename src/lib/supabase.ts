@@ -28,6 +28,7 @@ export type UserProfile = {
   is_active: boolean;
   team?: 'marketing' | 'video' | '';
   default_mode?: 'operations' | 'reels' | 'designers';
+  daily_priority_limit?: number;
   last_login_at?: string;
   last_logout_at?: string;
   created_at: string;

@@ -124,6 +124,16 @@ app.use((req, res, next) => {
   next();
 });
 
+app.get('/api/duration', (req, res) => {
+  const url = req.query.url;
+  if (!url) return res.status(400).json({ error: 'Missing url' });
+  if (bunnyCache[url]) {
+    return res.json({ duration: bunnyCache[url] });
+  }
+  queueFetch(url);
+  res.json({ duration: null, status: 'queued' });
+});
+
 const supabaseUrl = (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '').trim();
 const supabaseAnonKey = (process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || '').trim();
 const supabaseServiceRoleKey = (process.env.SUPABASE_SERVICE_ROLE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRwcGRhcW1ycmpibGRjeWdhZHBpIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3OTIzNTIyNSwiZXhwIjoyMDk0ODExMjI1fQ.EBZ2wyV48UA9h9tLM0vUrjovR8xCb8lPLIaVgI9aVwU').trim();
@@ -2321,6 +2331,94 @@ app.delete('/api/tagme3at', async (req, res) => {
   } catch (err) {
     console.error('[Proxy /api/tagme3at DELETE error]:', err.message);
     res.status(500).json({ error: err.message });
+  }
+});
+
+app.all('/api/sync-op27', async (req, res) => {
+  try {
+    const phone = process.env.ELKHETA_SYNC_PHONE || '01124927928';
+    const password = process.env.ELKHETA_SYNC_PASSWORD || '01124927928';
+
+    console.log('[Dev Proxy] Syncing tasks from tasks.elkheta.org...');
+    const loginRes = await fetch('https://tasks.elkheta.org/api/auth', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phone, password })
+    });
+
+    const setCookie = loginRes.headers.get('set-cookie');
+    if (!setCookie) {
+      return res.status(401).json({ error: 'Failed to authenticate with tasks.elkheta.org' });
+    }
+
+    const commonRes = await fetch('https://tasks.elkheta.org/api/common?include=executions,flows,teachers,sections,courses,statuses,teams,permissionRoles,users', {
+      headers: { 'Cookie': setCookie }
+    });
+
+    if (!commonRes.ok) {
+      return res.status(502).json({ error: 'Failed to fetch tasks from platform' });
+    }
+
+    const raw = await commonRes.json();
+    const { executions = [], teachers = [], sections = [], courses = [] } = raw;
+
+    const teacherMap = new Map(teachers.map(t => [t.id, t]));
+    const sectionMap = new Map(sections.map(s => [s.id, s]));
+    const courseMap = new Map(courses.map(c => [c.id, c]));
+
+    const formattedTasks = executions.map((ex, idx) => {
+      const teacher = teacherMap.get(ex.teacher_id);
+      const course = courseMap.get(ex.course_id);
+      const section = sectionMap.get(ex.section_id || course?.section_id);
+
+      let lessonTitle = ex.name || '';
+      const matchBracket = lessonTitle.match(/\{([^}]+)\}/);
+      if (matchBracket) lessonTitle = matchBracket[1];
+
+      let taskStatus = 'Pending';
+      if (ex.cancelled) taskStatus = 'Cancelled';
+      else {
+        const completedSteps = (ex.step_progress || []).filter(sp => sp.status_id && sp.status_id !== '').length;
+        const totalSteps = (ex.step_progress || []).length;
+        if (totalSteps > 0 && completedSteps === totalSteps) taskStatus = 'Completed';
+        else if (completedSteps > 0) taskStatus = 'In Progress';
+      }
+
+      return {
+        id: ex.id,
+        code: ex.code || `OP27-${idx + 1}`,
+        fullName: ex.name,
+        name: lessonTitle,
+        filingName: ex.name,
+        teacher: teacher?.name || '---',
+        teacherCode: teacher?.code || '',
+        subject: teacher?.subject_code || '',
+        stage: section?.name || '',
+        stageCode: section?.code || '',
+        course: course?.name || '',
+        startDate: ex.start_date ? ex.start_date.split('T')[0] : '',
+        dueDate: ex.due_date ? ex.due_date.split('T')[0] : '',
+        priority: ex.priority || 'normal',
+        status: taskStatus,
+        bunnyVideoId: ex.bunny_video_id || '',
+        bunnyLibraryId: ex.bunny_library_id || '',
+        bunnyEmbedCode: ex.bunny_embed_code || '',
+        stepsCount: ex.step_progress?.length || 0,
+        completedSteps: (ex.step_progress || []).filter(sp => sp.status_id).length,
+        createdAt: ex.created_at || ''
+      };
+    });
+
+    console.log(`[Dev Proxy] Successfully fetched and formatted ${formattedTasks.length} tasks!`);
+    res.json({
+      success: true,
+      count: formattedTasks.length,
+      tasks: formattedTasks,
+      syncedAt: new Date().toISOString()
+    });
+  } catch (err) {
+    console.error('[Proxy /api/sync-op27 error]:', err);
+    res.status(500).json({ error: err.message || 'Internal error during sync' });
   }
 });
 

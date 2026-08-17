@@ -698,10 +698,17 @@ export default function DesignersDashboard({ isDemoMode = false, liveData: sheet
     }
   };
 
-  // Exact Google Sheet custom color mapping for Column 2 (المصمم)
-  const getDesignerStyle = (val: string) => {
+  // Exact Google Sheet custom color mapping for Designers & Creators
+  const getPersonColorStyle = (val: string) => {
     const v = String(val || '').toLowerCase().trim();
     
+    // 4 Designers
+    if (v === 'narden') return 'bg-[#ffcdd2] text-[#b71c1c] border-[#ef9a9a]';
+    if (v === 'aya') return 'bg-[#6a1b9a] text-white border-[#4a148c]';
+    if (v === 'manar') return 'bg-[#009688] text-white border-[#00796b]';
+    if (v === 'jumana') return 'bg-[#00695c] text-[#e0f2f1] border-[#004d40]';
+    
+    // 27 Creators
     if (v === 'sherif') return 'bg-[#00f5ff] text-[#006064] border-[#00e5ff]';
     if (v === 'shrouk' || v === 'nour' || v === 'nourhan' || v === 'awney') {
       return 'bg-[#2d6a4f] text-[#d8f3dc] border-[#1b4332]';
@@ -716,7 +723,6 @@ export default function DesignersDashboard({ isDemoMode = false, liveData: sheet
     if (v === 'anas') return 'bg-[#e63946] text-white border-[#d90429]';
     if (v === 'samir') return 'bg-[#1d3557] text-white border-[#f1faee]';
     if (v === 'mona' || v === 'maram' || v === 'esraa nagi') return 'bg-[#3f51b5] text-white border-[#1a237e]';
-    if (v === 'manar') return 'bg-[#009688] text-white border-[#00796b]';
     if (v === 'a.amr') return 'bg-[#ba68c8] text-white border-[#8e24aa]';
     if (v === 'ahmed') return 'bg-[#e53935] text-white border-[#b71c1c]';
     if (v === 'nada') return 'bg-[#e1bee7] text-[#4a148c] border-[#ba68c8]';
@@ -724,9 +730,13 @@ export default function DesignersDashboard({ isDemoMode = false, liveData: sheet
     if (v === 'donia') return 'bg-[#bbdefb] text-[#0d47a1] border-[#90caf9]';
     if (v === 'esraa naga') return 'bg-[#f8bbd0] text-[#880e4f] border-[#f48fb1]';
     if (v === 'a.medhat') return 'bg-[#00796b] text-white border-[#004d40]';
+    if (v === 'taher') return 'bg-[#0284c7] text-white border-[#0369a1]';
     
     return 'bg-[#2a2d3d] text-white/90 border-[#3a3d52]';
   };
+
+  const getDesignerStyle = getPersonColorStyle;
+  const getRequesterStyle = getPersonColorStyle;
 
   // Exact Google Sheet custom color mapping for Column 3 (الأولوية)
   const getPriorityStyle = (val: string) => {
@@ -744,16 +754,6 @@ export default function DesignersDashboard({ isDemoMode = false, liveData: sheet
       return 'bg-[#00796b] text-[#e0f2f1] border-[#004d40] font-black';
     }
     return 'bg-[#2a2d3d] text-white/70 border-[#3a3d52]';
-  };
-
-  // Exact Google Sheet custom color mapping for Column 4 (المراجع)
-  const getRequesterStyle = (val: string) => {
-    const v = String(val || '').toLowerCase().trim();
-    if (v === 'narden') return 'bg-[#ffcdd2] text-[#b71c1c] border-[#ef9a9a]';
-    if (v === 'aya') return 'bg-[#6a1b9a] text-white border-[#4a148c]';
-    if (v === 'manar') return 'bg-[#bbdefb] text-[#0d47a1] border-[#90caf9]';
-    if (v === 'jumana') return 'bg-[#00695c] text-[#e0f2f1] border-[#004d40]';
-    return 'bg-[#2a2d3d] text-white/75 border-[#3a3d52]';
   };
 
   // Exact Google Sheet custom color mapping for Column 5 (النوع)
@@ -1146,9 +1146,9 @@ export default function DesignersDashboard({ isDemoMode = false, liveData: sheet
                 <th className="px-2.5 py-2 sticky top-0 bg-[#080a0f] z-10 text-right">
                   <HeaderFilter 
                     label="الكريتور" 
-                    value={filters.designer} 
-                    onChange={(val: any) => setFilters(p => ({ ...p, designer: val }))} 
-                    options={allDesignersList} 
+                    value={filters.requester} 
+                    onChange={(val: any) => setFilters(p => ({ ...p, requester: val }))} 
+                    options={allRequestersList} 
                   />
                 </th>
                 <th className="px-2.5 py-2 sticky top-0 bg-[#080a0f] z-10 text-right">
@@ -1162,9 +1162,9 @@ export default function DesignersDashboard({ isDemoMode = false, liveData: sheet
                 <th className="px-2.5 py-2 sticky top-0 bg-[#080a0f] z-10 text-right">
                   <HeaderFilter 
                     label="المصمم" 
-                    value={filters.requester} 
-                    onChange={(val: any) => setFilters(p => ({ ...p, requester: val }))} 
-                    options={allRequestersList} 
+                    value={filters.designer} 
+                    onChange={(val: any) => setFilters(p => ({ ...p, designer: val }))} 
+                    options={allDesignersList} 
                   />
                 </th>
                 <th className="px-2.5 py-2 sticky top-0 bg-[#080a0f] z-10 text-right">
@@ -1266,14 +1266,14 @@ export default function DesignersDashboard({ isDemoMode = false, liveData: sheet
                       <span className={`text-xs font-bold ${textDateClass}`}>{row.date || '-'}</span>
                     </td>
 
-                    {/* المصمم */}
+                    {/* الكريتور / المراجع */}
                     <td className="px-2.5 py-2">
                       <DropdownSelect
-                        value={row.designer}
-                        onChange={(val: string) => handleCellChange(row.id || row.uniqueKey || row.originalIndex, 'designer', val)}
-                        options={allDesignersList}
-                        getStyles={getDesignerStyle}
-                        categoryKey="designer"
+                        value={row.requester}
+                        onChange={(val: string) => handleCellChange(row.id || row.uniqueKey || row.originalIndex, 'requester', val)}
+                        options={allRequestersList}
+                        getStyles={getRequesterStyle}
+                        categoryKey="requester"
                       />
                     </td>
 
@@ -1288,14 +1288,14 @@ export default function DesignersDashboard({ isDemoMode = false, liveData: sheet
                       />
                     </td>
 
-                    {/* المراجع */}
+                    {/* المصمم */}
                     <td className="px-2.5 py-2">
                       <DropdownSelect
-                        value={row.requester}
-                        onChange={(val: string) => handleCellChange(row.id || row.uniqueKey || row.originalIndex, 'requester', val)}
-                        options={allRequestersList}
-                        getStyles={getRequesterStyle}
-                        categoryKey="requester"
+                        value={row.designer}
+                        onChange={(val: string) => handleCellChange(row.id || row.uniqueKey || row.originalIndex, 'designer', val)}
+                        options={allDesignersList}
+                        getStyles={getDesignerStyle}
+                        categoryKey="designer"
                       />
                     </td>
 

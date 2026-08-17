@@ -50,6 +50,7 @@ import { ReelsAnalytics } from './components/ReelsAnalytics';
 import DesignersDashboard from './components/DesignersDashboard';
 import { DesignAnalytics } from './components/DesignAnalytics';
 import { DesignersTeamManagement } from './components/DesignersTeamManagement';
+import { Op27View } from './components/Op27View';
 import { FeedbackModal } from './components/FeedbackModal';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { supabase, PERMISSIONS, ROLE_LABELS, ROLE_COLORS, DEFAULT_ROLE_PERMISSIONS, setRuntimeRolePermissions } from './lib/supabase';
@@ -871,6 +872,8 @@ const getChipColor = (val: string) => {
   if (upper.includes('POSTPONED')) return { bg: 'bg-yellow-500/20 shadow-[0_0_15px_rgba(234,179,8,0.2)]', text: 'text-yellow-400 font-extrabold uppercase', border: 'border-yellow-500/40 animate-pulse', dot: '#eab308' };
   if (upper.includes('علوم') || upper.includes('KIRO') || upper.includes('COMPLETED') || upper.includes('SMARTBOARD')) return { bg: 'bg-blue-500/10', text: 'text-blue-400', border: 'border-blue-500/20', dot: '#3b82f6' };
   if (upper.includes('ماث') || upper.includes('2025') || upper.includes('BASEL') || upper.includes('URGENT') || upper.includes('CANCEL')) return { bg: 'bg-rose-500/10', text: 'text-rose-400', border: 'border-rose-500/20', dot: '#f43f5e' };
+  if (upper.includes('2026/2027') || upper.includes('OP 26/27') || upper.includes('26/27')) return { bg: 'bg-blue-600/20 shadow-[0_0_12px_rgba(59,130,246,0.25)]', text: 'text-blue-300 font-black', border: 'border-blue-500/40', dot: '#3b82f6' };
+  if (upper.includes('2025/2026') || upper.includes('العمليات')) return { bg: 'bg-purple-600/20 shadow-[0_0_12px_rgba(147,51,234,0.25)]', text: 'text-purple-300 font-black', border: 'border-purple-500/40', dot: '#9333ea' };
   if (upper.includes('رياضه') || upper.includes('PENDING') || upper.includes('IN PROGRESS')) return { bg: 'bg-amber-500/10', text: 'text-amber-400', border: 'border-amber-500/20', dot: '#f59e0b' };
   if (upper.includes('ساينس') || upper.includes('HASSANEN') || upper.includes('DONE')) return { bg: 'bg-emerald-500/10', text: 'text-emerald-400', border: 'border-emerald-500/20', dot: '#10b981' };
   if (upper.includes('دراسات') || upper.includes('LOW')) return { bg: 'bg-orange-500/10', text: 'text-orange-400', border: 'border-orange-500/20', dot: '#f97316' };
@@ -1128,7 +1131,8 @@ const TagmeRow = ({
   onUpdateThumbnailLink,
   onUpdateTime,
   onUpdateYoutubeLink,
-  onUpdateUploaded
+  onUpdateUploaded,
+  onShowPriorityLimitModal
 }: any) => {
   const { profile } = useAuth();
   const [done, setDone] = useState(item.done);
@@ -1167,6 +1171,9 @@ const TagmeRow = ({
     if (statusOverride !== undefined) {
        setDone(statusOverride.done);
        setCancel(statusOverride.cancel);
+       if (statusOverride.done) {
+         setPriority(false);
+       }
     }
   }, [statusOverride]);
 
@@ -1340,6 +1347,9 @@ const TagmeRow = ({
             onClick={() => {
               const newDone = !done;
               setDone(newDone);
+              if (newDone) {
+                setPriority(false);
+              }
               const editor = item.editor;
               if (editor && editor !== 'غير محدد' && onStatusChange) {
                 onStatusChange(item.uniqueKey || generateKey(item), item.name, editor, newDone ? 'done' : 'undone');
@@ -1381,6 +1391,14 @@ const TagmeRow = ({
       <td className="px-6 py-6 text-center">
           <button
             onClick={() => {
+              if (!priority && !canRaisePriority) {
+                if (onShowPriorityLimitModal) {
+                  onShowPriorityLimitModal(priorityLimit);
+                } else {
+                  console.warn(`⚠️ تم الوصول للحد الأقصى للأولوية (${priorityLimit} مهام)`);
+                }
+                return;
+              }
               const newPriority = !priority;
               setPriority(newPriority);
               const editor = item.editor;
@@ -1388,13 +1406,15 @@ const TagmeRow = ({
                 onStatusChange(item.uniqueKey || generateKey(item), item.name, editor || 'غير محدد', newPriority ? 'priority' : 'unpriority');
               }
             }}
-            disabled={!(profile?.role && PERMISSIONS.canEditEditors(profile.role)) || (!priority && !canRaisePriority)}
+            disabled={!(profile?.role && PERMISSIONS.canEditEditors(profile.role))}
             className={`w-11 h-11 rounded-2xl flex items-center justify-center mx-auto transition-all duration-500 ${
               priority 
                 ? 'bg-purple-600 text-white shadow-[0_0_20px_rgba(147,51,234,0.6)] ring-2 ring-purple-400 scale-110 animate-pulse' 
-                : 'bg-white/5 text-muted hover:bg-purple-500/20 hover:text-purple-400'
+                : !canRaisePriority
+                  ? 'bg-rose-500/10 text-rose-400 border border-rose-500/30 hover:bg-rose-500/20 hover:scale-105'
+                  : 'bg-white/5 text-muted hover:bg-purple-500/20 hover:text-purple-400'
             } ${!(profile?.role && PERMISSIONS.canEditEditors(profile.role)) ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
-            title={!priority && !canRaisePriority ? `تم الوصول للحد اليومي (${priorityLimit})` : 'Priority'}
+            title={!priority && !canRaisePriority ? `تم الوصول للحد اليومي (${priorityLimit}) - انقر للتفاصيل` : 'Priority'}
           >
             <AlertCircle size={20} />
           </button>
@@ -1549,7 +1569,16 @@ const StageRow = ({ item, index, tagmeTransfers, onTagmeToggle, activeLabel, isG
       </td>
       <td className="px-3 py-5 text-center"><Chip value={item.subject} /></td>
       <td className="px-3 py-5 text-center"><Chip value={item.branch || item.extra} /></td>
-      <td className="px-3 py-5 text-center"><Chip value={item.isYoutubeTransfer ? 'العمليات' : (item.opSheet || item.val)} /></td>
+      <td className="px-3 py-5 text-center">
+        <Chip value={
+          (() => {
+            const raw = String(item.opSheet || item.val || '').trim();
+            if (raw === 'OP 26/27' || raw === '2026/2027' || raw.includes('26/27')) return 'OP 26/27';
+            if (raw === 'العمليات' || raw === '2025/2026' || item.isYoutubeTransfer) return '2025/2026';
+            return raw || '2025/2026';
+          })()
+        } />
+      </td>
       <td className="px-6 py-5 text-center">
         <button
           onClick={() => onTagmeToggle(item, activeLabel, !isTagmeChecked)}
@@ -3667,6 +3696,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
   const isUsersPage = activeGid === '__users__';
 
   const isOperations = activeGid === '1476192399';
+  const isOp27 = activeGid === 'op_27';
   const isTagme3at = activeGid === '1535230545';
   const isAnalyticsTagme = activeGid === 'analytics_tagme3at';
   const isReelsAnalytics = activeGid === 'reels-analytics';
@@ -3676,7 +3706,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
   const isDesignersMode = isDesignersPage || isDesignAnalytics || isDesignersTeamPage;
 
   const isReelsStage = ['1436746012', '1939073164', '0', '798246690'].includes(activeGid);
-  const isStage = !isOperations && !isTagme3at && !isAnalyticsTagme && !isReelsAnalytics && !isDesignersMode;
+  const isStage = !isOperations && !isOp27 && !isTagme3at && !isAnalyticsTagme && !isReelsAnalytics && !isDesignersMode;
 
   const isSupabaseLiveTab = !isDemo && (
     activeGid === '1535230545' || 
@@ -5153,12 +5183,23 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
     const message = msgMap[type] || `تغيير في التجميعة`;
 
     if (!isDemo && activeGid === '1535230545') {
-      if (type === 'done') updateTagme3atDbField(itemKey, 'done', true);
+      if (type === 'done') {
+        updateTagme3atDbField(itemKey, 'done', true);
+        updateTagme3atDbField(itemKey, 'priority', false);
+      }
       else if (type === 'undone') updateTagme3atDbField(itemKey, 'done', false);
       else if (type === 'priority') updateTagme3atDbField(itemKey, 'priority', true);
       else if (type === 'unpriority') updateTagme3atDbField(itemKey, 'priority', false);
       else if (type === 'cancel') updateTagme3atDbField(itemKey, 'cancel', true);
       else if (type === 'uncancel') updateTagme3atDbField(itemKey, 'cancel', false);
+    }
+
+    if (type === 'done') {
+      setTaskPriorities(prev => {
+        const n = { ...prev, [itemKey]: false };
+        syncState('task_priorities', n, itemKey, taskName, 'unpriority', '➖ تم إزالة الأولوية القصوى عن التجميعة لاكتمالها');
+        return n;
+      });
     }
 
     if (type === 'priority' || type === 'unpriority') {
@@ -5313,13 +5354,82 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
   const [glowingKeys, setGlowingKeys] = useState<string[]>([]);
   const [sortBy, setSortBy] = useState<'default' | 'name' | 'date' | 'addedDate'>('default');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
+  const [priorityLimitModal, setPriorityLimitModal] = useState<{ isOpen: boolean; limit: number } | null>(null);
+
+  const [tabPriorityLimits, setTabPriorityLimits] = useState<Record<string, number>>(() => {
+    try {
+      const saved = localStorage.getItem('tab_priority_limits_v1');
+      if (saved) return JSON.parse(saved);
+    } catch {}
+    return {
+      '1535230545': 10,
+    };
+  });
 
   useEffect(() => {
     const savedLocal = localStorage.getItem('local_entries_v1');
     if (savedLocal) {
       try { setLocalEntries(JSON.parse(savedLocal)); } catch(e) {}
     }
-  }, []);
+
+    if (!isDemo && supabase) {
+      supabase
+        .from('dashboard_data')
+        .select('value')
+        .eq('key', 'tab_priority_limits_v1')
+        .maybeSingle()
+        .then(({ data }) => {
+          if (data?.value) {
+            try {
+              const parsed = typeof data.value === 'string' ? JSON.parse(data.value) : data.value;
+              setTabPriorityLimits(prev => ({ ...prev, ...parsed }));
+              localStorage.setItem('tab_priority_limits_v1', JSON.stringify(parsed));
+            } catch {}
+          }
+        });
+    }
+  }, [isDemo]);
+
+  const handleUpdateTabPriorityLimit = async (gid: string, newLimit: number) => {
+    const updated = { ...tabPriorityLimits, [gid]: newLimit };
+    setTabPriorityLimits(updated);
+    try {
+      localStorage.setItem('tab_priority_limits_v1', JSON.stringify(updated));
+    } catch {}
+
+    if (!isDemo && supabase) {
+      try {
+        const { data: existing } = await supabase
+          .from('dashboard_data')
+          .select('key')
+          .eq('key', 'tab_priority_limits_v1')
+          .maybeSingle();
+
+        const val = JSON.stringify(updated);
+        if (existing) {
+          await supabase
+            .from('dashboard_data')
+            .update({ value: val, updated_by: profile?.id, updated_at: new Date().toISOString() })
+            .eq('key', 'tab_priority_limits_v1');
+        } else {
+          await supabase
+            .from('dashboard_data')
+            .insert({ key: 'tab_priority_limits_v1', field: 'limits', value: val, updated_by: profile?.id });
+        }
+
+        if (globalChannelRef.current) {
+          globalChannelRef.current.send({
+            type: 'broadcast',
+            event: 'tab_priority_limit_update',
+            payload: { tabPriorityLimits: updated }
+          });
+        }
+        toast.success(`🎯 تم تحديث حد الأولوية لهذا التاب إلى: ${newLimit >= 999 ? 'غير محدود' : newLimit}`);
+      } catch (err) {
+        console.error('Error saving tab priority limit:', err);
+      }
+    }
+  };
 
   const handleAddSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -6398,7 +6508,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
       subject: getSubjectFromFiling(combinedCodes),
       extra: 'يوتيوب العمليات (تجميعة)',
       branch: 'يوتيوب العمليات (تجميعة)',
-      opSheet: 'العمليات',
+      opSheet: '2025/2026',
       check1: false,
       check2: false,
       isYoutubeTransfer: true,
@@ -6484,7 +6594,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
       subject: getSubjectFromFiling(item.filingName),
       extra: 'يوتيوب العمليات',
       branch: 'يوتيوب العمليات',
-      opSheet: 'العمليات',
+      opSheet: '2025/2026',
       check1: false,
       check2: false,
       isYoutubeTransfer: true,
@@ -6632,6 +6742,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
 
   const stages = [
     { label: 'Operations', gid: '1476192399', icon: Briefcase, colorHex: '#8b5cf6' },
+    { label: 'OP 26/27', gid: 'op_27', icon: Briefcase, colorHex: '#3b82f6' },
     { label: 'تجميعات', gid: '1535230545', icon: Layers, colorHex: '#10b981' },
     { label: 'Junior 4', gid: '497207661', icon: GraduationCap, colorHex: '#b49fee' },
     { label: 'Junior 5', gid: '96752860', icon: GraduationCap, colorHex: '#92dcf7' },
@@ -7309,7 +7420,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
             </button>
           </div>
           {/* Top Static Tabs */}
-          {stages.filter(s => s.gid === '1476192399' || s.gid === '1535230545').filter(stage => {
+          {stages.filter(s => s.gid === '1476192399' || s.gid === 'op_27' || s.gid === '1535230545').filter(stage => {
             if (!profile) return true;
             return PERMISSIONS.canViewTab(profile.role, stage.label, profile.allowed_tabs ?? []);
           }).map((stage) => (
@@ -7339,7 +7450,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
 
           {/* Mode Selector (Segmented control between Operations, Reels, and Designers) */}
           {(() => {
-            const MARKETING_LABELS = ['Operations','تجميعات','إحصائيات التجميعات 📊','Junior 4','Junior 5','Junior 6','Middle 1','Middle 2','Middle 3','Senior 1','Senior 2','Senior 3'];
+            const MARKETING_LABELS = ['Operations','OP 26/27','تجميعات','إحصائيات التجميعات 📊','Junior 4','Junior 5','Junior 6','Middle 1','Middle 2','Middle 3','Senior 1','Senior 2','Senior 3'];
             const REELS_LABELS = ['Shooting','Ve','CUTS','احصائيات الريلز'];
             const DESIGNERS_LABELS = ['Designers','احصائيات تصاميم','إدارة الفريق والقوائم'];
             const tabs = profile?.allowed_tabs ?? [];
@@ -7399,7 +7510,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
           {/* Dynamic Tabs based on Mode */}
           <div className="flex flex-col gap-1">
             {(appMode === 'OP' 
-              ? stages.filter(s => s.gid !== '1476192399' && s.gid !== '1535230545') 
+              ? stages.filter(s => s.gid !== '1476192399' && s.gid !== 'op_27' && s.gid !== '1535230545') 
               : appMode === 'REELS' 
               ? reelsStages 
               : designersStages
@@ -8085,7 +8196,9 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
           )}
 
           {/* Filters Bar */}
-          <div className="flex gap-4 items-center flex-wrap">
+          {!isOp27 && (
+            <>
+              <div className="flex gap-4 items-center flex-wrap">
             <div className="flex-1 min-w-[240px] relative group">
               <Search className="absolute left-6 top-1/2 -translate-y-1/2 text-muted group-focus-within:text-primary transition-colors" size={20} />
               <input
@@ -8203,6 +8316,63 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
                       }`} />
                     </div>
                   </button>
+
+                  {/* Tab Priority Limit Controller */}
+                  {(() => {
+                    const currentTabLimit = tabPriorityLimits[activeGid] ?? 10;
+                    const currentTabPriorityCount = combinedData.filter((i: any) => {
+                      const key = i.uniqueKey || generateKey(i);
+                      const isDone = taskStatuses[key]?.done !== undefined ? taskStatuses[key].done === true : (String(i.done) === 'true' || i.done === true);
+                      if (isDone) return false;
+                      const isPri = taskPriorities[key] !== undefined ? taskPriorities[key] === true : (String(i.priority) === 'true' || i.priority === true);
+                      return isPri;
+                    }).length;
+                    const isLimitReached = currentTabLimit < 999 && currentTabPriorityCount >= currentTabLimit;
+
+                    return (
+                      <div className={`flex items-center gap-3 px-4 py-2 rounded-2xl border text-xs font-bold transition-all shadow-sm ${
+                        isLimitReached
+                          ? 'bg-rose-500/15 border-rose-500/40 text-rose-300 shadow-[0_0_15px_rgba(244,63,94,0.15)]'
+                          : 'bg-purple-500/10 border-purple-500/30 text-purple-300'
+                      }`} dir="rtl">
+                        <div className="flex items-center gap-2">
+                          <span className="text-base">🎯</span>
+                          <span className="arabic-text font-black text-white/90">أولوية التاب:</span>
+                          <span dir="ltr" className={`font-mono font-black px-2.5 py-0.5 rounded-xl border shadow-inner text-xs ${
+                            isLimitReached
+                              ? 'bg-rose-600/40 text-rose-200 border-rose-400/40'
+                              : 'bg-purple-600/40 text-white border-purple-400/40'
+                          }`}>
+                            {currentTabPriorityCount} / {currentTabLimit >= 999 ? '∞' : currentTabLimit}
+                          </span>
+                        </div>
+
+                        {profile?.role && (profile.role === 'admin' || profile.role === 'manager') && (
+                          <div className="flex items-center gap-2 mr-1 border-r border-white/10 pr-3">
+                            <span className="text-[11px] text-white/60 font-black whitespace-nowrap">تعديل الحد:</span>
+                            <select
+                              value={currentTabLimit}
+                              onChange={(e) => handleUpdateTabPriorityLimit(activeGid, parseInt(e.target.value, 10))}
+                              className="bg-[#0b1019] text-purple-200 border border-purple-500/50 hover:border-purple-400 rounded-xl px-3 py-1 text-xs font-black font-mono outline-none cursor-pointer transition-all min-w-[90px] text-center"
+                              title="تغيير الحد الأقصى لأولوية هذا التاب"
+                            >
+                              <option value={1} className="bg-[#0d1219] text-white">1 مهمة</option>
+                              <option value={2} className="bg-[#0d1219] text-white">2 مهمة</option>
+                              <option value={3} className="bg-[#0d1219] text-white">3 مهام</option>
+                              <option value={5} className="bg-[#0d1219] text-white">5 مهام</option>
+                              <option value={10} className="bg-[#0d1219] text-white">10 مهام</option>
+                              <option value={15} className="bg-[#0d1219] text-white">15 مهمة</option>
+                              <option value={20} className="bg-[#0d1219] text-white">20 مهمة</option>
+                              <option value={30} className="bg-[#0d1219] text-white">30 مهمة</option>
+                              <option value={50} className="bg-[#0d1219] text-white">50 مهمة</option>
+                              <option value={100} className="bg-[#0d1219] text-white">100 مهمة</option>
+                              <option value={999} className="bg-[#0d1219] text-amber-400 font-bold">غير محدود (∞)</option>
+                            </select>
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })()}
                 </>
               )}
 
@@ -8434,9 +8604,72 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
               ))}
             </div>
           )}
+          </>
+          )}
 
-          {/* Main Content View (Table vs Analytics) */}
-          {isReelsAnalytics ? (
+          {/* Main Content View (Table vs Analytics vs OP 27) */}
+          {isOp27 ? (
+            <Op27View
+              onNavigateToStage={(gid, label, uniqueKey) => {
+                setActiveGid(gid);
+                setActiveLabel(label);
+                setSearchQuery('');
+                setStatusFilter('All');
+                setTeacherFilter('All');
+                setYearFilter('All');
+                setColFilters({});
+                if (uniqueKey) {
+                  setGlowingKeys([uniqueKey]);
+                  setTimeout(() => {
+                    const el = document.getElementById(uniqueKey);
+                    if (el) {
+                      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    }
+                  }, 400);
+                  setTimeout(() => setGlowingKeys([]), 4500);
+                }
+              }}
+              onExecuteMergeToStage={async (mergedItem, targetStageGid, combinedNames) => {
+                // 1. Insert to Supabase stage table
+                const targetTable = STAGE_TABLE_MAP[targetStageGid];
+                if (!isDemo && targetTable) {
+                  try {
+                    await supabase.from(targetTable).insert([{
+                      unique_key: mergedItem.uniqueKey,
+                      name: mergedItem.name,
+                      filing_name: mergedItem.filingName,
+                      week: mergedItem.week,
+                      date: mergedItem.date,
+                      subject: mergedItem.subject,
+                      branch: mergedItem.branch,
+                      op_sheet: mergedItem.opSheet,
+                      is_tagme3a: false,
+                      delivered: false,
+                      thumbnail_link: '',
+                      time: mergedItem.time,
+                      youtube_link: '',
+                      uploaded: false,
+                      created_at: new Date().toISOString(),
+                      updated_at: new Date().toISOString()
+                    }]);
+                  } catch (err) {
+                    console.error('Error inserting merged item to stage:', err);
+                  }
+                }
+
+                // 2. Add to youtubeItems state and localStorage
+                setYoutubeItems((prev: any) => {
+                  const list = prev[targetStageGid] || [];
+                  const updated = [mergedItem, ...list];
+                  const map = { ...prev, [targetStageGid]: updated };
+                  syncState('youtube_transfers', map, mergedItem.uniqueKey, combinedNames, 'youtube_merge', `🎬 تم دمج دروس OP 26/27 ليوتيوب`);
+                  return map;
+                });
+
+                toast.success(`🚀 تم تجميع الدروس وتحويلها بنجاح لمرحلة ${mergedItem.val || ''}!`);
+              }}
+            />
+          ) : isReelsAnalytics ? (
             <ReelsAnalytics isDemo={isDemo} />
           ) : isAnalyticsTagme ? (
             <TagmeAnalyticsDashboard combinedData={combinedData} tagmeTransfers={tagmeTransfers} loading={loading} taskStatuses={taskStatuses} taskPriorities={taskPriorities} />
@@ -8767,17 +9000,18 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
                         );
                       }
                       if (isTagme3at) {
-                        // Priority limit: max 10 priority tasks per sheet per day (global, not per user)
-                        const DAILY_PRIORITY_LIMIT = 10;
-                        const totalPriorityToday = Object.values(taskPriorities).filter(v => v === true).length +
-                          combinedData.filter((i: any) =>
-                            (String(i.priority) === 'true' || i.priority === true) &&
-                            !taskPriorities.hasOwnProperty(i.uniqueKey || generateKey(i))
-                          ).length;
-                        const canRaisePriority = totalPriorityToday < DAILY_PRIORITY_LIMIT;
+                        const tabLimit = tabPriorityLimits[activeGid] ?? 10;
+                        const totalPriorityToday = combinedData.filter((i: any) => {
+                          const key = i.uniqueKey || generateKey(i);
+                          const isDone = taskStatuses[key]?.done !== undefined ? taskStatuses[key].done === true : (String(i.done) === 'true' || i.done === true);
+                          if (isDone) return false;
+                          const isPri = taskPriorities[key] !== undefined ? taskPriorities[key] === true : (String(i.priority) === 'true' || i.priority === true);
+                          return isPri;
+                        }).length;
+                        const canRaisePriority = tabLimit >= 999 ? true : (totalPriorityToday < tabLimit);
                         const key = item.uniqueKey || generateKey(item);
                         const isSubscribed = subscribedTasks.includes(key) || (item.editor && item.editor.toLowerCase() === profile?.name?.toLowerCase());
-                        return <TagmeRow key={idx} item={item} index={idx} isSimple={tagmeViewMode === 'SIMPLE'} onUpdateEditor={handleUpdateEditor} editorsList={editorsList} onUpdateEditorNotes={handleUpdateEditorNotes} onUpdateMarketingNotes={handleUpdateMarketingNotes} opSheetsList={opSheetsList} branchesList={branchesList} onUpdateOpSheet={handleUpdateOpSheet} onUpdateBranch={handleUpdateBranch} onUpdateDate={handleUpdateDate} isGlowing={isGlowing} liveData={liveData} canRaisePriority={canRaisePriority || (taskPriorities[key] === true)} priorityLimit={DAILY_PRIORITY_LIMIT} onStatusChange={handleStatusChange} isSubscribed={isSubscribed} onToggleSubscribe={() => toggleSubscribe(key)} priorityOverride={taskPriorities[key]} statusOverride={taskStatuses[key]} onUpdateThumbnailLink={handleUpdateThumbnailLink} onUpdateTime={handleUpdateTime} onUpdateYoutubeLink={handleUpdateYoutubeLink} onUpdateUploaded={handleUpdateUploaded} />;
+                        return <TagmeRow key={idx} item={item} index={idx} isSimple={tagmeViewMode === 'SIMPLE'} onUpdateEditor={handleUpdateEditor} editorsList={editorsList} onUpdateEditorNotes={handleUpdateEditorNotes} onUpdateMarketingNotes={handleUpdateMarketingNotes} opSheetsList={opSheetsList} branchesList={branchesList} onUpdateOpSheet={handleUpdateOpSheet} onUpdateBranch={handleUpdateBranch} onUpdateDate={handleUpdateDate} isGlowing={isGlowing} liveData={liveData} canRaisePriority={canRaisePriority || (taskPriorities[key] === true)} priorityLimit={tabLimit} onStatusChange={handleStatusChange} isSubscribed={isSubscribed} onToggleSubscribe={() => toggleSubscribe(key)} priorityOverride={taskPriorities[key]} statusOverride={taskStatuses[key]} onUpdateThumbnailLink={handleUpdateThumbnailLink} onUpdateTime={handleUpdateTime} onUpdateYoutubeLink={handleUpdateYoutubeLink} onUpdateUploaded={handleUpdateUploaded} onShowPriorityLimitModal={(limit: number) => setPriorityLimitModal({ isOpen: true, limit })} />;
                       }
                       if (activeGid === '0') {
                         return <CutsRow 
@@ -9097,6 +9331,44 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
                     </button>
                   </div>
                 </form>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Priority Limit Warning Modal Popup */}
+        <AnimatePresence>
+          {priorityLimitModal && priorityLimitModal.isOpen && (
+            <motion.div 
+              initial={{ opacity: 0 }} 
+              animate={{ opacity: 1 }} 
+              exit={{ opacity: 0 }}
+              className="fixed inset-0 z-[600] flex items-center justify-center bg-black/80 backdrop-blur-md p-4"
+              onClick={() => setPriorityLimitModal(null)}
+            >
+              <motion.div 
+                initial={{ opacity: 0, scale: 0.9, y: 25 }} 
+                animate={{ opacity: 1, scale: 1, y: 0 }} 
+                exit={{ opacity: 0, scale: 0.9, y: 25 }}
+                onClick={(e) => e.stopPropagation()}
+                className="bg-[#0e121a] border-2 border-rose-500/50 rounded-3xl p-7 max-w-md w-full text-center shadow-[0_0_90px_rgba(244,63,94,0.4)] relative overflow-hidden"
+                dir="rtl"
+              >
+                <div className="w-16 h-16 rounded-3xl bg-rose-500/20 border border-rose-500/40 text-rose-400 flex items-center justify-center mx-auto mb-4 animate-bounce">
+                  <AlertCircle size={36} />
+                </div>
+                <h3 className="text-xl font-black text-white arabic-text mb-2">تم الوصول للحد الأقصى للأولوية! ⚠️</h3>
+                <p className="text-sm text-white/80 arabic-text leading-relaxed mb-6">
+                  لقد تم استهلاك الحد الأقصى للمهام ذات الأولوية في هذا التاب (<span className="font-bold text-rose-400 font-mono text-base">{priorityLimitModal.limit} مهام</span>). 
+                  <br /><br />
+                  لا يمكنك تفعيل الأولوية لمهمة إضافية إلا بعد إزالة الأولوية عن مهمة أخرى، أو تعديل الحد من قبل الإدارة.
+                </p>
+                <button
+                  onClick={() => setPriorityLimitModal(null)}
+                  className="w-full py-3.5 bg-gradient-to-r from-rose-600 to-pink-600 hover:from-rose-500 hover:to-pink-500 text-white font-black rounded-2xl shadow-lg shadow-rose-600/30 transition-all scale-100 hover:scale-[1.02] active:scale-95 cursor-pointer text-sm"
+                >
+                  حسناً، فهمت ✓
+                </button>
               </motion.div>
             </motion.div>
           )}

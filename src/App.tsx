@@ -39,7 +39,8 @@ import {
   Pin,
   Trash2,
   Bookmark,
-  FileSpreadsheet
+  FileSpreadsheet,
+  MessageSquarePlus
 } from 'lucide-react';
 import { useGoogleSheets } from './hooks/useGoogleSheets';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
@@ -48,6 +49,7 @@ import { UserManagement } from './components/UserManagement';
 import { ReelsAnalytics } from './components/ReelsAnalytics';
 import DesignersDashboard from './components/DesignersDashboard';
 import { DesignAnalytics } from './components/DesignAnalytics';
+import { FeedbackModal } from './components/FeedbackModal';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { supabase, PERMISSIONS, ROLE_LABELS, ROLE_COLORS, DEFAULT_ROLE_PERMISSIONS, setRuntimeRolePermissions } from './lib/supabase';
 
@@ -3868,6 +3870,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
     }
   });
   const [showMyNotifs, setShowMyNotifs] = useState(false);
+  const [showFeedbackModal, setShowFeedbackModal] = useState(false);
   const unreadCount = myNotifs.filter(n => !n.read).length;
 
   useEffect(() => {
@@ -7630,6 +7633,16 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
               )}
             </div>
 
+            {/* Feedback & Bug Report Button */}
+            <button
+              onClick={() => setShowFeedbackModal(true)}
+              className="p-3.5 rounded-2xl bg-indigo-500/10 border border-indigo-500/30 hover:bg-indigo-500/20 text-indigo-300 hover:text-white transition-all flex items-center gap-2 cursor-pointer shadow-lg shadow-indigo-500/5 hover:scale-105 active:scale-95"
+              title="إرسال ملاحظة / بلاغ عن مشكلة (Feedback)"
+            >
+              <MessageSquarePlus size={20} className="text-indigo-400" />
+              <span className="text-xs font-black arabic-text hidden xl:inline">فيدباك / ملاحظة</span>
+            </button>
+
             {/* Demo Sheets Link Button (Admin / Manager only) */}
             {profile?.role && PERMISSIONS.canManageUsers(profile.role) && (
               <a
@@ -9081,6 +9094,15 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
             </motion.div>
           )}
         </AnimatePresence>
+
+        {/* Feedback & Bug Report Modal */}
+        <FeedbackModal
+          isOpen={showFeedbackModal}
+          onClose={() => setShowFeedbackModal(false)}
+          currentPage={activeLabel}
+          userProfile={profile}
+          toast={toast}
+        />
       </main>
       )}
     </div>

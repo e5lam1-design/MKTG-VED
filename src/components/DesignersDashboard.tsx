@@ -450,13 +450,6 @@ export default function DesignersDashboard({ isDemoMode = false, liveData: sheet
   const [searchTerm, setSearchTerm] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [visibleLimit, setVisibleLimit] = useState<number>(300);
-  const [viewMode, setViewMode] = useState<'SIMPLE' | 'DETAILED'>(() => {
-    try {
-      return (localStorage.getItem('designers_view_mode') as 'SIMPLE' | 'DETAILED') || 'SIMPLE';
-    } catch {
-      return 'SIMPLE';
-    }
-  });
   const [filters, setFilters] = useState({
     designer: 'All',
     priority: 'All',
@@ -1043,35 +1036,7 @@ export default function DesignersDashboard({ isDemoMode = false, liveData: sheet
         </div>
 
         <div className="flex items-center gap-3 w-full md:w-auto flex-wrap">
-          {/* View Mode Toggle (وضع مبسط / متقدم) */}
-          <div className="flex bg-black/40 border border-white/10 p-1 rounded-2xl gap-1">
-            <button
-              type="button"
-              onClick={() => { setViewMode('SIMPLE'); try { localStorage.setItem('designers_view_mode', 'SIMPLE'); } catch {} }}
-              className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer ${
-                viewMode === 'SIMPLE'
-                  ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/30 scale-105'
-                  : 'text-white/40 hover:text-white hover:bg-white/5'
-              }`}
-              title="عرض مبسط للأعمدة الأساسية بدون سكرول أفقي"
-            >
-              <span>⚡ وضع مبسط</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => { setViewMode('DETAILED'); try { localStorage.setItem('designers_view_mode', 'DETAILED'); } catch {} }}
-              className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer ${
-                viewMode === 'DETAILED'
-                  ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/30 scale-105'
-                  : 'text-white/40 hover:text-white hover:bg-white/5'
-              }`}
-              title="عرض كامل لكافة الأعمدة والملاحظات والروابط"
-            >
-              <span>📋 وضع متقدم</span>
-            </button>
-          </div>
-
-          <div className="relative group w-full md:w-64">
+          <div className="relative group w-full md:w-72">
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-muted/50 w-4 h-4 group-focus-within:text-purple-400 transition-colors" />
             <input
               type="text"
@@ -1128,10 +1093,10 @@ export default function DesignersDashboard({ isDemoMode = false, liveData: sheet
         <div className="overflow-x-auto flex-1 relative">
           <table className="w-full text-left border-collapse whitespace-nowrap">
             <thead>
-              <tr className="border-b border-white/5 bg-black/40 text-[10px] uppercase tracking-[0.15em] font-black text-muted/60">
-                <th className="px-3 py-3 font-bold sticky top-0 bg-[#080a0f] z-10 w-12 text-center text-muted/60">#</th>
-                <th className="px-3 py-3 font-bold sticky top-0 bg-[#080a0f] z-10 text-right text-muted/60">التاريخ</th>
-                <th className="px-3 py-2.5 sticky top-0 bg-[#080a0f] z-10 text-right">
+              <tr className="border-b border-white/5 bg-black/40 text-[10px] uppercase tracking-[0.12em] font-black text-muted/60">
+                <th className="px-2.5 py-3 font-bold sticky top-0 bg-[#080a0f] z-10 w-10 text-center text-muted/60">#</th>
+                <th className="px-2.5 py-3 font-bold sticky top-0 bg-[#080a0f] z-10 text-right text-muted/60 w-20">التاريخ</th>
+                <th className="px-2.5 py-2 sticky top-0 bg-[#080a0f] z-10 text-right">
                   <HeaderFilter 
                     label="الكريتور" 
                     value={filters.designer} 
@@ -1139,7 +1104,7 @@ export default function DesignersDashboard({ isDemoMode = false, liveData: sheet
                     options={allDesignersList} 
                   />
                 </th>
-                <th className="px-3 py-2.5 sticky top-0 bg-[#080a0f] z-10 text-right">
+                <th className="px-2.5 py-2 sticky top-0 bg-[#080a0f] z-10 text-right">
                   <HeaderFilter 
                     label="الأولوية" 
                     value={filters.priority} 
@@ -1147,7 +1112,7 @@ export default function DesignersDashboard({ isDemoMode = false, liveData: sheet
                     options={allPrioritiesList} 
                   />
                 </th>
-                <th className="px-3 py-2.5 sticky top-0 bg-[#080a0f] z-10 text-right">
+                <th className="px-2.5 py-2 sticky top-0 bg-[#080a0f] z-10 text-right">
                   <HeaderFilter 
                     label="المصمم" 
                     value={filters.requester} 
@@ -1155,7 +1120,7 @@ export default function DesignersDashboard({ isDemoMode = false, liveData: sheet
                     options={allRequestersList} 
                   />
                 </th>
-                <th className="px-3 py-2.5 sticky top-0 bg-[#080a0f] z-10 text-right">
+                <th className="px-2.5 py-2 sticky top-0 bg-[#080a0f] z-10 text-right">
                   <HeaderFilter 
                     label="النوع" 
                     value={filters.type} 
@@ -1163,25 +1128,20 @@ export default function DesignersDashboard({ isDemoMode = false, liveData: sheet
                     options={allTypesList} 
                   />
                 </th>
-                <th className="px-3 py-3 font-bold sticky top-0 bg-[#080a0f] z-10 text-right text-muted/60 min-w-[130px]">اسم السكريبت / التاسك</th>
-                <th className="px-3 py-3 font-bold sticky top-0 bg-[#080a0f] z-10 text-right text-muted/60">ميعاد التسليم</th>
-                
-                {viewMode === 'DETAILED' && (
-                  <>
-                    <th className="px-3 py-3 font-bold sticky top-0 bg-[#080a0f] z-10 text-center text-muted/60">المرجع</th>
-                    <th className="px-3 py-3 font-bold sticky top-0 bg-[#080a0f] z-10 max-w-[200px] text-right text-muted/60">ملاحظات</th>
-                  </>
-                )}
+                <th className="px-2.5 py-3 font-bold sticky top-0 bg-[#080a0f] z-10 text-right text-muted/60 min-w-[120px]">اسم السكريبت / التاسك</th>
+                <th className="px-2.5 py-3 font-bold sticky top-0 bg-[#080a0f] z-10 text-right text-muted/60 w-24">ميعاد التسليم</th>
+                <th className="px-2.5 py-3 font-bold sticky top-0 bg-[#080a0f] z-10 text-center text-muted/60 w-16">المرجع</th>
+                <th className="px-2.5 py-3 font-bold sticky top-0 bg-[#080a0f] z-10 max-w-[160px] text-right text-muted/60">ملاحظات</th>
 
                 {/* DONE — المصمم: with filter dropdown */}
-                <th className="px-4 py-2.5 sticky top-0 bg-[#080a0f] z-10 text-center">
+                <th className="px-3 py-2 sticky top-0 bg-[#080a0f] z-10 text-center w-16">
                   <div className="flex flex-col items-center gap-0.5">
                     <span className="text-[10px] font-black text-emerald-400 tracking-wider uppercase">DONE</span>
-                    <span className="text-[9px] text-white/30 font-bold">المصمم</span>
+                    <span className="text-[8px] text-white/30 font-bold">المصمم</span>
                     <select
                       value={filters.done}
                       onChange={(e) => setFilters(p => ({ ...p, done: e.target.value }))}
-                      className="mt-0.5 text-[9px] bg-[#0e1322] border border-white/10 rounded-md px-1.5 py-0.5 text-white/60 cursor-pointer outline-none hover:border-emerald-500/40 transition-colors"
+                      className="mt-0.5 text-[9px] bg-[#0e1322] border border-white/10 rounded-md px-1 py-0.5 text-white/60 cursor-pointer outline-none hover:border-emerald-500/40 transition-colors"
                     >
                       <option value="All">الكل</option>
                       <option value="Done">منتهي ✅</option>
@@ -1190,10 +1150,10 @@ export default function DesignersDashboard({ isDemoMode = false, liveData: sheet
                   </div>
                 </th>
                 {/* RECEIVED — الكريتور */}
-                <th className="px-4 py-2.5 sticky top-0 bg-[#080a0f] z-10 text-center">
+                <th className="px-3 py-2 sticky top-0 bg-[#080a0f] z-10 text-center w-16">
                   <div className="flex flex-col items-center gap-0.5">
                     <span className="text-[10px] font-black text-sky-400 tracking-wider uppercase">RECEIVED</span>
-                    <span className="text-[9px] text-white/30 font-bold">الكريتور</span>
+                    <span className="text-[8px] text-white/30 font-bold">الكريتور</span>
                   </div>
                 </th>
               </tr>
@@ -1205,12 +1165,12 @@ export default function DesignersDashboard({ isDemoMode = false, liveData: sheet
                 onClick={() => setShowAddModal(true)}
                 className="border-b border-white/[0.05] bg-purple-500/[0.02] hover:bg-purple-500/[0.08] transition-colors cursor-pointer group"
               >
-                <td className="px-3 py-3 text-center">
+                <td className="px-2.5 py-3 text-center">
                   <div className="w-7 h-7 rounded-full bg-purple-500/10 group-hover:bg-purple-500/20 text-purple-400 flex items-center justify-center mx-auto transition-all scale-100 group-hover:scale-110 shadow-sm">
                     <Plus size={15} className="stroke-[3]" />
                   </div>
                 </td>
-                <td colSpan={viewMode === 'DETAILED' ? 11 : 9} className="px-4 py-3 text-right arabic-text">
+                <td colSpan={11} className="px-4 py-3 text-right arabic-text">
                   <span className="text-xs font-black text-purple-400 group-hover:text-purple-300 transition-colors tracking-wide">
                     + إضافة تاسك جديد (Add New Design Task)
                   </span>
@@ -1252,15 +1212,15 @@ export default function DesignersDashboard({ isDemoMode = false, liveData: sheet
                     key={row.uniqueKey || i} 
                     className={`border-b border-white/[0.02] transition-all duration-300 ${rowBgClass}`}
                   >
-                    <td className="px-3 py-2 text-center text-xs text-muted/30 font-mono">{i + 1}</td>
+                    <td className="px-2.5 py-2 text-center text-xs text-muted/30 font-mono">{i + 1}</td>
                     
                     {/* التاريخ */}
-                    <td className="px-3 py-2">
+                    <td className="px-2.5 py-2">
                       <span className={`text-xs font-bold ${textDateClass}`}>{row.date || '-'}</span>
                     </td>
 
                     {/* المصمم */}
-                    <td className="px-3 py-2">
+                    <td className="px-2.5 py-2">
                       <DropdownSelect
                         value={row.designer}
                         onChange={(val: string) => handleCellChange(row.id || row.uniqueKey || row.originalIndex, 'designer', val)}
@@ -1271,7 +1231,7 @@ export default function DesignersDashboard({ isDemoMode = false, liveData: sheet
                     </td>
 
                     {/* الأولوية */}
-                    <td className="px-3 py-2">
+                    <td className="px-2.5 py-2">
                       <DropdownSelect
                         value={row.priority}
                         onChange={(val: string) => handleCellChange(row.id || row.uniqueKey || row.originalIndex, 'priority', val)}
@@ -1282,7 +1242,7 @@ export default function DesignersDashboard({ isDemoMode = false, liveData: sheet
                     </td>
 
                     {/* المراجع */}
-                    <td className="px-3 py-2">
+                    <td className="px-2.5 py-2">
                       <DropdownSelect
                         value={row.requester}
                         onChange={(val: string) => handleCellChange(row.id || row.uniqueKey || row.originalIndex, 'requester', val)}
@@ -1293,7 +1253,7 @@ export default function DesignersDashboard({ isDemoMode = false, liveData: sheet
                     </td>
 
                     {/* النوع */}
-                    <td className="px-3 py-2">
+                    <td className="px-2.5 py-2">
                       <DropdownSelect
                         value={row.type}
                         onChange={(val: string) => handleCellChange(row.id || row.uniqueKey || row.originalIndex, 'type', val)}
@@ -1304,7 +1264,7 @@ export default function DesignersDashboard({ isDemoMode = false, liveData: sheet
                     </td>
 
                     {/* اسم السكريبت / التاسك */}
-                    <td className="px-3 py-2 min-w-[130px]">
+                    <td className="px-2.5 py-2 min-w-[120px]">
                       <input
                         type="text"
                         value={row.name || row.task_name || row.script || ''}
@@ -1316,7 +1276,7 @@ export default function DesignersDashboard({ isDemoMode = false, liveData: sheet
                     </td>
 
                     {/* ميعاد التسليم */}
-                    <td className="px-3 py-2">
+                    <td className="px-2.5 py-2">
                       <input
                         type="date"
                         value={formatDateToInput(row.deadline)}
@@ -1324,7 +1284,7 @@ export default function DesignersDashboard({ isDemoMode = false, liveData: sheet
                           const formatted = formatDateFromInput(e.target.value);
                           handleCellChange(row.id || row.uniqueKey || row.originalIndex, 'deadline', formatted);
                         }}
-                        className={`bg-transparent text-xs font-bold font-mono border border-transparent focus:border-white/20 hover:bg-white/5 focus:bg-[#0a0d14] rounded-lg px-2 py-1 outline-none text-right cursor-pointer transition-all ${
+                        className={`bg-transparent text-xs font-bold font-mono border border-transparent focus:border-white/20 hover:bg-white/5 focus:bg-[#0a0d14] rounded-lg px-1.5 py-1 outline-none text-right cursor-pointer transition-all ${
                           isDone 
                             ? 'text-emerald-300' 
                             : priorityStr === 'انهارده - ممكن يتأجل'
@@ -1336,36 +1296,33 @@ export default function DesignersDashboard({ isDemoMode = false, liveData: sheet
                       />
                     </td>
 
-                    {/* Reference & Notes (In Detailed Mode only) */}
-                    {viewMode === 'DETAILED' && (
-                      <>
-                        <td className="px-3 py-2 text-center">
-                          {row.reference ? (
-                            <a 
-                              href={row.reference} 
-                              target="_blank" 
-                              rel="noopener noreferrer" 
-                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-indigo-500/15 hover:bg-indigo-500/30 text-indigo-300 text-[11px] font-bold border border-indigo-500/30 hover:border-indigo-500/60 transition-all shadow-sm"
-                              title={row.reference}
-                            >
-                              <Link size={11} />
-                              <span>المستند</span>
-                            </a>
-                          ) : (
-                            <span className="text-xs text-muted/30">-</span>
-                          )}
-                        </td>
+                    {/* Reference */}
+                    <td className="px-2.5 py-2 text-center">
+                      {row.reference ? (
+                        <a 
+                          href={row.reference} 
+                          target="_blank" 
+                          rel="noopener noreferrer" 
+                          className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-indigo-500/15 hover:bg-indigo-500/30 text-indigo-300 text-[11px] font-bold border border-indigo-500/30 hover:border-indigo-500/60 transition-all shadow-sm"
+                          title={row.reference}
+                        >
+                          <Link size={11} />
+                          <span>المستند</span>
+                        </a>
+                      ) : (
+                        <span className="text-xs text-muted/30">-</span>
+                      )}
+                    </td>
 
-                        <td className="px-3 py-2 max-w-[200px]">
-                          <NotesInput
-                            itemKey={row.id || row.uniqueKey || row.originalIndex}
-                            value={row.notes}
-                            onChange={(val: string) => handleCellChange(row.id || row.uniqueKey || row.originalIndex, 'notes', val)}
-                            className={textNotesClass}
-                          />
-                        </td>
-                      </>
-                    )}
+                    {/* Notes */}
+                    <td className="px-2.5 py-2 max-w-[160px]">
+                      <NotesInput
+                        itemKey={row.id || row.uniqueKey || row.originalIndex}
+                        value={row.notes}
+                        onChange={(val: string) => handleCellChange(row.id || row.uniqueKey || row.originalIndex, 'notes', val)}
+                        className={textNotesClass}
+                      />
+                    </td>
 
                     {/* DONE — المصمم */}
                     <td className="px-6 py-3 text-center">

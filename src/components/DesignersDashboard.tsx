@@ -476,11 +476,11 @@ export default function DesignersDashboard({ isDemoMode = false, liveData: sheet
   
   const toggleRequesterFilter = (name: string) => {
     setFilters(prev => {
-      const isAlreadyActive = prev.requester === name;
+      const isAlreadyActive = prev.requester.toLowerCase() === name.toLowerCase();
       return {
         ...prev,
         requester: isAlreadyActive ? 'All' : name,
-        done: isAlreadyActive ? 'All' : 'Pending'
+        done: 'All'
       };
     });
   };
@@ -808,18 +808,32 @@ export default function DesignersDashboard({ isDemoMode = false, liveData: sheet
       if (filters.designer !== 'All' && String(row.designer || '').trim() !== filters.designer) return false;
       // 3. Priority filter match
       if (filters.priority !== 'All' && String(row.priority || '').trim() !== filters.priority) return false;
-      // 4. Requester filter match
-      if (filters.requester !== 'All' && String(row.requester || '').trim() !== filters.requester) return false;
+      // 4. Requester / Designer filter match (case-insensitive & matches requester OR designer)
+      if (filters.requester !== 'All') {
+        const reqFilter = filters.requester.toLowerCase().trim();
+        const rowReq = String(row.requester || '').toLowerCase().trim();
+        const rowDes = String(row.designer || '').toLowerCase().trim();
+        if (rowReq !== reqFilter && rowDes !== reqFilter && !rowReq.includes(reqFilter) && !rowDes.includes(reqFilter)) {
+          return false;
+        }
+      }
       // 5. Type filter match
       if (filters.type !== 'All' && String(row.type || '').trim() !== filters.type) return false;
-      // 6. Done filter match (based on done_designer)
+      // 6. Done filter match (based on done_designer or legacy done)
       if (filters.done !== 'All') {
         const isDone = filters.done === 'Done';
-        if (!!row.done_designer !== isDone) return false;
+        const rowIsDone = Boolean(row.done_designer || row.done);
+        if (rowIsDone !== isDone) return false;
       }
       return true;
     });
   }, [localRows, searchTerm, filters, selectedMonth]);
+
+  // Helper to check if a task is actively in review (not yet finished by designer)
+  const isTaskActiveReview = (r: any) => {
+    if (!r) return false;
+    return !r.done_designer && !r.done;
+  };
 
   // Extract unique options dynamically from localRows & localStorage
   const allDesignersList = useMemo(() => {
@@ -853,27 +867,27 @@ export default function DesignersDashboard({ isDemoMode = false, liveData: sheet
   const tasksAya = useMemo(() => {
     if (!Array.isArray(localRows)) return [];
     return localRows.filter((r: any) => 
-      r && !r.done && 
-      (String(r.requester || '').toLowerCase().trim() === 'aya' || 
-       String(r.designer || '').toLowerCase().trim() === 'aya')
+      isTaskActiveReview(r) && 
+      (String(r.requester || '').toLowerCase().includes('aya') || 
+       String(r.designer || '').toLowerCase().includes('aya'))
     );
   }, [localRows]);
 
   const tasksManar = useMemo(() => {
     if (!Array.isArray(localRows)) return [];
     return localRows.filter((r: any) => 
-      r && !r.done && 
-      (String(r.requester || '').toLowerCase().trim() === 'manar' || 
-       String(r.designer || '').toLowerCase().trim() === 'manar')
+      isTaskActiveReview(r) && 
+      (String(r.requester || '').toLowerCase().includes('manar') || 
+       String(r.designer || '').toLowerCase().includes('manar'))
     );
   }, [localRows]);
 
   const tasksNarden = useMemo(() => {
     if (!Array.isArray(localRows)) return [];
     return localRows.filter((r: any) => 
-      r && !r.done && 
-      (String(r.requester || '').toLowerCase().trim() === 'narden' || 
-       String(r.designer || '').toLowerCase().trim() === 'narden')
+      isTaskActiveReview(r) && 
+      (String(r.requester || '').toLowerCase().includes('narden') || 
+       String(r.designer || '').toLowerCase().includes('narden'))
     );
   }, [localRows]);
 
@@ -882,7 +896,7 @@ export default function DesignersDashboard({ isDemoMode = false, liveData: sheet
     if (!Array.isArray(localRows)) return [];
     return allRequestersList.map(name => {
       const activeCount = localRows.filter((r: any) => 
-        r && !r.done && 
+        isTaskActiveReview(r) && 
         (String(r.requester || '').toLowerCase().trim() === name.toLowerCase() || 
          String(r.designer || '').toLowerCase().trim() === name.toLowerCase())
       ).length;
@@ -961,7 +975,7 @@ export default function DesignersDashboard({ isDemoMode = false, liveData: sheet
           <h2 className="text-5xl lg:text-6xl font-black tracking-tightest text-white mb-3">Designers</h2>
           <div className="flex flex-wrap items-center gap-5 sm:gap-6 mt-4">
             <p className="text-sm sm:text-base text-white/80 font-bold tracking-wider">
-              {filteredRows.length} RECORDS LOADED FROM GOOGLE SHEETS
+              {filteredRows.length} RECORDS LOADED {isDemoMode ? 'FROM GOOGLE SHEETS' : 'FROM DATABASE'}
             </p>
             <div className="h-6 w-0.5 bg-white/20 hidden sm:block" />
             <div className="flex flex-wrap items-center gap-3 bg-black/40 border border-white/10 px-4 py-2 rounded-2xl shadow-inner backdrop-blur-md">
@@ -975,7 +989,7 @@ export default function DesignersDashboard({ isDemoMode = false, liveData: sheet
                 name="AYA"
                 count={tasksAya.length}
                 tasks={tasksAya}
-                isActive={filters.requester === 'AYA'}
+                isActive={filters.requester.toLowerCase() === 'aya'}
                 onToggleFilter={() => toggleRequesterFilter('AYA')}
                 colorScheme={{
                   badgeBg: 'bg-[#6a1b9a]/30',
@@ -991,7 +1005,7 @@ export default function DesignersDashboard({ isDemoMode = false, liveData: sheet
                 name="MANAR"
                 count={tasksManar.length}
                 tasks={tasksManar}
-                isActive={filters.requester === 'MANAR'}
+                isActive={filters.requester.toLowerCase() === 'manar'}
                 onToggleFilter={() => toggleRequesterFilter('MANAR')}
                 colorScheme={{
                   badgeBg: 'bg-[#0077b6]/30',
@@ -1007,7 +1021,7 @@ export default function DesignersDashboard({ isDemoMode = false, liveData: sheet
                 name="Narden"
                 count={tasksNarden.length}
                 tasks={tasksNarden}
-                isActive={filters.requester === 'Narden'}
+                isActive={filters.requester.toLowerCase() === 'narden'}
                 onToggleFilter={() => toggleRequesterFilter('Narden')}
                 colorScheme={{
                   badgeBg: 'bg-[#b71c1c]/30',

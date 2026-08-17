@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { Loader2, Search, CheckSquare, Square, ChevronDown, Plus, X, Undo2, Redo2, Layers, Calendar, User, Eye, Sparkles, AlertTriangle } from 'lucide-react';
+import { Loader2, Search, CheckSquare, Square, ChevronDown, Plus, X, Undo2, Redo2, Layers, Calendar, User, Eye, Sparkles, AlertTriangle, Link, ExternalLink } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useDesignersTasks } from '../hooks/useDesignersTasks';
 

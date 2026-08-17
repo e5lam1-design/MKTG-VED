@@ -287,7 +287,7 @@ const DropdownSelect = ({ value, onChange, options, getStyles, categoryKey }: an
       <select
         value={value}
         onChange={(e) => handleSelectChange(e.target.value)}
-        className={`appearance-none text-xs font-black pl-7 pr-3.5 py-1.5 rounded-full border cursor-pointer outline-none transition-all shadow-sm ${getStyles(value)}`}
+        className={`appearance-none text-[11px] font-black pl-6 pr-2.5 py-1 rounded-full border cursor-pointer outline-none transition-all shadow-sm ${getStyles(value)}`}
       >
         {finalOptions.map((opt: string) => (
           <option key={opt} value={opt} className="bg-[#0a0d14] text-white">
@@ -298,8 +298,8 @@ const DropdownSelect = ({ value, onChange, options, getStyles, categoryKey }: an
           ➕ إضافة جديد...
         </option>
       </select>
-      <div className="absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none text-current opacity-80">
-        <ChevronDown size={10} />
+      <div className="absolute left-2 top-1/2 -translate-y-1/2 pointer-events-none text-current opacity-80">
+        <ChevronDown size={9} />
       </div>
     </div>
   );
@@ -309,13 +309,13 @@ const DropdownSelect = ({ value, onChange, options, getStyles, categoryKey }: an
 const HeaderFilter = ({ label, value, onChange, options }: any) => {
   const isFiltered = value !== 'All';
   return (
-    <div className="flex flex-col items-start gap-1 justify-center my-1 select-none">
-      <span className="text-[10px] text-muted/60 uppercase tracking-widest font-black arabic-text">{label}</span>
+    <div className="flex flex-col items-start gap-0.5 justify-center my-0.5 select-none">
+      <span className="text-[9px] text-muted/60 uppercase tracking-wider font-black arabic-text">{label}</span>
       <div className="relative inline-flex items-center">
         <select
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          className={`appearance-none bg-black/40 hover:bg-black/60 text-[10px] font-black pl-7 pr-3.5 py-1.5 rounded-xl border cursor-pointer outline-none transition-all ${
+          className={`appearance-none bg-black/40 hover:bg-black/60 text-[10px] font-black pl-5 pr-2 py-1 rounded-lg border cursor-pointer outline-none transition-all ${
             isFiltered 
               ? 'border-purple-500/60 text-purple-400 font-bold bg-purple-500/10' 
               : 'border-white/5 text-white/50 hover:text-white/80'
@@ -328,8 +328,8 @@ const HeaderFilter = ({ label, value, onChange, options }: any) => {
             </option>
           ))}
         </select>
-        <div className={`absolute left-2 top-1/2 -translate-y-1/2 pointer-events-none text-current transition-colors ${isFiltered ? 'text-purple-400' : 'opacity-40'}`}>
-          <ChevronDown size={10} className="stroke-[3]" />
+        <div className={`absolute left-1.5 top-1/2 -translate-y-1/2 pointer-events-none text-current transition-colors ${isFiltered ? 'text-purple-400' : 'opacity-40'}`}>
+          <ChevronDown size={9} className="stroke-[3]" />
         </div>
       </div>
     </div>
@@ -450,6 +450,13 @@ export default function DesignersDashboard({ isDemoMode = false, liveData: sheet
   const [searchTerm, setSearchTerm] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [visibleLimit, setVisibleLimit] = useState<number>(300);
+  const [viewMode, setViewMode] = useState<'SIMPLE' | 'DETAILED'>(() => {
+    try {
+      return (localStorage.getItem('designers_view_mode') as 'SIMPLE' | 'DETAILED') || 'SIMPLE';
+    } catch {
+      return 'SIMPLE';
+    }
+  });
   const [filters, setFilters] = useState({
     designer: 'All',
     priority: 'All',
@@ -1036,14 +1043,42 @@ export default function DesignersDashboard({ isDemoMode = false, liveData: sheet
         </div>
 
         <div className="flex items-center gap-3 w-full md:w-auto flex-wrap">
-          <div className="relative group w-full md:w-72">
+          {/* View Mode Toggle (وضع مبسط / متقدم) */}
+          <div className="flex bg-black/40 border border-white/10 p-1 rounded-2xl gap-1">
+            <button
+              type="button"
+              onClick={() => { setViewMode('SIMPLE'); try { localStorage.setItem('designers_view_mode', 'SIMPLE'); } catch {} }}
+              className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer ${
+                viewMode === 'SIMPLE'
+                  ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/30 scale-105'
+                  : 'text-white/40 hover:text-white hover:bg-white/5'
+              }`}
+              title="عرض مبسط للأعمدة الأساسية بدون سكرول أفقي"
+            >
+              <span>⚡ وضع مبسط</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => { setViewMode('DETAILED'); try { localStorage.setItem('designers_view_mode', 'DETAILED'); } catch {} }}
+              className={`px-3 py-1.5 rounded-xl text-xs font-black transition-all flex items-center gap-1.5 cursor-pointer ${
+                viewMode === 'DETAILED'
+                  ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/30 scale-105'
+                  : 'text-white/40 hover:text-white hover:bg-white/5'
+              }`}
+              title="عرض كامل لكافة الأعمدة والملاحظات والروابط"
+            >
+              <span>📋 وضع متقدم</span>
+            </button>
+          </div>
+
+          <div className="relative group w-full md:w-64">
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-muted/50 w-4 h-4 group-focus-within:text-purple-400 transition-colors" />
             <input
               type="text"
               placeholder="البحث في المهام..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full bg-black/40 border border-white/5 focus:border-purple-500/50 rounded-2xl pl-11 pr-4 py-3 text-sm font-bold text-white outline-none transition-all arabic-text placeholder:text-muted/30"
+              className="w-full bg-black/40 border border-white/5 focus:border-purple-500/50 rounded-2xl pl-11 pr-4 py-2.5 text-xs sm:text-sm font-bold text-white outline-none transition-all arabic-text placeholder:text-muted/30"
             />
           </div>
         </div>
@@ -1061,7 +1096,7 @@ export default function DesignersDashboard({ isDemoMode = false, liveData: sheet
               <button
                 key={m.key}
                 onClick={() => setSelectedMonth(m.key)}
-                className={`px-5 py-2 rounded-2xl text-xs font-black transition-all border shrink-0 cursor-pointer flex items-center gap-2 arabic-text ${
+                className={`px-4 py-2 rounded-2xl text-xs font-black transition-all border shrink-0 cursor-pointer flex items-center gap-2 arabic-text ${
                   isActive
                     ? 'bg-purple-600 border-purple-400 text-white shadow-lg shadow-purple-600/40 scale-105 ring-2 ring-purple-400/50'
                     : 'bg-[#0a0d14] border-white/10 text-muted hover:text-white hover:bg-white/5'
@@ -1091,12 +1126,12 @@ export default function DesignersDashboard({ isDemoMode = false, liveData: sheet
       {/* Spreadsheet Table */}
       <div className="bg-[#0a0d14] rounded-3xl border border-white/5 overflow-hidden flex-1 flex flex-col shadow-2xl">
         <div className="overflow-x-auto flex-1 relative">
-          <table className="w-full text-left border-collapse whitespace-nowrap min-w-max">
+          <table className="w-full text-left border-collapse whitespace-nowrap">
             <thead>
-              <tr className="border-b border-white/5 bg-black/40 text-[10px] uppercase tracking-[0.2em] font-black text-muted/60">
-                <th className="px-6 py-4 font-bold sticky top-0 bg-[#080a0f] z-10 w-16 text-center text-muted/60">#</th>
-                <th className="px-4 py-4 font-bold sticky top-0 bg-[#080a0f] z-10 text-right text-muted/60">التاريخ</th>
-                <th className="px-4 py-3 sticky top-0 bg-[#080a0f] z-10 text-right">
+              <tr className="border-b border-white/5 bg-black/40 text-[10px] uppercase tracking-[0.15em] font-black text-muted/60">
+                <th className="px-3 py-3 font-bold sticky top-0 bg-[#080a0f] z-10 w-12 text-center text-muted/60">#</th>
+                <th className="px-3 py-3 font-bold sticky top-0 bg-[#080a0f] z-10 text-right text-muted/60">التاريخ</th>
+                <th className="px-3 py-2.5 sticky top-0 bg-[#080a0f] z-10 text-right">
                   <HeaderFilter 
                     label="الكريتور" 
                     value={filters.designer} 
@@ -1104,7 +1139,7 @@ export default function DesignersDashboard({ isDemoMode = false, liveData: sheet
                     options={allDesignersList} 
                   />
                 </th>
-                <th className="px-4 py-3 sticky top-0 bg-[#080a0f] z-10 text-right">
+                <th className="px-3 py-2.5 sticky top-0 bg-[#080a0f] z-10 text-right">
                   <HeaderFilter 
                     label="الأولوية" 
                     value={filters.priority} 
@@ -1112,7 +1147,7 @@ export default function DesignersDashboard({ isDemoMode = false, liveData: sheet
                     options={allPrioritiesList} 
                   />
                 </th>
-                <th className="px-4 py-3 sticky top-0 bg-[#080a0f] z-10 text-right">
+                <th className="px-3 py-2.5 sticky top-0 bg-[#080a0f] z-10 text-right">
                   <HeaderFilter 
                     label="المصمم" 
                     value={filters.requester} 
@@ -1120,7 +1155,7 @@ export default function DesignersDashboard({ isDemoMode = false, liveData: sheet
                     options={allRequestersList} 
                   />
                 </th>
-                <th className="px-4 py-3 sticky top-0 bg-[#080a0f] z-10 text-right">
+                <th className="px-3 py-2.5 sticky top-0 bg-[#080a0f] z-10 text-right">
                   <HeaderFilter 
                     label="النوع" 
                     value={filters.type} 
@@ -1128,13 +1163,19 @@ export default function DesignersDashboard({ isDemoMode = false, liveData: sheet
                     options={allTypesList} 
                   />
                 </th>
-                <th className="px-4 py-4 font-bold sticky top-0 bg-[#080a0f] z-10 text-right text-muted/60 min-w-[160px]">اسم السكريبت / التاسك</th>
-                <th className="px-4 py-4 font-bold sticky top-0 bg-[#080a0f] z-10 text-right text-muted/60">ميعاد التسليم</th>
-                <th className="px-4 py-4 font-bold sticky top-0 bg-[#080a0f] z-10 text-left text-muted/60">REFERENCE</th>
-                <th className="px-4 py-4 font-bold sticky top-0 bg-[#080a0f] z-10 w-64 text-right text-muted/60">ملاحظات</th>
+                <th className="px-3 py-3 font-bold sticky top-0 bg-[#080a0f] z-10 text-right text-muted/60 min-w-[130px]">اسم السكريبت / التاسك</th>
+                <th className="px-3 py-3 font-bold sticky top-0 bg-[#080a0f] z-10 text-right text-muted/60">ميعاد التسليم</th>
+                
+                {viewMode === 'DETAILED' && (
+                  <>
+                    <th className="px-3 py-3 font-bold sticky top-0 bg-[#080a0f] z-10 text-center text-muted/60">المرجع</th>
+                    <th className="px-3 py-3 font-bold sticky top-0 bg-[#080a0f] z-10 max-w-[200px] text-right text-muted/60">ملاحظات</th>
+                  </>
+                )}
+
                 {/* DONE — المصمم: with filter dropdown */}
-                <th className="px-6 py-3 sticky top-0 bg-[#080a0f] z-10 text-center">
-                  <div className="flex flex-col items-center gap-1">
+                <th className="px-4 py-2.5 sticky top-0 bg-[#080a0f] z-10 text-center">
+                  <div className="flex flex-col items-center gap-0.5">
                     <span className="text-[10px] font-black text-emerald-400 tracking-wider uppercase">DONE</span>
                     <span className="text-[9px] text-white/30 font-bold">المصمم</span>
                     <select
@@ -1149,7 +1190,7 @@ export default function DesignersDashboard({ isDemoMode = false, liveData: sheet
                   </div>
                 </th>
                 {/* RECEIVED — الكريتور */}
-                <th className="px-6 py-3 sticky top-0 bg-[#080a0f] z-10 text-center">
+                <th className="px-4 py-2.5 sticky top-0 bg-[#080a0f] z-10 text-center">
                   <div className="flex flex-col items-center gap-0.5">
                     <span className="text-[10px] font-black text-sky-400 tracking-wider uppercase">RECEIVED</span>
                     <span className="text-[9px] text-white/30 font-bold">الكريتور</span>
@@ -1159,17 +1200,17 @@ export default function DesignersDashboard({ isDemoMode = false, liveData: sheet
             </thead>
             <tbody className="divide-y divide-white/[0.02]">
               
-              {/* Quick-Add Row (Styled exactly like Google Sheets screenshot) */}
+              {/* Quick-Add Row */}
               <tr 
                 onClick={() => setShowAddModal(true)}
                 className="border-b border-white/[0.05] bg-purple-500/[0.02] hover:bg-purple-500/[0.08] transition-colors cursor-pointer group"
               >
-                <td className="px-6 py-3.5 text-center">
-                  <div className="w-8 h-8 rounded-full bg-purple-500/10 group-hover:bg-purple-500/20 text-purple-400 flex items-center justify-center mx-auto transition-all scale-100 group-hover:scale-110 shadow-sm">
-                    <Plus size={16} className="stroke-[3]" />
+                <td className="px-3 py-3 text-center">
+                  <div className="w-7 h-7 rounded-full bg-purple-500/10 group-hover:bg-purple-500/20 text-purple-400 flex items-center justify-center mx-auto transition-all scale-100 group-hover:scale-110 shadow-sm">
+                    <Plus size={15} className="stroke-[3]" />
                   </div>
                 </td>
-                <td colSpan={11} className="px-4 py-3.5 text-right arabic-text">
+                <td colSpan={viewMode === 'DETAILED' ? 11 : 9} className="px-4 py-3 text-right arabic-text">
                   <span className="text-xs font-black text-purple-400 group-hover:text-purple-300 transition-colors tracking-wide">
                     + إضافة تاسك جديد (Add New Design Task)
                   </span>
@@ -1211,15 +1252,15 @@ export default function DesignersDashboard({ isDemoMode = false, liveData: sheet
                     key={row.uniqueKey || i} 
                     className={`border-b border-white/[0.02] transition-all duration-300 ${rowBgClass}`}
                   >
-                    <td className="px-6 py-3 text-center text-xs text-muted/30 font-mono">{i + 1}</td>
+                    <td className="px-3 py-2 text-center text-xs text-muted/30 font-mono">{i + 1}</td>
                     
                     {/* التاريخ */}
-                    <td className="px-4 py-3">
+                    <td className="px-3 py-2">
                       <span className={`text-xs font-bold ${textDateClass}`}>{row.date || '-'}</span>
                     </td>
 
                     {/* المصمم */}
-                    <td className="px-4 py-3">
+                    <td className="px-3 py-2">
                       <DropdownSelect
                         value={row.designer}
                         onChange={(val: string) => handleCellChange(row.id || row.uniqueKey || row.originalIndex, 'designer', val)}
@@ -1230,7 +1271,7 @@ export default function DesignersDashboard({ isDemoMode = false, liveData: sheet
                     </td>
 
                     {/* الأولوية */}
-                    <td className="px-4 py-3">
+                    <td className="px-3 py-2">
                       <DropdownSelect
                         value={row.priority}
                         onChange={(val: string) => handleCellChange(row.id || row.uniqueKey || row.originalIndex, 'priority', val)}
@@ -1241,7 +1282,7 @@ export default function DesignersDashboard({ isDemoMode = false, liveData: sheet
                     </td>
 
                     {/* المراجع */}
-                    <td className="px-4 py-3">
+                    <td className="px-3 py-2">
                       <DropdownSelect
                         value={row.requester}
                         onChange={(val: string) => handleCellChange(row.id || row.uniqueKey || row.originalIndex, 'requester', val)}
@@ -1252,7 +1293,7 @@ export default function DesignersDashboard({ isDemoMode = false, liveData: sheet
                     </td>
 
                     {/* النوع */}
-                    <td className="px-4 py-3">
+                    <td className="px-3 py-2">
                       <DropdownSelect
                         value={row.type}
                         onChange={(val: string) => handleCellChange(row.id || row.uniqueKey || row.originalIndex, 'type', val)}
@@ -1263,19 +1304,19 @@ export default function DesignersDashboard({ isDemoMode = false, liveData: sheet
                     </td>
 
                     {/* اسم السكريبت / التاسك */}
-                    <td className="px-4 py-3 min-w-[160px]">
+                    <td className="px-3 py-2 min-w-[130px]">
                       <input
                         type="text"
                         value={row.name || row.task_name || row.script || ''}
                         placeholder="تسمية التاسك..."
                         onChange={(e) => handleCellChange(row.id || row.uniqueKey || row.originalIndex, 'name', e.target.value)}
-                        className="bg-transparent text-xs font-bold border border-transparent focus:border-purple-500/50 hover:bg-white/5 focus:bg-[#0a0d14] rounded-lg px-2.5 py-1.5 outline-none text-right transition-all w-full arabic-text placeholder:text-white/15 text-white"
+                        className="bg-transparent text-xs font-bold border border-transparent focus:border-purple-500/50 hover:bg-white/5 focus:bg-[#0a0d14] rounded-lg px-2 py-1 outline-none text-right transition-all w-full arabic-text placeholder:text-white/15 text-white"
                         dir="rtl"
                       />
                     </td>
 
                     {/* ميعاد التسليم */}
-                    <td className="px-4 py-3">
+                    <td className="px-3 py-2">
                       <input
                         type="date"
                         value={formatDateToInput(row.deadline)}
@@ -1283,7 +1324,7 @@ export default function DesignersDashboard({ isDemoMode = false, liveData: sheet
                           const formatted = formatDateFromInput(e.target.value);
                           handleCellChange(row.id || row.uniqueKey || row.originalIndex, 'deadline', formatted);
                         }}
-                        className={`bg-transparent text-xs font-bold font-mono border border-transparent focus:border-white/20 hover:bg-white/5 focus:bg-[#0a0d14] rounded-lg px-2.5 py-1.5 outline-none text-right cursor-pointer transition-all ${
+                        className={`bg-transparent text-xs font-bold font-mono border border-transparent focus:border-white/20 hover:bg-white/5 focus:bg-[#0a0d14] rounded-lg px-2 py-1 outline-none text-right cursor-pointer transition-all ${
                           isDone 
                             ? 'text-emerald-300' 
                             : priorityStr === 'انهارده - ممكن يتأجل'
@@ -1295,26 +1336,36 @@ export default function DesignersDashboard({ isDemoMode = false, liveData: sheet
                       />
                     </td>
 
-                    {/* Reference */}
-                    <td className="px-4 py-3">
-                      {row.reference ? (
-                        <a href={row.reference} target="_blank" rel="noopener noreferrer" className="text-xs text-blue-400 hover:text-blue-300 hover:underline max-w-[150px] truncate block">
-                          {row.reference}
-                        </a>
-                      ) : (
-                        <span className="text-xs text-muted/30">-</span>
-                      )}
-                    </td>
+                    {/* Reference & Notes (In Detailed Mode only) */}
+                    {viewMode === 'DETAILED' && (
+                      <>
+                        <td className="px-3 py-2 text-center">
+                          {row.reference ? (
+                            <a 
+                              href={row.reference} 
+                              target="_blank" 
+                              rel="noopener noreferrer" 
+                              className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-indigo-500/15 hover:bg-indigo-500/30 text-indigo-300 text-[11px] font-bold border border-indigo-500/30 hover:border-indigo-500/60 transition-all shadow-sm"
+                              title={row.reference}
+                            >
+                              <Link size={11} />
+                              <span>المستند</span>
+                            </a>
+                          ) : (
+                            <span className="text-xs text-muted/30">-</span>
+                          )}
+                        </td>
 
-                    {/* ملاحظات */}
-                    <td className="px-4 py-3">
-                      <NotesInput
-                        itemKey={row.id || row.uniqueKey || row.originalIndex}
-                        value={row.notes}
-                        onChange={(val: string) => handleCellChange(row.id || row.uniqueKey || row.originalIndex, 'notes', val)}
-                        className={textNotesClass}
-                      />
-                    </td>
+                        <td className="px-3 py-2 max-w-[200px]">
+                          <NotesInput
+                            itemKey={row.id || row.uniqueKey || row.originalIndex}
+                            value={row.notes}
+                            onChange={(val: string) => handleCellChange(row.id || row.uniqueKey || row.originalIndex, 'notes', val)}
+                            className={textNotesClass}
+                          />
+                        </td>
+                      </>
+                    )}
 
                     {/* DONE — المصمم */}
                     <td className="px-6 py-3 text-center">

@@ -949,15 +949,15 @@ export default function DesignersDashboard({ isDemoMode = false, liveData: sheet
   // Calculate real-time workload for all candidate designers to suggest the least busy one
   const designerWorkloads = useMemo(() => {
     if (!Array.isArray(localRows)) return [];
-    return allRequestersList.map(name => {
+    return allDesignersList.map(name => {
       const activeCount = localRows.filter((r: any) => 
         isTaskActiveReview(r) && 
-        (String(r.requester || '').toLowerCase().trim() === name.toLowerCase() || 
-         String(r.designer || '').toLowerCase().trim() === name.toLowerCase())
+        (String(r.designer || '').toLowerCase().trim() === name.toLowerCase() || 
+         String(r.requester || '').toLowerCase().trim() === name.toLowerCase())
       ).length;
       return { name, count: activeCount };
     }).sort((a, b) => a.count - b.count);
-  }, [localRows, allRequestersList]);
+  }, [localRows, allDesignersList]);
 
   const bestSuggestedDesigner = designerWorkloads[0];
 
@@ -966,7 +966,7 @@ export default function DesignersDashboard({ isDemoMode = false, liveData: sheet
     if (showAddModal && bestSuggestedDesigner?.name) {
       setAddForm(prev => ({
         ...prev,
-        requester: bestSuggestedDesigner.name
+        designer: bestSuggestedDesigner.name
       }));
     }
   }, [showAddModal]);

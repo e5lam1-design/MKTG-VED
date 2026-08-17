@@ -547,6 +547,27 @@ export default function DesignersDashboard({ isDemoMode = false, liveData: sheet
     return null;
   };
   
+  const getTodayFormatted = () => {
+    const d = new Date();
+    return `${d.getMonth() + 1}/${d.getDate()}/${d.getFullYear()}`;
+  };
+
+  const getTomorrowFormatted = () => {
+    const d = new Date();
+    d.setDate(d.getDate() + 1);
+    return `${d.getMonth() + 1}/${d.getDate()}/${d.getFullYear()}`;
+  };
+
+  const calculateDeadlineFromPriority = (priorityStr: string, currentDeadline: string = '') => {
+    const pLower = String(priorityStr || '').toLowerCase().trim();
+    if (pLower.includes('بكرة') || pLower.includes('بكره') || pLower.includes('tomorrow')) {
+      return getTomorrowFormatted();
+    } else if (pLower.includes('انهارده') || pLower.includes('النهارده') || pLower.includes('اليوم') || pLower.includes('today')) {
+      return getTodayFormatted();
+    }
+    return currentDeadline;
+  };
+  
   // ── Data source: Supabase in production, Google Sheets in demo ──────────
   const supabase = useDesignersTasks();
   const localRows: any[] = isDemoMode
@@ -558,18 +579,30 @@ export default function DesignersDashboard({ isDemoMode = false, liveData: sheet
   const toggleDone = isDemoMode ? null : supabase.toggleDone;
 
   const [showAddModal, setShowAddModal] = useState(false);
-  const [addForm, setAddForm] = useState({
-    name: '',
-    date: new Date().toLocaleDateString('en-US'),
-    designer: DEFAULT_DESIGNERS[0],
-    priority: DEFAULT_PRIORITIES[0],
-    requester: DEFAULT_REQUESTERS[0],
-    type: DEFAULT_TYPES[0],
-    deadline: '',
-    reference: '',
-    notes: '',
-    done: false
+  const [addForm, setAddForm] = useState(() => {
+    const initialPriority = DEFAULT_PRIORITIES[0] || 'انهارده - ضروري';
+    return {
+      name: '',
+      date: new Date().toLocaleDateString('en-US'),
+      designer: DEFAULT_DESIGNERS[0] || '',
+      priority: initialPriority,
+      requester: DEFAULT_REQUESTERS[0] || '',
+      type: DEFAULT_TYPES[0] || '',
+      deadline: calculateDeadlineFromPriority(initialPriority, getTodayFormatted()),
+      reference: '',
+      notes: '',
+      done: false
+    };
   });
+
+  const handleModalPriorityChange = (newPriority: string) => {
+    const autoDeadline = calculateDeadlineFromPriority(newPriority, addForm.deadline);
+    setAddForm(prev => ({
+      ...prev,
+      priority: newPriority,
+      deadline: autoDeadline
+    }));
+  };
 
   const handleCellChange = async (rowIdOrKey: any, field: string, value: any) => {
     // Find target row by id (number or string) or uniqueKey
@@ -601,6 +634,14 @@ export default function DesignersDashboard({ isDemoMode = false, liveData: sheet
         await updateTask(numericId, {
           received_creator: Boolean(value),
           received_creator_at: value ? new Date().toISOString() : null,
+        });
+      }
+    } else if (field === 'priority') {
+      const autoDeadline = calculateDeadlineFromPriority(value, targetRow.deadline);
+      if (updateTask && !isNaN(numericId)) {
+        await updateTask(numericId, {
+          priority: value,
+          ...(autoDeadline ? { deadline: autoDeadline } : {})
         });
       }
     } else {
@@ -1416,7 +1457,14 @@ export default function DesignersDashboard({ isDemoMode = false, liveData: sheet
                   </div>
                 </div>
                 <div>
-                  <label className="block text-xs font-bold text-muted-foreground/70 mb-1.5">ميعاد التسليم المتوقع</label>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="block text-xs font-bold text-muted-foreground/70">ميعاد التسليم المتوقع</label>
+                    {addForm.deadline && (
+                      <span className="text-[10px] text-purple-400 font-bold arabic-text bg-purple-500/10 px-2 py-0.5 rounded-lg border border-purple-500/20">
+                        {addForm.deadline === getTodayFormatted() ? '📅 تسليم اليوم' : addForm.deadline === getTomorrowFormatted() ? '⚡ تسليم غداً' : `📅 ${addForm.deadline}`}
+                      </span>
+                    )}
+                  </div>
                   <input
                     type="date"
                     value={formatDateToInput(addForm.deadline)}
@@ -1425,6 +1473,30 @@ export default function DesignersDashboard({ isDemoMode = false, liveData: sheet
                     style={{ colorScheme: 'dark' }}
                     dir="ltr"
                   />
+                  <div className="flex items-center gap-2 mt-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setAddForm(prev => ({ ...prev, deadline: getTodayFormatted() }))}
+                      className={`text-[10px] font-bold px-2 py-0.5 rounded-md border transition-all cursor-pointer ${
+                        addForm.deadline === getTodayFormatted()
+                          ? 'bg-purple-500/20 text-purple-300 border-purple-500/40'
+                          : 'bg-white/5 text-muted-foreground/60 border-white/10 hover:text-white'
+                      }`}
+                    >
+                      اليوم
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setAddForm(prev => ({ ...prev, deadline: getTomorrowFormatted() }))}
+                      className={`text-[10px] font-bold px-2 py-0.5 rounded-md border transition-all cursor-pointer ${
+                        addForm.deadline === getTomorrowFormatted()
+                          ? 'bg-purple-500/20 text-purple-300 border-purple-500/40'
+                          : 'bg-white/5 text-muted-foreground/60 border-white/10 hover:text-white'
+                      }`}
+                    >
+                      غداً ⚡
+                    </button>
+                  </div>
                 </div>
               </div>
 
@@ -1442,10 +1514,13 @@ export default function DesignersDashboard({ isDemoMode = false, liveData: sheet
                   </select>
                 </div>
                 <div>
-                  <label className="block text-xs font-bold text-muted-foreground/70 mb-1.5">الأولوية (Priority)</label>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="block text-xs font-bold text-muted-foreground/70">الأولوية (Priority)</label>
+                    <span className="text-[10px] text-white/40 font-mono">تربط التاريخ تلقائياً 🪄</span>
+                  </div>
                   <select
                     value={addForm.priority}
-                    onChange={e => setAddForm({...addForm, priority: e.target.value})}
+                    onChange={e => handleModalPriorityChange(e.target.value)}
                     className="w-full bg-[#0b1019] border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-purple-500 transition-colors font-bold text-sm cursor-pointer"
                   >
                     {allPrioritiesList.map(p => (

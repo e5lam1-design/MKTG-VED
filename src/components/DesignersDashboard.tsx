@@ -604,6 +604,22 @@ export default function DesignersDashboard({ isDemoMode = false, liveData: sheet
     }));
   };
 
+  const handleModalDeadlineChange = (newDeadlineFormatted: string) => {
+    let autoPriority = addForm.priority;
+    if (newDeadlineFormatted === getTomorrowFormatted()) {
+      autoPriority = 'بكرة';
+    } else if (newDeadlineFormatted === getTodayFormatted()) {
+      if (addForm.priority !== 'انهارده - ممكن يتأجل') {
+        autoPriority = 'انهارده - ضروري';
+      }
+    }
+    setAddForm(prev => ({
+      ...prev,
+      deadline: newDeadlineFormatted,
+      priority: autoPriority
+    }));
+  };
+
   const handleCellChange = async (rowIdOrKey: any, field: string, value: any) => {
     // Find target row by id (number or string) or uniqueKey
     let targetRow = localRows.find((r: any) => 
@@ -1468,7 +1484,7 @@ export default function DesignersDashboard({ isDemoMode = false, liveData: sheet
                   <input
                     type="date"
                     value={formatDateToInput(addForm.deadline)}
-                    onChange={e => setAddForm({...addForm, deadline: formatDateFromInput(e.target.value)})}
+                    onChange={e => handleModalDeadlineChange(formatDateFromInput(e.target.value))}
                     className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-purple-500 transition-colors font-bold text-sm text-left cursor-pointer"
                     style={{ colorScheme: 'dark' }}
                     dir="ltr"
@@ -1476,7 +1492,7 @@ export default function DesignersDashboard({ isDemoMode = false, liveData: sheet
                   <div className="flex items-center gap-2 mt-1.5">
                     <button
                       type="button"
-                      onClick={() => setAddForm(prev => ({ ...prev, deadline: getTodayFormatted() }))}
+                      onClick={() => handleModalDeadlineChange(getTodayFormatted())}
                       className={`text-[10px] font-bold px-2 py-0.5 rounded-md border transition-all cursor-pointer ${
                         addForm.deadline === getTodayFormatted()
                           ? 'bg-purple-500/20 text-purple-300 border-purple-500/40'
@@ -1487,7 +1503,7 @@ export default function DesignersDashboard({ isDemoMode = false, liveData: sheet
                     </button>
                     <button
                       type="button"
-                      onClick={() => setAddForm(prev => ({ ...prev, deadline: getTomorrowFormatted() }))}
+                      onClick={() => handleModalDeadlineChange(getTomorrowFormatted())}
                       className={`text-[10px] font-bold px-2 py-0.5 rounded-md border transition-all cursor-pointer ${
                         addForm.deadline === getTomorrowFormatted()
                           ? 'bg-purple-500/20 text-purple-300 border-purple-500/40'

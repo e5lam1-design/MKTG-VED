@@ -11,14 +11,14 @@ export interface TeamOption {
   created_at?: string;
 }
 
-export const DEFAULT_DESIGNERS = [
+export const DEFAULT_DESIGNERS = ['Narden', 'AYA', 'MANAR', 'JUMANA'];
+
+export const DEFAULT_REQUESTERS = [
   'SHERIF', 'SHROUK', 'ESRAA', 'Hesham', 'Sohaila', 'alaa', 'alaa zakria', 
   'NOUR', 'NOURHAN', 'KHALED', 'EMAN', 'AWNEY', 'ANAS', 'SAMIR', 'MONA', 
   'YOMNA', 'MANAR', 'MARAM', 'Esraa nagi', 'A.AMR', 'AHMED', 'nada', 
   'abdelkerim', 'Donia', 'Esraa Naga', 'A.Medhat'
 ];
-
-export const DEFAULT_REQUESTERS = ['Narden', 'AYA', 'MANAR', 'JUMANA'];
 export const DEFAULT_PRIORITIES = ['انهارده - ضروري', 'بكرة', 'انهارده - ممكن يتأجل', 'CHECK DEADLINE'];
 export const DEFAULT_TYPES = ['THUMBNAIL', 'YT-COMMUNTIY', 'SOCIAL-MEDIA', 'OTHER'];
 

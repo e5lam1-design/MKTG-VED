@@ -4961,6 +4961,10 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
             if (m.tagme3at_transfers) { setTagmeTransfers(m.tagme3at_transfers); localStorage.setItem('tagme3at_transfers', JSON.stringify(m.tagme3at_transfers)); }
             if (m.youtube_transfers) { setYoutubeItems(m.youtube_transfers); localStorage.setItem('youtube_transfers', JSON.stringify(m.youtube_transfers)); }
             if (m.assigned_bunny_links) { setAssignedBunnyLinks(m.assigned_bunny_links); localStorage.setItem('assigned_bunny_links', JSON.stringify(m.assigned_bunny_links)); }
+            if (m.tab_priority_limits) {
+              setTabPriorityLimits(m.tab_priority_limits);
+              localStorage.setItem('tab_priority_limits_v1', JSON.stringify(m.tab_priority_limits));
+            }
             if (m.active_academic_term?.term) {
               setActiveAcademicTerm(m.active_academic_term.term);
               localStorage.setItem('active_academic_term', m.active_academic_term.term);
@@ -5062,6 +5066,10 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
          else if (field === 'assigned_times') setAssignedTimes(dict);
          else if (field === 'assigned_youtube_links') setAssignedYoutubeLinks(dict);
          else if (field === 'uploaded_statuses') setUploadedStatuses(dict);
+         else if (field === 'tab_priority_limits') {
+           setTabPriorityLimits(dict);
+           localStorage.setItem('tab_priority_limits_v1', JSON.stringify(dict));
+         }
       }
 
       const currentEditor = assignedEditorsRef.current[itemKey];
@@ -5397,38 +5405,58 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
       localStorage.setItem('tab_priority_limits_v1', JSON.stringify(updated));
     } catch {}
 
+    const token = session?.access_token || profile?.id;
+    if (token) {
+      fetch('/api/task-metadata', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ field: 'tab_priority_limits', metadata: updated })
+      }).catch(e => console.error(e));
+    }
+
     if (!isDemo && supabase) {
       try {
+        const val = JSON.stringify(updated);
         const { data: existing } = await supabase
           .from('dashboard_data')
-          .select('key')
-          .eq('key', 'tab_priority_limits_v1')
+          .select('key, field')
+          .eq('key', 'task_metadata')
+          .eq('field', 'tab_priority_limits')
           .maybeSingle();
 
-        const val = JSON.stringify(updated);
         if (existing) {
           await supabase
             .from('dashboard_data')
             .update({ value: val, updated_by: profile?.id, updated_at: new Date().toISOString() })
-            .eq('key', 'tab_priority_limits_v1');
+            .eq('key', 'task_metadata')
+            .eq('field', 'tab_priority_limits');
         } else {
           await supabase
             .from('dashboard_data')
-            .insert({ key: 'tab_priority_limits_v1', field: 'limits', value: val, updated_by: profile?.id });
+            .insert({ key: 'task_metadata', field: 'tab_priority_limits', value: val, updated_by: profile?.id });
         }
-
-        if (globalChannelRef.current) {
-          globalChannelRef.current.send({
-            type: 'broadcast',
-            event: 'tab_priority_limit_update',
-            payload: { tabPriorityLimits: updated }
-          });
-        }
-        toast.success(`🎯 تم تحديث حد الأولوية لهذا التاب إلى: ${newLimit >= 999 ? 'غير محدود' : newLimit}`);
       } catch (err) {
-        console.error('Error saving tab priority limit:', err);
+        console.error('Error saving tab priority limit to Supabase:', err);
       }
     }
+
+    if (globalChannelRef.current && profile?.name) {
+      globalChannelRef.current.send({
+        type: 'broadcast',
+        event: 'update',
+        payload: {
+          itemKey: 'tab_priority_limits',
+          taskName: 'حد أولوية التاب',
+          message: `🎯 تم تعديل حد الأولوية إلى: ${newLimit >= 999 ? 'غير محدود' : newLimit}`,
+          type: 'tab_limit_update',
+          from: profile.name,
+          field: 'tab_priority_limits',
+          dict: updated
+        }
+      });
+    }
+
+    toast.success(`🎯 تم حفظ وتعميم حد الأولوية لهذا التاب إلى: ${newLimit >= 999 ? 'غير محدود' : newLimit} مهمة`);
   };
 
   const handleAddSubmit = async (e: React.FormEvent) => {

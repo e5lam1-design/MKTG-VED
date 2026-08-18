@@ -17,7 +17,9 @@ import {
   RefreshCw,
   User,
   Undo2,
-  MonitorPlay
+  MonitorPlay,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
 import op27Data from '../data/op27_tasks.json';
 
@@ -175,8 +177,22 @@ export const Op27View: React.FC<Op27ViewProps> = ({ onNavigateToStage, onExecute
   const [subjectFilter, setSubjectFilter] = useState('All');
   const [statusFilter, setStatusFilter] = useState('All');
   const [bypassTeacherSelection, setBypassTeacherSelection] = useState(false);
-  const [copiedId, setCopiedId] = useState<string | null>(null);
   const [selectedTasks, setSelectedTasks] = useState<string[]>([]);
+  const [showStats, setShowStats] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('op27_show_stats');
+      if (saved !== null) return saved === 'true';
+    } catch {}
+    return true;
+  });
+
+  const toggleStats = () => {
+    setShowStats(prev => {
+      const next = !prev;
+      try { localStorage.setItem('op27_show_stats', String(next)); } catch {}
+      return next;
+    });
+  };
 
   const handleSyncPlatform = async () => {
     setIsSyncing(true);
@@ -435,6 +451,17 @@ export const Op27View: React.FC<Op27ViewProps> = ({ onNavigateToStage, onExecute
               <div className="text-2xl font-black text-blue-400 font-mono">{tasks.length}</div>
               <div className="text-[11px] text-muted font-bold">إجمالي المهام</div>
             </div>
+
+            {/* Collapse / Expand Toggle Button */}
+            <button
+              onClick={toggleStats}
+              className="flex items-center gap-2 px-4 py-3.5 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/10 hover:border-blue-500/40 text-muted hover:text-white text-xs font-bold transition-all shadow-sm cursor-pointer"
+              title={showStats ? "طي بطاقات الإحصائيات" : "إظهار بطاقات الإحصائيات"}
+            >
+              <Layers size={15} className="text-blue-400" />
+              <span>{showStats ? "طي الإحصائيات" : "إظهار الإحصائيات"}</span>
+              {showStats ? <ChevronUp size={15} className="text-blue-400" /> : <ChevronDown size={15} className="text-blue-400" />}
+            </button>
           </div>
         </div>
 
@@ -446,68 +473,80 @@ export const Op27View: React.FC<Op27ViewProps> = ({ onNavigateToStage, onExecute
           </div>
         )}
 
-        {/* Stats Row */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-6">
-          <button
-            onClick={() => setStatusFilter('All')}
-            className={`p-3 rounded-2xl border transition-all text-right ${
-              statusFilter === 'All'
-                ? 'bg-blue-500/20 border-blue-500/50 shadow-lg shadow-blue-500/10'
-                : 'bg-white/5 border-white/10 hover:bg-white/10'
-            }`}
-          >
-            <div className="text-xs font-bold text-muted flex items-center justify-between">
-              <span>الكل</span>
-              <Layers size={14} />
-            </div>
-            <div className="text-lg font-black text-white font-mono mt-1">{counts.all}</div>
-          </button>
+        {/* Collapsible Stats Row */}
+        <AnimatePresence>
+          {showStats && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              transition={{ duration: 0.3, ease: 'easeInOut' }}
+              className="overflow-hidden"
+            >
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-6">
+                <button
+                  onClick={() => setStatusFilter('All')}
+                  className={`p-3 rounded-2xl border transition-all text-right cursor-pointer ${
+                    statusFilter === 'All'
+                      ? 'bg-blue-500/20 border-blue-500/50 shadow-lg shadow-blue-500/10 scale-[1.02]'
+                      : 'bg-white/5 border-white/10 hover:bg-white/10'
+                  }`}
+                >
+                  <div className="text-xs font-bold text-muted flex items-center justify-between">
+                    <span>الكل</span>
+                    <Layers size={14} />
+                  </div>
+                  <div className="text-lg font-black text-white font-mono mt-1">{counts.all}</div>
+                </button>
 
-          <button
-            onClick={() => setStatusFilter('In Progress')}
-            className={`p-3 rounded-2xl border transition-all text-right ${
-              statusFilter === 'In Progress'
-                ? 'bg-amber-500/20 border-amber-500/50 shadow-lg shadow-amber-500/10'
-                : 'bg-white/5 border-white/10 hover:bg-white/10'
-            }`}
-          >
-            <div className="text-xs font-bold text-amber-400 flex items-center justify-between">
-              <span>قيد العمل ⏳</span>
-              <Clock size={14} />
-            </div>
-            <div className="text-lg font-black text-amber-300 font-mono mt-1">{counts.inProgress}</div>
-          </button>
+                <button
+                  onClick={() => setStatusFilter('In Progress')}
+                  className={`p-3 rounded-2xl border transition-all text-right cursor-pointer ${
+                    statusFilter === 'In Progress'
+                      ? 'bg-amber-500/20 border-amber-500/50 shadow-lg shadow-amber-500/10 scale-[1.02]'
+                      : 'bg-white/5 border-white/10 hover:bg-white/10'
+                  }`}
+                >
+                  <div className="text-xs font-bold text-amber-400 flex items-center justify-between">
+                    <span>قيد العمل ⏳</span>
+                    <Clock size={14} />
+                  </div>
+                  <div className="text-lg font-black text-amber-300 font-mono mt-1">{counts.inProgress}</div>
+                </button>
 
-          <button
-            onClick={() => setStatusFilter('Completed')}
-            className={`p-3 rounded-2xl border transition-all text-right ${
-              statusFilter === 'Completed'
-                ? 'bg-emerald-500/20 border-emerald-500/50 shadow-lg shadow-emerald-500/10'
-                : 'bg-white/5 border-white/10 hover:bg-white/10'
-            }`}
-          >
-            <div className="text-xs font-bold text-emerald-400 flex items-center justify-between">
-              <span>مكتملة ✅</span>
-              <CheckCircle2 size={14} />
-            </div>
-            <div className="text-lg font-black text-emerald-300 font-mono mt-1">{counts.completed}</div>
-          </button>
+                <button
+                  onClick={() => setStatusFilter('Completed')}
+                  className={`p-3 rounded-2xl border transition-all text-right cursor-pointer ${
+                    statusFilter === 'Completed'
+                      ? 'bg-emerald-500/20 border-emerald-500/50 shadow-lg shadow-emerald-500/10 scale-[1.02]'
+                      : 'bg-white/5 border-white/10 hover:bg-white/10'
+                  }`}
+                >
+                  <div className="text-xs font-bold text-emerald-400 flex items-center justify-between">
+                    <span>مكتملة ✅</span>
+                    <CheckCircle2 size={14} />
+                  </div>
+                  <div className="text-lg font-black text-emerald-300 font-mono mt-1">{counts.completed}</div>
+                </button>
 
-          <button
-            onClick={() => setStatusFilter('Pending')}
-            className={`p-3 rounded-2xl border transition-all text-right ${
-              statusFilter === 'Pending'
-                ? 'bg-purple-500/20 border-purple-500/50 shadow-lg shadow-purple-500/10'
-                : 'bg-white/5 border-white/10 hover:bg-white/10'
-            }`}
-          >
-            <div className="text-xs font-bold text-purple-400 flex items-center justify-between">
-              <span>قيد الانتظار 🕒</span>
-              <AlertCircle size={14} />
-            </div>
-            <div className="text-lg font-black text-purple-300 font-mono mt-1">{counts.pending}</div>
-          </button>
-        </div>
+                <button
+                  onClick={() => setStatusFilter('Pending')}
+                  className={`p-3 rounded-2xl border transition-all text-right cursor-pointer ${
+                    statusFilter === 'Pending'
+                      ? 'bg-purple-500/20 border-purple-500/50 shadow-lg shadow-purple-500/10 scale-[1.02]'
+                      : 'bg-white/5 border-white/10 hover:bg-white/10'
+                  }`}
+                >
+                  <div className="text-xs font-bold text-purple-400 flex items-center justify-between">
+                    <span>قيد الانتظار 🕒</span>
+                    <AlertCircle size={14} />
+                  </div>
+                  <div className="text-lg font-black text-purple-300 font-mono mt-1">{counts.pending}</div>
+                </button>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
 
       {/* Filter Controls Bar */}

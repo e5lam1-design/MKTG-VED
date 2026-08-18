@@ -125,12 +125,33 @@ app.use((req, res, next) => {
   next();
 });
 
-app.get('/api/duration', (req, res) => {
+app.get('/api/duration', async (req, res) => {
   const url = req.query.url;
   if (!url) return res.status(400).json({ error: 'Missing url' });
   if (bunnyCache[url]) {
     return res.json({ duration: bunnyCache[url] });
   }
+
+  try {
+    const fetchRes = await fetch(url, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      }
+    });
+    const text = await fetchRes.text();
+    const durationMatch = text.match(/<meta[^>]*content=["'](\d+)["'][^>]*property=["']video:duration["']/i) ||
+                          text.match(/<meta[^>]*property=["']video:duration["'][^>]*content=["'](\d+)["']/i);
+    if (durationMatch) {
+      const seconds = parseInt(durationMatch[1], 10);
+      if (!isNaN(seconds) && seconds > 0) {
+        const formatted = formatSeconds(seconds);
+        bunnyCache[url] = formatted;
+        saveCache();
+        return res.json({ duration: formatted });
+      }
+    }
+  } catch (e) {}
+
   queueFetch(url);
   res.json({ duration: null, status: 'queued' });
 });

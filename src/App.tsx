@@ -5385,20 +5385,55 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
     }
 
     if (!isDemo && supabase) {
+      // 1. Try reading from dedicated tab_priority_limits table
       supabase
-        .from('dashboard_data')
-        .select('value')
-        .eq('key', 'tab_priority_limits_v1')
-        .maybeSingle()
-        .then(({ data }) => {
-          if (data?.value) {
-            try {
-              const parsed = typeof data.value === 'string' ? JSON.parse(data.value) : data.value;
-              setTabPriorityLimits(prev => ({ ...prev, ...parsed }));
-              localStorage.setItem('tab_priority_limits_v1', JSON.stringify(parsed));
-            } catch {}
+        .from('tab_priority_limits')
+        .select('gid, priority_limit')
+        .then(({ data, error }) => {
+          if (!error && data && data.length > 0) {
+            const map: Record<string, number> = {};
+            data.forEach((r: any) => {
+              if (r.gid) map[r.gid] = Number(r.priority_limit);
+            });
+            setTabPriorityLimits(prev => ({ ...prev, ...map }));
+            localStorage.setItem('tab_priority_limits_v1', JSON.stringify(map));
+          } else {
+            // Fallback to dashboard_data
+            supabase
+              .from('dashboard_data')
+              .select('value')
+              .eq('key', 'tab_priority_limits_v1')
+              .maybeSingle()
+              .then(({ data: dData }) => {
+                if (dData?.value) {
+                  try {
+                    const parsed = typeof dData.value === 'string' ? JSON.parse(dData.value) : dData.value;
+                    setTabPriorityLimits(prev => ({ ...prev, ...parsed }));
+                    localStorage.setItem('tab_priority_limits_v1', JSON.stringify(parsed));
+                  } catch {}
+                }
+              });
           }
         });
+
+      // 2. Realtime Postgres Changes Subscription on tab_priority_limits
+      const tabLimitsChannel = supabase
+        .channel('public:tab_priority_limits')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'tab_priority_limits' }, (payload: any) => {
+          const row = payload.new;
+          if (row && row.gid && row.priority_limit !== undefined) {
+            setTabPriorityLimits(prev => {
+              const next = { ...prev, [row.gid]: Number(row.priority_limit) };
+              localStorage.setItem('tab_priority_limits_v1', JSON.stringify(next));
+              return next;
+            });
+          }
+        })
+        .subscribe();
+
+      return () => {
+        supabase.removeChannel(tabLimitsChannel);
+      };
     }
   }, [isDemo]);
 
@@ -5420,6 +5455,21 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
 
     if (!isDemo && supabase) {
       try {
+        // 1. Direct upsert to tab_priority_limits table
+        supabase
+          .from('tab_priority_limits')
+          .upsert({
+            gid,
+            tab_name: gid === '1535230545' ? 'تجميعات' : (stages.find(s => s.gid === gid)?.label || gid),
+            priority_limit: newLimit,
+            updated_at: new Date().toISOString(),
+            updated_by: profile?.name || profile?.id
+          })
+          .then(({ error }) => {
+            if (error) console.log('tab_priority_limits table upsert info:', error.message);
+          });
+
+        // 2. Also keep dashboard_data in sync
         const val = JSON.stringify(updated);
         const { data: existing } = await supabase
           .from('dashboard_data')

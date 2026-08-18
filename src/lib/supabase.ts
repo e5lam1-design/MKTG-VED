@@ -37,8 +37,8 @@ export type UserProfile = {
 export const DEFAULT_ROLE_PERMISSIONS: Record<Role, PermissionConfig> = {
   admin: { manageUsers: true, addEntry: true, sync: true, editEditors: true, editNotes: true, editBunnyLinks: true, viewAllTabs: true, dailyPriorityLimit: 999, dailyPriorityLimitTagme: 999, dailyPriorityLimitReels: 999 },
   manager: { manageUsers: true, addEntry: true, sync: true, editEditors: true, editNotes: true, editBunnyLinks: true, viewAllTabs: true, dailyPriorityLimit: 999, dailyPriorityLimitTagme: 999, dailyPriorityLimitReels: 999 },
-  supervisor: { manageUsers: false, addEntry: false, sync: true, editEditors: true, editNotes: true, editBunnyLinks: false, viewAllTabs: false, dailyPriorityLimit: 0, dailyPriorityLimitTagme: 0, dailyPriorityLimitReels: 0 },
-  junior: { manageUsers: false, addEntry: false, sync: false, editEditors: false, editNotes: false, editBunnyLinks: false, viewAllTabs: true, dailyPriorityLimit: 1, dailyPriorityLimitTagme: 1, dailyPriorityLimitReels: 1 },
+  supervisor: { manageUsers: false, addEntry: true, sync: true, editEditors: true, editNotes: true, editBunnyLinks: true, viewAllTabs: true, dailyPriorityLimit: 10, dailyPriorityLimitTagme: 10, dailyPriorityLimitReels: 10 },
+  junior: { manageUsers: false, addEntry: true, sync: true, editEditors: true, editNotes: true, editBunnyLinks: true, viewAllTabs: true, dailyPriorityLimit: 10, dailyPriorityLimitTagme: 10, dailyPriorityLimitReels: 10 },
 };
 
 let runtimeRolePermissions: Record<Role, PermissionConfig> = { ...DEFAULT_ROLE_PERMISSIONS };

@@ -78,13 +78,13 @@ const BunnyLinkPill: React.FC<{ task: TaskItem }> = ({ task }) => {
     if (!url) return '0:00:00';
     try {
       const cachedUrl = localStorage.getItem(`dur_${url}`);
-      if (cachedUrl) return cachedUrl;
+      if (cachedUrl && cachedUrl !== '0:00:00' && cachedUrl !== '00:00') return cachedUrl;
       if (task.bunnyVideoId) {
         const cachedId = localStorage.getItem(`dur_${task.bunnyVideoId}`);
-        if (cachedId) return cachedId;
+        if (cachedId && cachedId !== '0:00:00' && cachedId !== '00:00') return cachedId;
       }
     } catch {}
-    return '0:00:00';
+    return '';
   });
 
   useEffect(() => {
@@ -94,14 +94,14 @@ const BunnyLinkPill: React.FC<{ task: TaskItem }> = ({ task }) => {
       fetch(`/api/duration?url=${encodeURIComponent(url)}`)
         .then(res => res.json())
         .then(data => {
-          if (isMounted && data.duration) {
+          if (isMounted && data.duration && data.duration !== '0:00:00') {
             setDuration(data.duration);
             try { 
               localStorage.setItem(`dur_${url}`, data.duration);
               if (task.bunnyVideoId) localStorage.setItem(`dur_${task.bunnyVideoId}`, data.duration);
             } catch {}
-          } else if (isMounted && data.status === 'queued') {
-            setTimeout(fetchDur, 800);
+          } else if (isMounted && (data.status === 'queued' || !data.duration)) {
+            setTimeout(fetchDur, 600);
           }
         })
         .catch(() => {});
@@ -128,7 +128,7 @@ const BunnyLinkPill: React.FC<{ task: TaskItem }> = ({ task }) => {
           {dateDisplay}
         </span>
         <span className="text-[10px] font-black text-emerald-400 flex items-center gap-1 mt-1 leading-none font-mono whitespace-nowrap group-hover/pill:text-emerald-300">
-          ⏱️ {duration && duration !== '0:00:00' ? duration : (duration || '0:00:00')}
+          ⏱️ {duration || '...'}
         </span>
       </a>
     );

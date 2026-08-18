@@ -75,7 +75,7 @@ const BunnyLinkPill: React.FC<{ task: TaskItem }> = ({ task }) => {
     : '---';
 
   const [duration, setDuration] = useState<string>(() => {
-    if (!url) return '';
+    if (!url) return '0:00:00';
     try {
       const cachedUrl = localStorage.getItem(`dur_${url}`);
       if (cachedUrl) return cachedUrl;
@@ -84,7 +84,7 @@ const BunnyLinkPill: React.FC<{ task: TaskItem }> = ({ task }) => {
         if (cachedId) return cachedId;
       }
     } catch {}
-    return '';
+    return '0:00:00';
   });
 
   useEffect(() => {
@@ -101,7 +101,7 @@ const BunnyLinkPill: React.FC<{ task: TaskItem }> = ({ task }) => {
               if (task.bunnyVideoId) localStorage.setItem(`dur_${task.bunnyVideoId}`, data.duration);
             } catch {}
           } else if (isMounted && data.status === 'queued') {
-            setTimeout(fetchDur, 1000);
+            setTimeout(fetchDur, 800);
           }
         })
         .catch(() => {});
@@ -128,7 +128,7 @@ const BunnyLinkPill: React.FC<{ task: TaskItem }> = ({ task }) => {
           {dateDisplay}
         </span>
         <span className="text-[10px] font-black text-emerald-400 flex items-center gap-1 mt-1 leading-none font-mono whitespace-nowrap group-hover/pill:text-emerald-300">
-          ⏱️ {duration || 'Bunny'}
+          ⏱️ {duration && duration !== '0:00:00' ? duration : (duration || '0:00:00')}
         </span>
       </a>
     );

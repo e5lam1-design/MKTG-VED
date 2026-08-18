@@ -64,14 +64,23 @@ export const getTargetStage26 = (item: any) => {
   return { gid: '1877995166', label: 'Junior 4', year: 'j4' };
 };
 
-const VideoDuration: React.FC<{ url: string; fallback?: string }> = ({ url, fallback = '0:00:00' }) => {
-  const [duration, setDuration] = useState(() => {
-    if (!url) return fallback;
+const BunnyLinkPill: React.FC<{ task: TaskItem }> = ({ task }) => {
+  const url = task.bunnyVideoId && task.bunnyLibraryId
+    ? `https://video.bunnycdn.com/play/${task.bunnyLibraryId}/${task.bunnyVideoId}`
+    : '';
+
+  const rawDate = task.dueDate || task.startDate;
+  const dateDisplay = rawDate
+    ? (rawDate.includes('T') ? rawDate.split('T')[0] : rawDate)
+    : '---';
+
+  const [duration, setDuration] = useState<string>(() => {
+    if (!url) return '0:00:00';
     try {
       const cached = localStorage.getItem(`dur_${url}`);
       if (cached) return cached;
     } catch {}
-    return fallback;
+    return '0:00:00';
   });
 
   useEffect(() => {
@@ -92,7 +101,65 @@ const VideoDuration: React.FC<{ url: string; fallback?: string }> = ({ url, fall
     };
   }, [url]);
 
-  return <span className="whitespace-nowrap">⏱️ {duration}</span>;
+  const hasRealDuration = duration && duration !== '0:00:00' && duration !== '00:00' && duration !== '0:00' && duration !== '---' && duration !== '0:00:00:00';
+  const isFilmed = Boolean(url && hasRealDuration);
+
+  // 1. Filmed & Uploaded (Real duration exists) -> Green Capsule (الأخضر)
+  if (isFilmed && url) {
+    return (
+      <a
+        href={url}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="px-4 py-2 rounded-2xl bg-emerald-950/40 hover:bg-emerald-900/50 border border-emerald-500/40 hover:border-emerald-500/70 transition-all inline-flex flex-col items-center gap-0.5 shadow-md shadow-emerald-500/10 hover:scale-105 active:scale-95 cursor-pointer min-w-[110px] group/pill"
+        title="تم التصوير ✓ (اضغط لمشاهدة الفيديو على Bunny)"
+      >
+        <span className="text-[11px] font-black text-emerald-300 font-mono leading-none flex items-center gap-1.5">
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0 shadow-[0_0_8px_rgba(52,211,153,0.9)] animate-pulse"></span>
+          {dateDisplay}
+        </span>
+        <span className="text-[10px] font-black text-emerald-400 flex items-center gap-1 mt-1 leading-none font-mono whitespace-nowrap group-hover/pill:text-emerald-300">
+          ⏱️ {duration}
+        </span>
+      </a>
+    );
+  }
+
+  // 2. Pending / Not Filmed Yet (Duration is 0 or no link) -> Yellow/Amber Capsule (الأصفر)
+  if (url) {
+    return (
+      <a
+        href={url}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="px-4 py-2 rounded-2xl bg-amber-950/30 hover:bg-amber-900/40 border border-amber-500/35 hover:border-amber-500/60 transition-all inline-flex flex-col items-center gap-0.5 shadow-sm hover:scale-105 active:scale-95 cursor-pointer min-w-[110px]"
+        title="قيد التصوير / جاري معالجة الفيديو"
+      >
+        <span className="text-[11px] font-black text-amber-300 font-mono leading-none flex items-center gap-1.5">
+          <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0"></span>
+          {dateDisplay}
+        </span>
+        <span className="text-[10px] font-bold text-amber-400 mt-1 leading-none font-mono whitespace-nowrap">
+          ⏱️ {duration || '0:00:00'}
+        </span>
+      </a>
+    );
+  }
+
+  return (
+    <div
+      className="px-4 py-2 rounded-2xl bg-amber-950/20 border border-amber-500/25 inline-flex flex-col items-center gap-0.5 min-w-[110px] opacity-90 shadow-sm"
+      title="قيد التصوير / لم يصور بعد"
+    >
+      <span className="text-[11px] font-black text-amber-300/90 font-mono leading-none flex items-center gap-1.5">
+        <span className="w-1.5 h-1.5 rounded-full bg-amber-400/80 shrink-0"></span>
+        {dateDisplay}
+      </span>
+      <span className="text-[10px] font-bold text-amber-400/90 mt-1 leading-none font-mono whitespace-nowrap">
+        ⏱️ 0:00:00
+      </span>
+    </div>
+  );
 };
 
 export const Op27View: React.FC<Op27ViewProps> = ({ onNavigateToStage, onExecuteMergeToStage }) => {
@@ -744,34 +811,7 @@ export const Op27View: React.FC<Op27ViewProps> = ({ onNavigateToStage, onExecute
 
                       {/* Link Bunny / Date Column */}
                       <td className="px-3 py-5 text-center">
-                        {task.bunnyVideoId ? (
-                          <a
-                            href={`https://video.bunnycdn.com/play/${task.bunnyLibraryId}/${task.bunnyVideoId}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="px-4 py-2 rounded-2xl bg-purple-950/40 hover:bg-purple-900/50 border border-purple-500/30 hover:border-purple-500/50 transition-all inline-flex flex-col items-center gap-0.5 shadow-md hover:scale-105 active:scale-95 cursor-pointer min-w-[105px]"
-                            title="مشاهدة الفيديو على Bunny"
-                          >
-                            <span className="text-[11px] font-black text-purple-300 font-mono leading-none">
-                              {task.dueDate || task.startDate || '12/30/2025'}
-                            </span>
-                            <span className="text-[10px] font-black text-purple-400 flex items-center gap-1 mt-1 leading-none font-mono whitespace-nowrap">
-                              <VideoDuration 
-                                url={`https://video.bunnycdn.com/play/${task.bunnyLibraryId}/${task.bunnyVideoId}`} 
-                                fallback="Bunny Video" 
-                              />
-                            </span>
-                          </a>
-                        ) : (
-                          <div className="px-4 py-2 rounded-2xl bg-purple-950/20 border border-purple-500/20 inline-flex flex-col items-center gap-0.5 opacity-60 min-w-[105px]">
-                            <span className="text-[11px] font-black text-purple-300 font-mono leading-none">
-                              {task.dueDate || task.startDate || '---'}
-                            </span>
-                            <span className="text-[10px] font-bold text-purple-400 mt-1 leading-none font-mono">
-                              ⏱️ 0:00:00
-                            </span>
-                          </div>
-                        )}
+                        <BunnyLinkPill task={task} />
                       </td>
 
                       {/* Publish Youtube Column */}

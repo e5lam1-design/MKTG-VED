@@ -2003,8 +2003,13 @@ const parseScriptValue = (val: string) => {
 };
 
 // ─── REELS Row (Shooting, Ve, Counter) ────────────────────────────────────────
-const ShootingRow = ({ item, index, activeGid, onToggleFilmed, loadingFilmedCode, onUpdateShootingRow, liveData, optionsLists, autofillDrag, setAutofillDrag, onApplyAutofill, activeCell, setActiveCell, toast, isSubscribed, onToggleSubscribe, isSimple }: any) => {
+const ShootingRow = ({ item, index, activeGid, onToggleFilmed, loadingFilmedCode, onUpdateShootingRow, onToggleEditCheck, liveData, optionsLists, autofillDrag, setAutofillDrag, onApplyAutofill, activeCell, setActiveCell, toast, isSubscribed, onToggleSubscribe, isSimple }: any) => {
   const isGlowing = false;
+  const [isEditChecked, setIsEditChecked] = useState(Boolean(item.editCheck || item.edit_check));
+  useEffect(() => {
+    setIsEditChecked(Boolean(item.editCheck || item.edit_check));
+  }, [item.editCheck, item.edit_check]);
+
   const [editForm, setEditForm] = useState({
     branch: item.branch || '',
     year: item.year || '',
@@ -2630,40 +2635,25 @@ const ShootingRow = ({ item, index, activeGid, onToggleFilmed, loadingFilmedCode
           {activeGid === '1939073164' && (
             <td className="px-3 py-5 text-center">
               <button
-                disabled={Boolean(item.editCheck || item.edit_check)}
+                disabled={isEditChecked}
                 onClick={async () => {
-                  if (item.editCheck || item.edit_check) return;
+                  if (isEditChecked) return;
                   const rowCode = item.code || item.id;
                   if (!rowCode) { alert("لا يمكن تعديل هذا الصف لعدم وجود كود (Code)"); return; }
                   
-                  // Optimistic UI update: editCheck = true, and uncheck done if it was done!
-                  setReelsDbRows(prev => prev.map(r => (r.code === rowCode || r.id === rowCode) ? { ...r, editCheck: true, edit_check: true, done: false } : r));
-                  setLiveData((prev: any[]) => prev.map((r: any) => (r.code === rowCode || r.id === rowCode) ? { ...r, editCheck: true, edit_check: true, done: false } : r));
-                  
-                  if (!isDemo) {
-                    try {
-                      await supabase
-                        .from('reels_ve_26')
-                        .update({ 
-                          edit_check: true, 
-                          done: false, 
-                          updated_at: new Date().toISOString() 
-                        })
-                        .eq('code', rowCode);
-                      toast.success("⚠️ تم تسجيل طلب التعديل (EDIT) وإلغاء اكتمال المهمة!");
-                    } catch (e: any) {
-                      console.error("Error updating edit_check in reels_ve_26:", e);
-                    }
+                  setIsEditChecked(true);
+                  if (onToggleEditCheck) {
+                    onToggleEditCheck(item, true);
                   }
                 }}
                 className={`w-6 h-6 rounded-md flex items-center justify-center mx-auto transition-all duration-300 ${
-                  (item.editCheck || item.edit_check)
-                    ? 'bg-amber-500 text-white shadow-[0_0_10px_rgba(245,158,11,0.5)] cursor-default'
-                    : 'bg-white/10 text-muted hover:bg-amber-500/30 hover:text-amber-300 cursor-pointer'
+                  isEditChecked
+                    ? 'bg-blue-600 text-white shadow-[0_0_12px_rgba(37,99,235,0.6)] cursor-default'
+                    : 'bg-white/10 text-muted hover:bg-blue-500/30 hover:text-blue-300 cursor-pointer'
                 }`}
-                title={(item.editCheck || item.edit_check) ? "تم طلب تعديل (مغلق)" : "طلب تعديل (EDIT)"}
+                title={isEditChecked ? "تم طلب تعديل (مغلق)" : "طلب تعديل (EDIT)"}
               >
-                {(item.editCheck || item.edit_check) ? <CheckCircle2 size={14} /> : null}
+                {isEditChecked ? <CheckCircle2 size={14} /> : null}
               </button>
             </td>
           )}
@@ -6473,6 +6463,41 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
     }
   };
 
+  const handleToggleEditCheck = async (item: any, nextVal: boolean) => {
+    const rowCode = item.code || item.id;
+    if (!rowCode) return;
+
+    // 1. Optimistic UI update: editCheck = true, and uncheck done if it was done!
+    setReelsDbRows(prev => prev.map(r => (r.code === rowCode || r.id === rowCode) ? { ...r, editCheck: true, edit_check: true, done: false } : r));
+    setLiveData((prev: any[]) => {
+      if (!Array.isArray(prev)) return prev;
+      return prev.map((r: any) => (r.code === rowCode || r.id === rowCode) ? { ...r, editCheck: true, edit_check: true, done: false } : r);
+    });
+
+    // 2. Direct Supabase update
+    if (!isDemo) {
+      try {
+        const { error } = await supabase
+          .from('reels_ve_26')
+          .update({ 
+            edit_check: true, 
+            done: false, 
+            updated_at: new Date().toISOString() 
+          })
+          .eq('code', rowCode);
+
+        if (error) {
+          console.error("Error updating edit_check in reels_ve_26:", error);
+          toast.error(`خطأ أثناء الحفظ في قاعدة البيانات: ${error.message}`);
+        } else {
+          toast.success("⚠️ تم تسجيل طلب التعديل (EDIT) وإعادة فتح المهمة!");
+        }
+      } catch (err: any) {
+        console.error(err);
+      }
+    }
+  };
+
   const handleTagmeToggle = (item: any, sheetLabel: string, isChecked: boolean) => {
     const rawKey = item.uniqueKey || generateKey(item);
     const uniqueKey = 'tgm-' + rawKey;
@@ -9230,7 +9255,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
                         />;
                       }
                       if (['1436746012', '1939073164', '798246690'].includes(activeGid)) {
-                        return <ShootingRow key={idx} item={item} index={idx} activeGid={activeGid} onToggleFilmed={handleFilmedToggle} loadingFilmedCode={loadingFilmedCode} onUpdateShootingRow={handleUpdateShootingRow} liveData={liveData} optionsLists={{ branches: uniqueBranches, years: uniqueYears, teachers: uniqueTeachers, extraNames: uniqueExtraNames, types: uniqueTypes, formats: uniqueFormats, bys: uniqueBys, storages: uniqueStorages, editors: editorsList }} autofillDrag={autofillDrag} setAutofillDrag={setAutofillDrag} onApplyAutofill={handleApplyAutofill} activeCell={activeCell} setActiveCell={setActiveCell} toast={toast} isSubscribed={subscribedTasks.includes(item.id)} onToggleSubscribe={toggleSubscribe} isSimple={activeGid === '1939073164' && veViewMode === 'SIMPLE'} />;
+                        return <ShootingRow key={idx} item={item} index={idx} activeGid={activeGid} onToggleFilmed={handleFilmedToggle} onToggleEditCheck={handleToggleEditCheck} loadingFilmedCode={loadingFilmedCode} onUpdateShootingRow={handleUpdateShootingRow} liveData={liveData} optionsLists={{ branches: uniqueBranches, years: uniqueYears, teachers: uniqueTeachers, extraNames: uniqueExtraNames, types: uniqueTypes, formats: uniqueFormats, bys: uniqueBys, storages: uniqueStorages, editors: editorsList }} autofillDrag={autofillDrag} setAutofillDrag={setAutofillDrag} onApplyAutofill={handleApplyAutofill} activeCell={activeCell} setActiveCell={setActiveCell} toast={toast} isSubscribed={subscribedTasks.includes(item.id)} onToggleSubscribe={toggleSubscribe} isSimple={activeGid === '1939073164' && veViewMode === 'SIMPLE'} />;
                       }
                       return <StageRow key={idx} item={item} index={idx} tagmeTransfers={tagmeTransfers} onTagmeToggle={handleTagmeToggle} activeLabel={activeLabel} isGlowing={isGlowing} onUpdateDate={handleUpdateDate} onUpdateWeek={handleUpdateWeek} onUpdateThumbnailLink={handleUpdateThumbnailLink} onUpdateTime={handleUpdateTime} onUpdateYoutubeLink={handleUpdateYoutubeLink} onUpdateUploaded={handleUpdateUploaded} onToggleDelivered={handleToggleDelivered} />;
                     }) : (

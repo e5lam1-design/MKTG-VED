@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Search, 
@@ -176,6 +176,20 @@ export const Op27View: React.FC<Op27ViewProps> = ({ onNavigateToStage, onExecute
   const [teacherFilter, setTeacherFilter] = useState('All');
   const [subjectFilter, setSubjectFilter] = useState('All');
   const [statusFilter, setStatusFilter] = useState('All');
+  const [bunnyFilter, setBunnyFilter] = useState<'All' | 'HasLink' | 'NoLink'>('All');
+  const [showBunnyDropdown, setShowBunnyDropdown] = useState(false);
+  const bunnyDropdownRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (bunnyDropdownRef.current && !bunnyDropdownRef.current.contains(e.target as Node)) {
+        setShowBunnyDropdown(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
   const [bypassTeacherSelection, setBypassTeacherSelection] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [selectedTasks, setSelectedTasks] = useState<string[]>([]);
@@ -184,7 +198,7 @@ export const Op27View: React.FC<Op27ViewProps> = ({ onNavigateToStage, onExecute
       const saved = localStorage.getItem('op27_show_stats');
       if (saved !== null) return saved === 'true';
     } catch {}
-    return true;
+    return false; // Default collapsed
   });
 
   const toggleStats = () => {
@@ -261,26 +275,8 @@ export const Op27View: React.FC<Op27ViewProps> = ({ onNavigateToStage, onExecute
     return Array.from(set).sort();
   }, [tasks]);
 
-  // Status counts
-  const counts = useMemo(() => {
-    let all = tasks.length;
-    let pending = 0;
-    let inProgress = 0;
-    let completed = 0;
-    let cancelled = 0;
-
-    tasks.forEach(t => {
-      if (t.status === 'Completed') completed++;
-      else if (t.status === 'In Progress') inProgress++;
-      else if (t.status === 'Cancelled') cancelled++;
-      else pending++;
-    });
-
-    return { all, pending, inProgress, completed, cancelled };
-  }, [tasks]);
-
-  // Filtered tasks
-  const filteredTasks = useMemo(() => {
+  // Tasks matching current context filters (teacher, stage, subject, search, status) BEFORE bunny filter:
+  const baseContextTasks = useMemo(() => {
     return tasks.filter(t => {
       // Search
       if (searchQuery.trim()) {
@@ -310,6 +306,50 @@ export const Op27View: React.FC<Op27ViewProps> = ({ onNavigateToStage, onExecute
       return true;
     });
   }, [tasks, searchQuery, stageFilter, teacherFilter, subjectFilter, statusFilter]);
+
+  // Bunny Link counts based on active context (selected teacher / stage / search / etc.):
+  const bunnyCounts = useMemo(() => {
+    let hasLink = 0;
+    let noLink = 0;
+    baseContextTasks.forEach(t => {
+      if (t.bunnyVideoId && t.bunnyLibraryId) hasLink++;
+      else noLink++;
+    });
+    return { 
+      total: baseContextTasks.length,
+      hasLink, 
+      noLink 
+    };
+  }, [baseContextTasks]);
+
+  // Status counts
+  const counts = useMemo(() => {
+    let all = tasks.length;
+    let pending = 0;
+    let inProgress = 0;
+    let completed = 0;
+    let cancelled = 0;
+
+    tasks.forEach(t => {
+      if (t.status === 'Completed') completed++;
+      else if (t.status === 'In Progress') inProgress++;
+      else if (t.status === 'Cancelled') cancelled++;
+      else pending++;
+    });
+
+    return { all, pending, inProgress, completed, cancelled };
+  }, [tasks]);
+
+  // Filtered tasks (after applying bunny filter):
+  const filteredTasks = useMemo(() => {
+    if (bunnyFilter === 'All') return baseContextTasks;
+    return baseContextTasks.filter(t => {
+      const hasLink = Boolean(t.bunnyVideoId && t.bunnyLibraryId);
+      if (bunnyFilter === 'HasLink') return hasLink;
+      if (bunnyFilter === 'NoLink') return !hasLink;
+      return true;
+    });
+  }, [baseContextTasks, bunnyFilter]);
 
   const selectedTaskObjects = useMemo(() => {
     return tasks.filter(t => selectedTasks.includes(t.id));
@@ -618,6 +658,45 @@ export const Op27View: React.FC<Op27ViewProps> = ({ onNavigateToStage, onExecute
           ))}
         </select>
 
+        {/* Bunny Link Filter Pills */}
+        <div className="flex items-center gap-1 bg-white/5 border border-white/10 p-1 rounded-xl">
+          <button
+            onClick={() => setBunnyFilter('All')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+              bunnyFilter === 'All'
+                ? 'bg-blue-600 text-white shadow-sm font-black scale-105'
+                : 'text-muted hover:text-white'
+            }`}
+            title="عرض جميع الدروس"
+          >
+            الكل ({bunnyCounts.total})
+          </button>
+          <button
+            onClick={() => setBunnyFilter('HasLink')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+              bunnyFilter === 'HasLink'
+                ? 'bg-emerald-600 text-white shadow-sm font-black scale-105'
+                : 'text-emerald-400/80 hover:text-emerald-300 hover:bg-emerald-500/10'
+            }`}
+            title="فلترة الدروس التي تم رفعها ولها لينك Bunny"
+          >
+            <span className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.8)] animate-pulse"></span>
+            <span>له لينك 🟢 ({bunnyCounts.hasLink})</span>
+          </button>
+          <button
+            onClick={() => setBunnyFilter('NoLink')}
+            className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+              bunnyFilter === 'NoLink'
+                ? 'bg-amber-600 text-white shadow-sm font-black scale-105'
+                : 'text-amber-400/80 hover:text-amber-300 hover:bg-amber-500/10'
+            }`}
+            title="فلترة الدروس التي لم تُرفع بعد / قيد التصوير"
+          >
+            <span className="w-2 h-2 rounded-full bg-amber-400"></span>
+            <span>بدون لينك 🟡 ({bunnyCounts.noLink})</span>
+          </button>
+        </div>
+
         <div className="text-xs text-muted font-mono font-bold mr-auto">
           النتائج: <span className="text-blue-400">{filteredTasks.length}</span>
         </div>
@@ -745,10 +824,69 @@ export const Op27View: React.FC<Op27ViewProps> = ({ onNavigateToStage, onExecute
                       SMARTBOARD
                     </span>
                   </th>
-                  <th className="w-[14%] px-3 py-5 text-center">
-                    <span className="inline-block px-3 py-1 rounded-lg bg-white/5 border border-white/10 text-white font-mono text-[10px]">
-                      LINK BUNNY
-                    </span>
+                  <th className="w-[14%] px-3 py-5 text-center relative">
+                    <div ref={bunnyDropdownRef} className="inline-block relative">
+                      <button
+                        onClick={() => setShowBunnyDropdown(prev => !prev)}
+                        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border font-mono text-[10px] font-bold transition-all cursor-pointer shadow-sm ${
+                          bunnyFilter === 'HasLink'
+                            ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-300 shadow-emerald-500/10'
+                            : bunnyFilter === 'NoLink'
+                            ? 'bg-amber-500/20 border-amber-500/50 text-amber-300 shadow-amber-500/10'
+                            : 'bg-white/5 border-white/10 text-white hover:bg-white/10 hover:border-blue-500/50'
+                        }`}
+                        title="فلترة حالة روابط Bunny"
+                      >
+                        <span>LINK BUNNY</span>
+                        {bunnyFilter === 'HasLink' && <span className="w-2 h-2 rounded-full bg-emerald-400"></span>}
+                        {bunnyFilter === 'NoLink' && <span className="w-2 h-2 rounded-full bg-amber-400"></span>}
+                        <ChevronDown size={12} className={`transition-transform duration-200 ${showBunnyDropdown ? 'rotate-180 text-blue-400' : 'text-muted'}`} />
+                      </button>
+
+                      {showBunnyDropdown && (
+                        <div className="absolute top-full mt-2 left-1/2 -translate-x-1/2 bg-[#0e1420] border border-white/15 rounded-2xl shadow-2xl p-1.5 z-50 min-w-[175px] flex flex-col gap-1 backdrop-blur-xl animate-fadeIn" dir="rtl">
+                          <button
+                            onClick={() => { setBunnyFilter('All'); setShowBunnyDropdown(false); }}
+                            className={`flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                              bunnyFilter === 'All'
+                                ? 'bg-blue-600/30 text-blue-300 border border-blue-500/40'
+                                : 'text-muted hover:bg-white/5 hover:text-white'
+                            }`}
+                          >
+                            <span>عرض الكل</span>
+                            <span className="font-mono text-[11px] opacity-75">({bunnyCounts.total})</span>
+                          </button>
+                          <button
+                            onClick={() => { setBunnyFilter('HasLink'); setShowBunnyDropdown(false); }}
+                            className={`flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                              bunnyFilter === 'HasLink'
+                                ? 'bg-emerald-600/30 text-emerald-300 border border-emerald-500/40'
+                                : 'text-emerald-400/80 hover:bg-emerald-500/10 hover:text-emerald-300'
+                            }`}
+                          >
+                            <div className="flex items-center gap-1.5">
+                              <span className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.8)]"></span>
+                              <span>له لينك 🟢</span>
+                            </div>
+                            <span className="font-mono text-[11px] opacity-75">({bunnyCounts.hasLink})</span>
+                          </button>
+                          <button
+                            onClick={() => { setBunnyFilter('NoLink'); setShowBunnyDropdown(false); }}
+                            className={`flex items-center justify-between px-3 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                              bunnyFilter === 'NoLink'
+                                ? 'bg-amber-600/30 text-amber-300 border border-amber-500/40'
+                                : 'text-amber-400/80 hover:bg-amber-500/10 hover:text-amber-300'
+                            }`}
+                          >
+                            <div className="flex items-center gap-1.5">
+                              <span className="w-2 h-2 rounded-full bg-amber-400"></span>
+                              <span>بدون لينك 🟡</span>
+                            </div>
+                            <span className="font-mono text-[11px] opacity-75">({bunnyCounts.noLink})</span>
+                          </button>
+                        </div>
+                      )}
+                    </div>
                   </th>
                   <th className="w-[8%] px-3 py-5 text-center text-purple-400 font-black arabic-text">
                     نشر يوتيوب

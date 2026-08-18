@@ -873,7 +873,7 @@ const getChipColor = (val: string) => {
   if (upper.includes('علوم') || upper.includes('KIRO') || upper.includes('COMPLETED') || upper.includes('SMARTBOARD')) return { bg: 'bg-blue-500/10', text: 'text-blue-400', border: 'border-blue-500/20', dot: '#3b82f6' };
   if (upper.includes('ماث') || upper.includes('2025') || upper.includes('BASEL') || upper.includes('URGENT') || upper.includes('CANCEL')) return { bg: 'bg-rose-500/10', text: 'text-rose-400', border: 'border-rose-500/20', dot: '#f43f5e' };
   if (upper.includes('2026/2027') || upper.includes('OP 26/27') || upper.includes('26/27')) return { bg: 'bg-blue-600/20 shadow-[0_0_12px_rgba(59,130,246,0.25)]', text: 'text-blue-300 font-black', border: 'border-blue-500/40', dot: '#3b82f6' };
-  if (upper.includes('2025/2026') || upper.includes('العمليات')) return { bg: 'bg-purple-600/20 shadow-[0_0_12px_rgba(147,51,234,0.25)]', text: 'text-purple-300 font-black', border: 'border-purple-500/40', dot: '#9333ea' };
+  if (upper.includes('2025/2026') || upper.includes('OP 25/26') || upper.includes('25/26') || upper.includes('العمليات') || upper.includes('OPERATIONS')) return { bg: 'bg-purple-600/20 shadow-[0_0_12px_rgba(147,51,234,0.25)]', text: 'text-purple-300 font-black', border: 'border-purple-500/40', dot: '#9333ea' };
   if (upper.includes('رياضه') || upper.includes('PENDING') || upper.includes('IN PROGRESS')) return { bg: 'bg-amber-500/10', text: 'text-amber-400', border: 'border-amber-500/20', dot: '#f59e0b' };
   if (upper.includes('ساينس') || upper.includes('HASSANEN') || upper.includes('DONE')) return { bg: 'bg-emerald-500/10', text: 'text-emerald-400', border: 'border-emerald-500/20', dot: '#10b981' };
   if (upper.includes('دراسات') || upper.includes('LOW')) return { bg: 'bg-orange-500/10', text: 'text-orange-400', border: 'border-orange-500/20', dot: '#f97316' };
@@ -3691,7 +3691,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
   const getInitialLabel = (mode: 'OP' | 'REELS' | 'DESIGNERS') => {
     if (mode === 'REELS') return 'Shooting';
     if (mode === 'DESIGNERS') return 'Designers';
-    return 'Operations';
+    return 'OP 25/26';
   };
 
   const initialMode = getInitialMode();
@@ -6845,7 +6845,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
   };
 
   const stages = [
-    { label: 'Operations', gid: '1476192399', icon: Briefcase, colorHex: '#8b5cf6' },
+    { label: 'OP 25/26', gid: '1476192399', icon: Briefcase, colorHex: '#8b5cf6' },
     { label: 'OP 26/27', gid: 'op_27', icon: Briefcase, colorHex: '#3b82f6' },
     { label: 'تجميعات', gid: '1535230545', icon: Layers, colorHex: '#10b981' },
     { label: 'Junior 4', gid: '497207661', icon: GraduationCap, colorHex: '#b49fee' },
@@ -7572,7 +7572,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
 
           {/* Mode Selector (Segmented control between Operations, Reels, and Designers) */}
           {(() => {
-            const MARKETING_LABELS = ['Operations','OP 26/27','تجميعات','إحصائيات التجميعات 📊','Junior 4','Junior 5','Junior 6','Middle 1','Middle 2','Middle 3','Senior 1','Senior 2','Senior 3'];
+            const MARKETING_LABELS = ['OP 25/26','Operations','OP 26/27','تجميعات','إحصائيات التجميعات 📊','Junior 4','Junior 5','Junior 6','Middle 1','Middle 2','Middle 3','Senior 1','Senior 2','Senior 3'];
             const REELS_LABELS = ['Shooting','Ve','CUTS','احصائيات الريلز'];
             const DESIGNERS_LABELS = ['Designers','احصائيات تصاميم','إدارة الفريق والقوائم'];
             const tabs = profile?.allowed_tabs ?? [];

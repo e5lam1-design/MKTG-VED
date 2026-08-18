@@ -63,7 +63,16 @@ export const PERMISSIONS = {
     const tabs = Array.isArray(allowedTabs) ? allowedTabs : [];
     if (tabs.length > 0) {
       if (tabs.includes('all') || tabs.includes('*')) return true;
-      return tabs.some(t => String(t).trim().toLowerCase() === String(tab).trim().toLowerCase());
+      const lowerTab = String(tab).trim().toLowerCase();
+      return tabs.some(t => {
+        const lowerT = String(t).trim().toLowerCase();
+        if (lowerT === lowerTab) return true;
+        if ((lowerT === 'operations' || lowerT === 'op 25/26' || lowerT === 'op 25 / 26') && 
+            (lowerTab === 'operations' || lowerTab === 'op 25/26' || lowerTab === 'op 25 / 26')) {
+          return true;
+        }
+        return false;
+      });
     }
     // Empty allowed_tabs = fallback to role-based permission
     return rolePerm(role)?.viewAllTabs ?? true;

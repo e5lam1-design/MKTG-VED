@@ -2341,7 +2341,7 @@ const ShootingRow = ({ item, index, activeGid, onToggleFilmed, loadingFilmedCode
           className={`w-6 h-6 rounded-md flex items-center justify-center mx-auto transition-all duration-300 ${activeGid === '1939073164' ? 'cursor-default' : 'cursor-pointer'} ${loadingFilmedCode === (item.code || item.id) && activeGid !== '1939073164' ? 'opacity-50 pointer-events-none' : ''} ${
             (editForm.filmed || activeGid === '1939073164') ? 'bg-emerald-500 text-white shadow-[0_0_10px_rgba(16,185,129,0.5)]' : 'bg-white/10 text-muted hover:bg-emerald-500/30 hover:text-emerald-300'
           }`}
-          title="EDIT"
+          title="اتصور"
         >
           {loadingFilmedCode === (item.code || item.id) && activeGid !== '1939073164' ? (
             <span className="w-3 h-3 border-2 border-white/50 border-t-white rounded-full animate-spin"></span>
@@ -7288,7 +7288,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
         <th className="px-8 py-4 text-right th-style">السكريبت</th>
         <th className="px-3 py-4 text-center th-style"><ColFilter colKey="type" label="النوع" /></th>
         <th className="px-3 py-4 text-center th-style"><ColFilter colKey="format" label="المقاس" /></th>
-        <th className="px-3 py-4 text-center th-style">EDIT</th>
+        <th className="px-3 py-4 text-center th-style">اتصور</th>
         <th className="px-5 py-4 text-center th-style">NOTES</th>
         <th className="px-4 py-4 text-center th-style">Drive Link (Raw)</th>
         <th className="px-4 py-4 text-center th-style"><ColFilter colKey="editorCol" label="EDITOR" /></th>
@@ -7311,7 +7311,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
         <th className="px-8 py-4 text-right th-style">السكريبت</th>
         <th className="px-3 py-4 text-center th-style"><ColFilter colKey="type" label="النوع" /></th>
         <th className="px-3 py-4 text-center th-style"><ColFilter colKey="format" label="المقاس" /></th>
-        <th className="px-3 py-4 text-center th-style">EDIT</th>
+        <th className="px-3 py-4 text-center th-style">اتصور</th>
         <th className="px-4 py-4 text-center th-style">تاريخ التصوير</th>
         <th className="px-3 py-4 text-center th-style"><ColFilter colKey="by" label="BY" /></th>
         <th className="px-4 py-4 text-center th-style"><ColFilter colKey="storage" label="STORAGE" /></th>

@@ -2626,6 +2626,47 @@ const ShootingRow = ({ item, index, activeGid, onToggleFilmed, loadingFilmedCode
               {isCanceled && (activeGid === '798246690' ? <AlertCircle size={14} /> : <XCircle size={14} />)}
             </button>
           </td>
+          {/* EDIT Checkmark (طلب تعديل) - VE only: clicked once, cannot be unclicked, unchecks DONE */}
+          {activeGid === '1939073164' && (
+            <td className="px-3 py-5 text-center">
+              <button
+                disabled={Boolean(item.editCheck || item.edit_check)}
+                onClick={async () => {
+                  if (item.editCheck || item.edit_check) return;
+                  const rowCode = item.code || item.id;
+                  if (!rowCode) { alert("لا يمكن تعديل هذا الصف لعدم وجود كود (Code)"); return; }
+                  
+                  // Optimistic UI update: editCheck = true, and uncheck done if it was done!
+                  setReelsDbRows(prev => prev.map(r => (r.code === rowCode || r.id === rowCode) ? { ...r, editCheck: true, edit_check: true, done: false } : r));
+                  setLiveData((prev: any[]) => prev.map((r: any) => (r.code === rowCode || r.id === rowCode) ? { ...r, editCheck: true, edit_check: true, done: false } : r));
+                  
+                  if (!isDemo) {
+                    try {
+                      await supabase
+                        .from('reels_ve_26')
+                        .update({ 
+                          edit_check: true, 
+                          done: false, 
+                          updated_at: new Date().toISOString() 
+                        })
+                        .eq('code', rowCode);
+                      toast.success("⚠️ تم تسجيل طلب التعديل (EDIT) وإلغاء اكتمال المهمة!");
+                    } catch (e: any) {
+                      console.error("Error updating edit_check in reels_ve_26:", e);
+                    }
+                  }
+                }}
+                className={`w-6 h-6 rounded-md flex items-center justify-center mx-auto transition-all duration-300 ${
+                  (item.editCheck || item.edit_check)
+                    ? 'bg-amber-500 text-white shadow-[0_0_10px_rgba(245,158,11,0.5)] cursor-default'
+                    : 'bg-white/10 text-muted hover:bg-amber-500/30 hover:text-amber-300 cursor-pointer'
+                }`}
+                title={(item.editCheck || item.edit_check) ? "تم طلب تعديل (مغلق)" : "طلب تعديل (EDIT)"}
+              >
+                {(item.editCheck || item.edit_check) ? <CheckCircle2 size={14} /> : null}
+              </button>
+            </td>
+          )}
         </>
       )}
       <td className="px-4 py-5 text-center">
@@ -4437,6 +4478,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
             driveFinal: i.drive_final || '',
             canceled: i.canceled === true,
             missingDetails: i.missing_details === true,
+            editCheck: i.edit_check === true,
             publish: i.publish === true || i.is_published === true || i.check === true,
             sharedLink: i.shared_link || '',
             uniqueKey: i.code,
@@ -4579,6 +4621,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
                 driveFinal: i.drive_final || '',
                 canceled: i.canceled === true,
                 missingDetails: i.missing_details === true,
+                editCheck: i.edit_check === true,
                 publish: i.publish === true || i.is_published === true || i.check === true,
                 sharedLink: i.shared_link || '',
                 uniqueKey: i.code,
@@ -7295,6 +7338,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
         <th className="px-3 py-4 text-center th-style">تفاصيل ناقصة</th>
         <th className="px-3 py-4 text-center th-style">DONE?</th>
         <th className="px-3 py-4 text-center th-style">Cancel</th>
+        <th className="px-3 py-4 text-center th-style">EDIT</th>
         <th className="px-4 py-4 text-center th-style">Drive Link (Final)</th>
         <th className="px-3 py-4 text-center th-style">Publish</th>
         <th className="px-4 py-4 text-center th-style">Shared Link</th>
@@ -7323,6 +7367,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
             <th className="px-3 py-4 text-center th-style">تفاصيل ناقصة</th>
             <th className="px-3 py-4 text-center th-style">DONE?</th>
             <th className="px-3 py-4 text-center th-style">Cancel</th>
+            <th className="px-3 py-4 text-center th-style">EDIT</th>
           </>
         )}
         <th className="px-4 py-4 text-center th-style">Drive Link (Final)</th>
@@ -7506,7 +7551,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
     return Array.from(list);
   }, [uniqueTeachers]);
 
-  const colSpan = isOperations ? 7 : isTagme3at ? (tagmeViewMode === 'SIMPLE' ? 8 : 13) : activeGid === '0' ? 18 : activeGid === '1939073164' ? 20 : ['1436746012', '798246690'].includes(activeGid) ? 16 : 7;
+  const colSpan = isOperations ? 7 : isTagme3at ? (tagmeViewMode === 'SIMPLE' ? 8 : 13) : activeGid === '0' ? 18 : activeGid === '1939073164' ? (veViewMode === 'SIMPLE' ? 15 : 21) : ['1436746012', '798246690'].includes(activeGid) ? 16 : 7;
 
   const effectiveLoading = !isDemo && isTagme3at 
     ? isTagmeDbLoading 

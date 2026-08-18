@@ -1165,7 +1165,8 @@ const TagmeRow = ({
 
   useEffect(() => {
     if (priorityOverride !== undefined) setPriority(priorityOverride);
-  }, [priorityOverride]);
+    else setPriority(item.priority === true);
+  }, [priorityOverride, item.priority]);
 
   useEffect(() => {
     if (statusOverride !== undefined) {
@@ -1174,8 +1175,11 @@ const TagmeRow = ({
        if (statusOverride.done) {
          setPriority(false);
        }
+    } else {
+       setDone(item.done === true);
+       setCancel(item.cancel === true);
     }
-  }, [statusOverride]);
+  }, [statusOverride, item.done, item.cancel]);
 
   const handleCopy = () => {
     navigator.clipboard.writeText(item.name || '');
@@ -8352,7 +8356,9 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
                       const key = i.uniqueKey || generateKey(i);
                       const isDone = taskStatuses[key]?.done !== undefined ? taskStatuses[key].done === true : (String(i.done) === 'true' || i.done === true);
                       if (isDone) return false;
-                      const isPri = taskPriorities[key] !== undefined ? taskPriorities[key] === true : (String(i.priority) === 'true' || i.priority === true);
+                      const isPri = !isDemo && (isTagme3at || isAnalyticsTagme)
+                        ? (i.priority === true || taskPriorities[key] === true)
+                        : (taskPriorities[key] !== undefined ? taskPriorities[key] === true : (String(i.priority) === 'true' || i.priority === true));
                       return isPri;
                     }).length;
                     const isLimitReached = currentTabLimit < 999 && currentTabPriorityCount >= currentTabLimit;
@@ -9033,13 +9039,18 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
                           const key = i.uniqueKey || generateKey(i);
                           const isDone = taskStatuses[key]?.done !== undefined ? taskStatuses[key].done === true : (String(i.done) === 'true' || i.done === true);
                           if (isDone) return false;
-                          const isPri = taskPriorities[key] !== undefined ? taskPriorities[key] === true : (String(i.priority) === 'true' || i.priority === true);
+                          const isPri = !isDemo && (isTagme3at || isAnalyticsTagme)
+                            ? (i.priority === true || taskPriorities[key] === true)
+                            : (taskPriorities[key] !== undefined ? taskPriorities[key] === true : (String(i.priority) === 'true' || i.priority === true));
                           return isPri;
                         }).length;
-                        const canRaisePriority = tabLimit >= 999 ? true : (totalPriorityToday < tabLimit);
                         const key = item.uniqueKey || generateKey(item);
+                        const isItemPri = !isDemo
+                          ? (item.priority === true || taskPriorities[key] === true)
+                          : (taskPriorities[key] !== undefined ? taskPriorities[key] === true : (item.priority === true));
+                        const canRaisePriority = tabLimit >= 999 ? true : (totalPriorityToday < tabLimit);
                         const isSubscribed = subscribedTasks.includes(key) || (item.editor && item.editor.toLowerCase() === profile?.name?.toLowerCase());
-                        return <TagmeRow key={idx} item={item} index={idx} isSimple={tagmeViewMode === 'SIMPLE'} onUpdateEditor={handleUpdateEditor} editorsList={editorsList} onUpdateEditorNotes={handleUpdateEditorNotes} onUpdateMarketingNotes={handleUpdateMarketingNotes} opSheetsList={opSheetsList} branchesList={branchesList} onUpdateOpSheet={handleUpdateOpSheet} onUpdateBranch={handleUpdateBranch} onUpdateDate={handleUpdateDate} isGlowing={isGlowing} liveData={liveData} canRaisePriority={canRaisePriority || (taskPriorities[key] === true)} priorityLimit={tabLimit} onStatusChange={handleStatusChange} isSubscribed={isSubscribed} onToggleSubscribe={() => toggleSubscribe(key)} priorityOverride={taskPriorities[key]} statusOverride={taskStatuses[key]} onUpdateThumbnailLink={handleUpdateThumbnailLink} onUpdateTime={handleUpdateTime} onUpdateYoutubeLink={handleUpdateYoutubeLink} onUpdateUploaded={handleUpdateUploaded} onShowPriorityLimitModal={(limit: number) => setPriorityLimitModal({ isOpen: true, limit })} />;
+                        return <TagmeRow key={idx} item={item} index={idx} isSimple={tagmeViewMode === 'SIMPLE'} onUpdateEditor={handleUpdateEditor} editorsList={editorsList} onUpdateEditorNotes={handleUpdateEditorNotes} onUpdateMarketingNotes={handleUpdateMarketingNotes} opSheetsList={opSheetsList} branchesList={branchesList} onUpdateOpSheet={handleUpdateOpSheet} onUpdateBranch={handleUpdateBranch} onUpdateDate={handleUpdateDate} isGlowing={isGlowing} liveData={liveData} canRaisePriority={canRaisePriority || isItemPri} priorityLimit={tabLimit} onStatusChange={handleStatusChange} isSubscribed={isSubscribed} onToggleSubscribe={() => toggleSubscribe(key)} priorityOverride={isItemPri} statusOverride={taskStatuses[key]} onUpdateThumbnailLink={handleUpdateThumbnailLink} onUpdateTime={handleUpdateTime} onUpdateYoutubeLink={handleUpdateYoutubeLink} onUpdateUploaded={handleUpdateUploaded} onShowPriorityLimitModal={(limit: number) => setPriorityLimitModal({ isOpen: true, limit })} />;
                       }
                       if (activeGid === '0') {
                         return <CutsRow 

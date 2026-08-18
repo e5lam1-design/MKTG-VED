@@ -9,7 +9,7 @@ import {
 } from 'lucide-react';
 
 const MARKETING_TABS = [
-  'Operations', 'تجميعات', 'إحصائيات التجميعات 📊',
+  'Operations', 'OP 26/27', 'تجميعات', 'إحصائيات التجميعات 📊',
   'Junior 4', 'Junior 5', 'Junior 6',
   'Middle 1', 'Middle 2', 'Middle 3',
   'Senior 1', 'Senior 2', 'Senior 3'

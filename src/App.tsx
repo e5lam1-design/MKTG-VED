@@ -2003,7 +2003,7 @@ const parseScriptValue = (val: string) => {
 };
 
 // ─── REELS Row (Shooting, Ve, Counter) ────────────────────────────────────────
-const ShootingRow = ({ item, index, activeGid, onToggleFilmed, loadingFilmedCode, onUpdateShootingRow, liveData, optionsLists, autofillDrag, setAutofillDrag, onApplyAutofill, activeCell, setActiveCell, toast, isSubscribed, onToggleSubscribe }: any) => {
+const ShootingRow = ({ item, index, activeGid, onToggleFilmed, loadingFilmedCode, onUpdateShootingRow, liveData, optionsLists, autofillDrag, setAutofillDrag, onApplyAutofill, activeCell, setActiveCell, toast, isSubscribed, onToggleSubscribe, isSimple }: any) => {
   const isGlowing = false;
   const [editForm, setEditForm] = useState({
     branch: item.branch || '',
@@ -2181,23 +2181,27 @@ const ShootingRow = ({ item, index, activeGid, onToggleFilmed, loadingFilmedCode
         : ''
       } ${isGlowing ? 'bg-emerald-500/20 shadow-[inset_0_0_25px_rgba(16,185,129,0.4)] ring-2 ring-emerald-500/50 border-emerald-500/50 animate-pulse relative z-10' : ''}`}
     >
-      <td className="px-4 py-5 text-center"><span className="px-3 py-1.5 rounded-xl bg-white/5 border border-white/10 text-xs font-mono font-bold text-blue-400 shrink-0">{item.date || '---'}</span></td>
-      
-      <AutofillCell colKey="branch" rowIndex={index} value={editForm.branch} autofillDrag={autofillDrag} setAutofillDrag={setAutofillDrag} onApply={onApplyAutofill} activeCell={activeCell} setActiveCell={setActiveCell} liveDataLength={liveData?.length}>
-        <InlineCombobox options={optionsLists?.branches} value={editForm.branch} onChange={(val: string) => handleFieldChange('branch', val)} />
-      </AutofillCell>
+      {!isSimple && (
+        <>
+          <td className="px-4 py-5 text-center"><span className="px-3 py-1.5 rounded-xl bg-white/5 border border-white/10 text-xs font-mono font-bold text-blue-400 shrink-0">{item.date || '---'}</span></td>
+          
+          <AutofillCell colKey="branch" rowIndex={index} value={editForm.branch} autofillDrag={autofillDrag} setAutofillDrag={setAutofillDrag} onApply={onApplyAutofill} activeCell={activeCell} setActiveCell={setActiveCell} liveDataLength={liveData?.length}>
+            <InlineCombobox options={optionsLists?.branches} value={editForm.branch} onChange={(val: string) => handleFieldChange('branch', val)} />
+          </AutofillCell>
 
-      <AutofillCell colKey="year" rowIndex={index} value={editForm.year} autofillDrag={autofillDrag} setAutofillDrag={setAutofillDrag} onApply={onApplyAutofill} activeCell={activeCell} setActiveCell={setActiveCell} liveDataLength={liveData?.length}>
-        <InlineCombobox options={optionsLists?.years} value={editForm.year} onChange={(val: string) => handleFieldChange('year', val)} />
-      </AutofillCell>
+          <AutofillCell colKey="year" rowIndex={index} value={editForm.year} autofillDrag={autofillDrag} setAutofillDrag={setAutofillDrag} onApply={onApplyAutofill} activeCell={activeCell} setActiveCell={setActiveCell} liveDataLength={liveData?.length}>
+            <InlineCombobox options={optionsLists?.years} value={editForm.year} onChange={(val: string) => handleFieldChange('year', val)} />
+          </AutofillCell>
 
-      <AutofillCell colKey="teacher" rowIndex={index} value={editForm.teacher} autofillDrag={autofillDrag} setAutofillDrag={setAutofillDrag} onApply={onApplyAutofill} activeCell={activeCell} setActiveCell={setActiveCell} liveDataLength={liveData?.length}>
-        <InlineCombobox options={optionsLists?.teachers} value={editForm.teacher} onChange={(val: string) => handleFieldChange('teacher', val)} />
-      </AutofillCell>
+          <AutofillCell colKey="teacher" rowIndex={index} value={editForm.teacher} autofillDrag={autofillDrag} setAutofillDrag={setAutofillDrag} onApply={onApplyAutofill} activeCell={activeCell} setActiveCell={setActiveCell} liveDataLength={liveData?.length}>
+            <InlineCombobox options={optionsLists?.teachers} value={editForm.teacher} onChange={(val: string) => handleFieldChange('teacher', val)} />
+          </AutofillCell>
 
-      <AutofillCell colKey="extraName" rowIndex={index} value={editForm.extraName} autofillDrag={autofillDrag} setAutofillDrag={setAutofillDrag} onApply={onApplyAutofill} activeCell={activeCell} setActiveCell={setActiveCell} liveDataLength={liveData?.length}>
-        <InlineCombobox options={optionsLists?.extraNames} value={editForm.extraName} onChange={(val: string) => handleFieldChange('extraName', val)} />
-      </AutofillCell>
+          <AutofillCell colKey="extraName" rowIndex={index} value={editForm.extraName} autofillDrag={autofillDrag} setAutofillDrag={setAutofillDrag} onApply={onApplyAutofill} activeCell={activeCell} setActiveCell={setActiveCell} liveDataLength={liveData?.length}>
+            <InlineCombobox options={optionsLists?.extraNames} value={editForm.extraName} onChange={(val: string) => handleFieldChange('extraName', val)} />
+          </AutofillCell>
+        </>
+      )}
 
       <td className="px-3 py-5 text-center">
         <div className="flex items-center justify-center gap-2">
@@ -2294,96 +2298,101 @@ const ShootingRow = ({ item, index, activeGid, onToggleFilmed, loadingFilmedCode
       <AutofillCell colKey="format" rowIndex={index} value={editForm.format} autofillDrag={autofillDrag} setAutofillDrag={setAutofillDrag} onApply={onApplyAutofill} activeCell={activeCell} setActiveCell={setActiveCell} liveDataLength={liveData?.length}>
         <InlineCombobox options={optionsLists?.formats} value={editForm.format} onChange={(val: string) => handleFieldChange('format', val)} />
       </AutofillCell>
-      <td className="px-3 py-5 text-center">
-        <button
-          onClick={() => {
-            if (activeGid === '1939073164') return;
-            const nextFilmed = !editForm.filmed;
-            const todayStr = new Date().toLocaleDateString('en-US');
-            const targetFilmingDate = (nextFilmed && !editForm.filmingDate) ? todayStr : editForm.filmingDate;
-            const updatedForm = { ...editForm, filmed: nextFilmed, filmingDate: targetFilmingDate || '' };
-            setEditForm(updatedForm);
-            const rowCode = item.code || item.id;
-            if (onUpdateShootingRow) {
-              const rowData = [
-                item.date,
-                updatedForm.branch,
-                updatedForm.year,
-                updatedForm.teacher,
-                updatedForm.extraName,
-                rowCode,
-                updatedForm.script,
-                updatedForm.type,
-                updatedForm.format,
-                nextFilmed ? 'TRUE' : 'FALSE',
-                targetFilmingDate || '',
-                updatedForm.by,
-                updatedForm.storage,
-                updatedForm.notes,
-                updatedForm.driveRaw,
-                updatedForm.editorCol,
-                item.done ? 'TRUE' : 'FALSE',
-                updatedForm.driveFinal,
-                item.canceled ? 'TRUE' : 'FALSE',
-                item.missingDetails ? 'TRUE' : 'FALSE'
-              ];
-              onUpdateShootingRow(rowCode, rowData);
-            } else {
-              onToggleFilmed && onToggleFilmed({ ...item, ...updatedForm }, nextFilmed);
-            }
-          }}
-          className={`w-6 h-6 rounded-md flex items-center justify-center mx-auto transition-all duration-300 ${activeGid === '1939073164' ? 'cursor-default' : 'cursor-pointer'} ${loadingFilmedCode === (item.code || item.id) && activeGid !== '1939073164' ? 'opacity-50 pointer-events-none' : ''} ${
-            (editForm.filmed || activeGid === '1939073164') ? 'bg-emerald-500 text-white shadow-[0_0_10px_rgba(16,185,129,0.5)]' : 'bg-white/10 text-muted hover:bg-emerald-500/30 hover:text-emerald-300'
-          }`}
-        >
-          {loadingFilmedCode === (item.code || item.id) && activeGid !== '1939073164' ? (
-            <span className="w-3 h-3 border-2 border-white/50 border-t-white rounded-full animate-spin"></span>
-          ) : (editForm.filmed || activeGid === '1939073164') ? (
-            <CheckCircle2 size={14} />
-          ) : null}
-        </button>
-      </td>
-      <td className="px-4 py-5 text-center text-xs">
-        <input
-          type="text"
-          value={item.filmingDate || ''}
-          onChange={(e) => {
-            const newDate = e.target.value;
-            const rowCode = item.code || item.id;
-            const rowData = [
-              item.date,
-              editForm.branch,
-              editForm.year,
-              editForm.teacher,
-              editForm.extraName,
-              rowCode,
-              editForm.script,
-              editForm.type,
-              editForm.format,
-              item.filmed ? 'TRUE' : 'FALSE',
-              newDate,
-              editForm.by,
-              editForm.storage,
-              editForm.notes,
-              editForm.driveRaw,
-              editForm.editorCol,
-              item.done ? 'TRUE' : 'FALSE',
-              editForm.driveFinal,
-              item.canceled ? 'TRUE' : 'FALSE',
-              item.missingDetails ? 'TRUE' : 'FALSE'
-            ];
-            onUpdateShootingRow && onUpdateShootingRow(rowCode, rowData);
-          }}
-          placeholder="M/D/YYYY"
-          className="w-24 bg-white/5 border border-white/10 hover:bg-white/10 rounded-xl px-2 py-1 text-xs font-mono font-bold text-center text-blue-300 outline-none focus:border-emerald-500 transition-all"
-        />
-      </td>
-      <AutofillCell colKey="by" rowIndex={index} value={editForm.by} autofillDrag={autofillDrag} setAutofillDrag={setAutofillDrag} onApply={onApplyAutofill} activeCell={activeCell} setActiveCell={setActiveCell} liveDataLength={liveData?.length}>
-        <InlineCombobox options={optionsLists?.bys} value={editForm.by} onChange={(val: string) => handleFieldChange('by', val)} />
-      </AutofillCell>
-      <AutofillCell colKey="storage" rowIndex={index} value={editForm.storage} autofillDrag={autofillDrag} setAutofillDrag={setAutofillDrag} onApply={onApplyAutofill} activeCell={activeCell} setActiveCell={setActiveCell} liveDataLength={liveData?.length}>
-        <InlineCombobox options={optionsLists?.storages} value={editForm.storage} onChange={(val: string) => handleFieldChange('storage', val)} />
-      </AutofillCell>
+
+      {!isSimple && (
+        <>
+          <td className="px-3 py-5 text-center">
+            <button
+              onClick={() => {
+                if (activeGid === '1939073164') return;
+                const nextFilmed = !editForm.filmed;
+                const todayStr = new Date().toLocaleDateString('en-US');
+                const targetFilmingDate = (nextFilmed && !editForm.filmingDate) ? todayStr : editForm.filmingDate;
+                const updatedForm = { ...editForm, filmed: nextFilmed, filmingDate: targetFilmingDate || '' };
+                setEditForm(updatedForm);
+                const rowCode = item.code || item.id;
+                if (onUpdateShootingRow) {
+                  const rowData = [
+                    item.date,
+                    updatedForm.branch,
+                    updatedForm.year,
+                    updatedForm.teacher,
+                    updatedForm.extraName,
+                    rowCode,
+                    updatedForm.script,
+                    updatedForm.type,
+                    updatedForm.format,
+                    nextFilmed ? 'TRUE' : 'FALSE',
+                    targetFilmingDate || '',
+                    updatedForm.by,
+                    updatedForm.storage,
+                    updatedForm.notes,
+                    updatedForm.driveRaw,
+                    updatedForm.editorCol,
+                    item.done ? 'TRUE' : 'FALSE',
+                    updatedForm.driveFinal,
+                    item.canceled ? 'TRUE' : 'FALSE',
+                    item.missingDetails ? 'TRUE' : 'FALSE'
+                  ];
+                  onUpdateShootingRow(rowCode, rowData);
+                } else {
+                  onToggleFilmed && onToggleFilmed({ ...item, ...updatedForm }, nextFilmed);
+                }
+              }}
+              className={`w-6 h-6 rounded-md flex items-center justify-center mx-auto transition-all duration-300 ${activeGid === '1939073164' ? 'cursor-default' : 'cursor-pointer'} ${loadingFilmedCode === (item.code || item.id) && activeGid !== '1939073164' ? 'opacity-50 pointer-events-none' : ''} ${
+                (editForm.filmed || activeGid === '1939073164') ? 'bg-emerald-500 text-white shadow-[0_0_10px_rgba(16,185,129,0.5)]' : 'bg-white/10 text-muted hover:bg-emerald-500/30 hover:text-emerald-300'
+              }`}
+            >
+              {loadingFilmedCode === (item.code || item.id) && activeGid !== '1939073164' ? (
+                <span className="w-3 h-3 border-2 border-white/50 border-t-white rounded-full animate-spin"></span>
+              ) : (editForm.filmed || activeGid === '1939073164') ? (
+                <CheckCircle2 size={14} />
+              ) : null}
+            </button>
+          </td>
+          <td className="px-4 py-5 text-center text-xs">
+            <input
+              type="text"
+              value={item.filmingDate || ''}
+              onChange={(e) => {
+                const newDate = e.target.value;
+                const rowCode = item.code || item.id;
+                const rowData = [
+                  item.date,
+                  editForm.branch,
+                  editForm.year,
+                  editForm.teacher,
+                  editForm.extraName,
+                  rowCode,
+                  editForm.script,
+                  editForm.type,
+                  editForm.format,
+                  item.filmed ? 'TRUE' : 'FALSE',
+                  newDate,
+                  editForm.by,
+                  editForm.storage,
+                  editForm.notes,
+                  editForm.driveRaw,
+                  editForm.editorCol,
+                  item.done ? 'TRUE' : 'FALSE',
+                  editForm.driveFinal,
+                  item.canceled ? 'TRUE' : 'FALSE',
+                  item.missingDetails ? 'TRUE' : 'FALSE'
+                ];
+                onUpdateShootingRow && onUpdateShootingRow(rowCode, rowData);
+              }}
+              placeholder="M/D/YYYY"
+              className="w-24 bg-white/5 border border-white/10 hover:bg-white/10 rounded-xl px-2 py-1 text-xs font-mono font-bold text-center text-blue-300 outline-none focus:border-emerald-500 transition-all"
+            />
+          </td>
+          <AutofillCell colKey="by" rowIndex={index} value={editForm.by} autofillDrag={autofillDrag} setAutofillDrag={setAutofillDrag} onApply={onApplyAutofill} activeCell={activeCell} setActiveCell={setActiveCell} liveDataLength={liveData?.length}>
+            <InlineCombobox options={optionsLists?.bys} value={editForm.by} onChange={(val: string) => handleFieldChange('by', val)} />
+          </AutofillCell>
+          <AutofillCell colKey="storage" rowIndex={index} value={editForm.storage} autofillDrag={autofillDrag} setAutofillDrag={setAutofillDrag} onApply={onApplyAutofill} activeCell={activeCell} setActiveCell={setActiveCell} liveDataLength={liveData?.length}>
+            <InlineCombobox options={optionsLists?.storages} value={editForm.storage} onChange={(val: string) => handleFieldChange('storage', val)} />
+          </AutofillCell>
+        </>
+      )}
       <AutofillCell colKey="notes" rowIndex={index} value={editForm.notes} autofillDrag={autofillDrag} setAutofillDrag={setAutofillDrag} onApply={onApplyAutofill} activeCell={activeCell} setActiveCell={setActiveCell} liveDataLength={liveData?.length} className="px-5 py-5 text-center text-xs font-bold text-white/90 arabic-text">
         <HistoryInput
           itemKey={item.code || item.id}
@@ -2670,25 +2679,24 @@ const ShootingRow = ({ item, index, activeGid, onToggleFilmed, loadingFilmedCode
         </div>
       </td>
 
-      {/* Shared Link Checkbox (Check) */}
+      {/* Shared Link Checkbox (PUBLISH) */}
       <td className="px-3 py-5 text-center">
         {(() => {
-          const itemKey = item.id || generateKey(item);
+          const itemKey = item.code || item.id || generateKey(item);
           const isSharedChecked = localStorage.getItem(`shared_check_${itemKey}`) === 'true';
           return (
             <button
               onClick={() => {
                 const nextState = !isSharedChecked;
                 localStorage.setItem(`shared_check_${itemKey}`, String(nextState));
-                // Force state update by triggering liveData shallow change
-                setLiveData((prev: any[]) => prev ? [...prev] : prev);
+                setEditForm(prev => ({ ...prev })); // trigger re-render cleanly
               }}
               className={`w-6 h-6 rounded-md flex items-center justify-center mx-auto transition-all duration-300 cursor-pointer ${
                 isSharedChecked 
                   ? 'bg-cyan-500 text-white shadow-[0_0_10px_rgba(6,182,212,0.5)]' 
                   : 'bg-white/10 text-muted hover:bg-cyan-500/30 hover:text-cyan-300'
               }`}
-              title="Shared Check"
+              title="PUBLISH"
             >
               {isSharedChecked && <CheckCircle2 size={14} />}
             </button>
@@ -2699,7 +2707,7 @@ const ShootingRow = ({ item, index, activeGid, onToggleFilmed, loadingFilmedCode
       {/* Shared Link URL Input & Display */}
       <td className="px-4 py-5 text-center">
         {(() => {
-          const itemKey = item.id || generateKey(item);
+          const itemKey = item.code || item.id || generateKey(item);
           const sharedUrl = localStorage.getItem(`shared_link_${itemKey}`) || '';
           const isEditingShared = activeCell?.colKey === 'sharedLink' && activeCell?.rowIndex === index;
 
@@ -2713,7 +2721,7 @@ const ShootingRow = ({ item, index, activeGid, onToggleFilmed, loadingFilmedCode
                   onBlur={(e) => {
                     localStorage.setItem(`shared_link_${itemKey}`, e.target.value.trim());
                     setActiveCell(null);
-                    setLiveData((prev: any[]) => prev ? [...prev] : prev);
+                    setEditForm(prev => ({ ...prev }));
                   }}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') {
@@ -5357,6 +5365,13 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
 
   const [colorfulTabs, setColorfulTabs] = useState(false);
   const [visibleRecordsLimit, setVisibleRecordsLimit] = useState(200);
+  const [veViewMode, setVeViewMode] = useState<'SIMPLE' | 'DETAILED'>(() => {
+    try {
+      return (localStorage.getItem('ve_view_mode') as 'SIMPLE' | 'DETAILED') || 'SIMPLE';
+    } catch {
+      return 'SIMPLE';
+    }
+  });
 
   useEffect(() => {
     setVisibleRecordsLimit(200);
@@ -7260,6 +7275,23 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
         <th className="px-3 py-4 text-center th-style">CANCELO</th>
       </>
     );
+    if (activeGid === '1939073164' && veViewMode === 'SIMPLE') return (
+      <>
+        <th className="px-4 py-4 text-center th-style">code</th>
+        <th className="px-8 py-4 text-right th-style">السكريبت</th>
+        <th className="px-3 py-4 text-center th-style"><ColFilter colKey="type" label="النوع" /></th>
+        <th className="px-3 py-4 text-center th-style"><ColFilter colKey="format" label="المقاس" /></th>
+        <th className="px-5 py-4 text-center th-style">NOTES</th>
+        <th className="px-4 py-4 text-center th-style">Drive Link (Raw)</th>
+        <th className="px-4 py-4 text-center th-style"><ColFilter colKey="editorCol" label="EDITOR" /></th>
+        <th className="px-3 py-4 text-center th-style">تفاصيل ناقصة</th>
+        <th className="px-3 py-4 text-center th-style">DONE?</th>
+        <th className="px-3 py-4 text-center th-style">Cancel</th>
+        <th className="px-4 py-4 text-center th-style">Drive Link (Final)</th>
+        <th className="px-3 py-4 text-center th-style">Publish</th>
+        <th className="px-4 py-4 text-center th-style">Shared Link</th>
+      </>
+    );
     if (['1436746012', '1939073164', '798246690'].includes(activeGid)) return ( // Shooting, Ve, Counter
       <>
         <th className="px-4 py-4 text-center th-style"><ColFilter colKey="date" label="Date" /></th>
@@ -7271,7 +7303,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
         <th className="px-8 py-4 text-right th-style">السكريبت</th>
         <th className="px-3 py-4 text-center th-style"><ColFilter colKey="type" label="النوع" /></th>
         <th className="px-3 py-4 text-center th-style"><ColFilter colKey="format" label="المقاس" /></th>
-        <th className="px-3 py-4 text-center th-style">اتصور؟</th>
+        <th className="px-3 py-4 text-center th-style">EDIT</th>
         <th className="px-4 py-4 text-center th-style">تاريخ التصوير</th>
         <th className="px-3 py-4 text-center th-style"><ColFilter colKey="by" label="BY" /></th>
         <th className="px-4 py-4 text-center th-style"><ColFilter colKey="storage" label="STORAGE" /></th>
@@ -7286,7 +7318,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
           </>
         )}
         <th className="px-4 py-4 text-center th-style">Drive Link (Final)</th>
-        <th className="px-3 py-4 text-center th-style">Check</th>
+        <th className="px-3 py-4 text-center th-style">Publish</th>
         <th className="px-4 py-4 text-center th-style">Shared Link</th>
       </>
     );
@@ -8475,6 +8507,30 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
                   <span>{isCardsView ? 'عرض كروت (Cards)' : 'عرض جدول (Table)'}</span>
                 </button>
               )}
+              {/* VE Simple Mode Toggle */}
+              {activeGid === '1939073164' && (
+                <button
+                  onClick={() => {
+                    const next = veViewMode === 'SIMPLE' ? 'DETAILED' : 'SIMPLE';
+                    setVeViewMode(next);
+                    localStorage.setItem('ve_view_mode', next);
+                  }}
+                  className="flex items-center gap-3 px-4 py-2 bg-white/5 border border-white/10 hover:border-cyan-500/40 rounded-2xl transition-all cursor-pointer group"
+                  title={veViewMode === 'SIMPLE' ? 'عرض الفئة التفصيلية' : 'عرض الفئة البسيطة'}
+                >
+                  <span className="text-xs font-bold text-muted group-hover:text-white transition-colors">
+                    {veViewMode === 'SIMPLE' ? 'مود بسيط ⚡' : 'مود تفصيلي 📋'}
+                  </span>
+                  <div className={`w-9 h-5 rounded-full p-0.5 transition-colors duration-300 ${
+                    veViewMode === 'SIMPLE' ? 'bg-cyan-500' : 'bg-purple-600'
+                  }`}>
+                    <div className={`w-4 h-4 rounded-full bg-white transition-transform duration-300 ${
+                      veViewMode === 'SIMPLE' ? 'translate-x-0' : 'translate-x-4'
+                    }`} />
+                  </div>
+                </button>
+              )}
+
               {isReelsStage && (
                 <div className="flex items-center gap-1.5" dir="rtl">
                   {[
@@ -9121,7 +9177,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
                         />;
                       }
                       if (['1436746012', '1939073164', '798246690'].includes(activeGid)) {
-                        return <ShootingRow key={idx} item={item} index={idx} activeGid={activeGid} onToggleFilmed={handleFilmedToggle} loadingFilmedCode={loadingFilmedCode} onUpdateShootingRow={handleUpdateShootingRow} liveData={liveData} optionsLists={{ branches: uniqueBranches, years: uniqueYears, teachers: uniqueTeachers, extraNames: uniqueExtraNames, types: uniqueTypes, formats: uniqueFormats, bys: uniqueBys, storages: uniqueStorages, editors: editorsList }} autofillDrag={autofillDrag} setAutofillDrag={setAutofillDrag} onApplyAutofill={handleApplyAutofill} activeCell={activeCell} setActiveCell={setActiveCell} toast={toast} isSubscribed={subscribedTasks.includes(item.id)} onToggleSubscribe={toggleSubscribe} />;
+                        return <ShootingRow key={idx} item={item} index={idx} activeGid={activeGid} onToggleFilmed={handleFilmedToggle} loadingFilmedCode={loadingFilmedCode} onUpdateShootingRow={handleUpdateShootingRow} liveData={liveData} optionsLists={{ branches: uniqueBranches, years: uniqueYears, teachers: uniqueTeachers, extraNames: uniqueExtraNames, types: uniqueTypes, formats: uniqueFormats, bys: uniqueBys, storages: uniqueStorages, editors: editorsList }} autofillDrag={autofillDrag} setAutofillDrag={setAutofillDrag} onApplyAutofill={handleApplyAutofill} activeCell={activeCell} setActiveCell={setActiveCell} toast={toast} isSubscribed={subscribedTasks.includes(item.id)} onToggleSubscribe={toggleSubscribe} isSimple={activeGid === '1939073164' && veViewMode === 'SIMPLE'} />;
                       }
                       return <StageRow key={idx} item={item} index={idx} tagmeTransfers={tagmeTransfers} onTagmeToggle={handleTagmeToggle} activeLabel={activeLabel} isGlowing={isGlowing} onUpdateDate={handleUpdateDate} onUpdateWeek={handleUpdateWeek} onUpdateThumbnailLink={handleUpdateThumbnailLink} onUpdateTime={handleUpdateTime} onUpdateYoutubeLink={handleUpdateYoutubeLink} onUpdateUploaded={handleUpdateUploaded} onToggleDelivered={handleToggleDelivered} />;
                     }) : (

@@ -479,6 +479,7 @@ export const Op27View: React.FC<Op27ViewProps> = ({ onNavigateToStage, onExecute
           <div className="flex flex-wrap items-center gap-3">
             {/* Sync Button */}
             <button
+              id="tour-sync-btn"
               onClick={handleSyncPlatform}
               disabled={isSyncing}
               className="flex items-center gap-2 px-5 py-3.5 rounded-2xl bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white font-bold text-xs shadow-xl shadow-blue-500/25 transition-all hover:scale-105 active:scale-95 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed border border-white/15"
@@ -495,6 +496,7 @@ export const Op27View: React.FC<Op27ViewProps> = ({ onNavigateToStage, onExecute
 
             {/* Collapse / Expand Toggle Button */}
             <button
+              id="tour-stats-btn"
               onClick={toggleStats}
               className="flex items-center gap-2 px-4 py-3.5 rounded-2xl bg-white/5 hover:bg-white/10 border border-white/10 hover:border-blue-500/40 text-muted hover:text-white text-xs font-bold transition-all shadow-sm cursor-pointer"
               title={showStats ? "طي بطاقات الإحصائيات" : "إظهار بطاقات الإحصائيات"}
@@ -596,6 +598,7 @@ export const Op27View: React.FC<Op27ViewProps> = ({ onNavigateToStage, onExecute
         <div className="flex-1 min-w-[220px] relative">
           <Search className="absolute right-3.5 top-1/2 -translate-y-1/2 text-muted" size={16} />
           <input
+            id="tour-search-input"
             type="text"
             placeholder="بحث باسم الدرس، المدرس، الكود، المرحلة..."
             value={searchQuery}
@@ -659,7 +662,7 @@ export const Op27View: React.FC<Op27ViewProps> = ({ onNavigateToStage, onExecute
         </select>
 
         {/* Bunny Link Filter Pills */}
-        <div className="flex items-center gap-1 bg-white/5 border border-white/10 p-1 rounded-xl">
+        <div id="tour-bunny-filters" className="flex items-center gap-1 bg-white/5 border border-white/10 p-1 rounded-xl">
           <button
             onClick={() => setBunnyFilter('All')}
             className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
@@ -825,7 +828,7 @@ export const Op27View: React.FC<Op27ViewProps> = ({ onNavigateToStage, onExecute
                     </span>
                   </th>
                   <th className="w-[14%] px-3 py-5 text-center relative">
-                    <div ref={bunnyDropdownRef} className="inline-block relative">
+                    <div id="tour-bunny-col-header" ref={bunnyDropdownRef} className="inline-block relative">
                       <button
                         onClick={() => setShowBunnyDropdown(prev => !prev)}
                         className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border font-mono text-[10px] font-bold transition-all cursor-pointer shadow-sm ${
@@ -891,7 +894,7 @@ export const Op27View: React.FC<Op27ViewProps> = ({ onNavigateToStage, onExecute
                   <th className="w-[8%] px-3 py-5 text-center text-purple-400 font-black arabic-text">
                     نشر يوتيوب
                   </th>
-                  <th className="w-[6%] px-3 py-5 text-center text-purple-400 font-black arabic-text">
+                  <th id="tour-merge-col" className="w-[6%] px-3 py-5 text-center text-purple-400 font-black arabic-text">
                     <div className="flex items-center justify-center gap-1.5">
                       <span>تجميعة 🔗</span>
                       {selectedTasks.length > 0 && (

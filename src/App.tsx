@@ -40,7 +40,8 @@ import {
   Trash2,
   Bookmark,
   FileSpreadsheet,
-  MessageSquarePlus
+  MessageSquarePlus,
+  BookOpen
 } from 'lucide-react';
 import { useGoogleSheets } from './hooks/useGoogleSheets';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
@@ -52,6 +53,8 @@ import { DesignAnalytics } from './components/DesignAnalytics';
 import { DesignersTeamManagement } from './components/DesignersTeamManagement';
 import { Op27View } from './components/Op27View';
 import { FeedbackModal } from './components/FeedbackModal';
+import { SystemGuideModal } from './components/SystemGuideModal';
+import { InteractiveTour } from './components/InteractiveTour';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { supabase, PERMISSIONS, ROLE_LABELS, ROLE_COLORS, DEFAULT_ROLE_PERMISSIONS, setRuntimeRolePermissions } from './lib/supabase';
 
@@ -3949,6 +3952,8 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
   });
   const [showMyNotifs, setShowMyNotifs] = useState(false);
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
+  const [showGuideModal, setShowGuideModal] = useState(false);
+  const [showTour, setShowTour] = useState(false);
   const unreadCount = myNotifs.filter(n => !n.read).length;
 
   useEffect(() => {
@@ -7321,10 +7326,10 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
           {!isSimple && <th className="px-3 py-4 text-center th-style"><ColFilter colKey="date" label="التاريخ" /></th>}
           {!isSimple && <th className="px-3 py-4 text-center th-style"><ColFilter colKey="branch" label="Branch" /></th>}
           <th className="px-3 py-4 text-center th-style">Marketing Notes</th>
-          <th className="px-3 py-4 text-center th-style"><ColFilter colKey="editor" label="Editor" /></th>
+          <th className="px-3 py-4 text-center th-style" id="tour-tagme-editor-col"><ColFilter colKey="editor" label="Editor" /></th>
           <th className="px-3 py-4 text-center th-style">Status</th>
           {!isSimple && <th className="px-3 py-4 text-center th-style">Editor Notes</th>}
-          <th className="px-8 py-4 text-center th-style text-purple-400 font-bold">Priority</th>
+          <th className="px-8 py-4 text-center th-style text-purple-400 font-bold" id="tour-priority-col">Priority</th>
         </>
       );
     }
@@ -7377,25 +7382,25 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
         <th className="px-4 py-4 text-center th-style"><ColFilter colKey="teacher" label="المدرس" /></th>
         <th className="px-4 py-4 text-center th-style"><ColFilter colKey="extraName" label="Creator" /></th>
         <th className="px-4 py-4 text-center th-style">code</th>
-        <th className="px-8 py-4 text-right th-style">السكريبت</th>
+        <th className="px-8 py-4 text-right th-style" id="tour-ve-script-col">السكريبت</th>
         <th className="px-3 py-4 text-center th-style"><ColFilter colKey="type" label="النوع" /></th>
         <th className="px-3 py-4 text-center th-style"><ColFilter colKey="format" label="المقاس" /></th>
-        <th className="px-3 py-4 text-center th-style">اتصور</th>
+        <th className="px-3 py-4 text-center th-style" id="tour-shooting-filmed-col">اتصور</th>
         <th className="px-4 py-4 text-center th-style">تاريخ التصوير</th>
         <th className="px-3 py-4 text-center th-style"><ColFilter colKey="by" label="BY" /></th>
         <th className="px-4 py-4 text-center th-style"><ColFilter colKey="storage" label="STORAGE" /></th>
         <th className="px-5 py-4 text-center th-style">NOTES</th>
-        <th className="px-4 py-4 text-center th-style">Drive Link (Raw)</th>
+        <th className="px-4 py-4 text-center th-style" id="tour-shooting-raw-col">Drive Link (Raw)</th>
         {activeGid === '1939073164' && (
           <>
             <th className="px-4 py-4 text-center th-style"><ColFilter colKey="editorCol" label="EDITOR" /></th>
             <th className="px-3 py-4 text-center th-style">تفاصيل ناقصة</th>
-            <th className="px-3 py-4 text-center th-style">DONE?</th>
+            <th className="px-3 py-4 text-center th-style" id="tour-ve-done-col">DONE?</th>
             <th className="px-3 py-4 text-center th-style">Cancel</th>
-            <th className="px-3 py-4 text-center th-style">EDIT</th>
+            <th className="px-3 py-4 text-center th-style" id="tour-ve-edit-col">EDIT</th>
           </>
         )}
-        <th className="px-4 py-4 text-center th-style">Drive Link (Final)</th>
+        <th className="px-4 py-4 text-center th-style" id="tour-ve-final-col">Drive Link (Final)</th>
         <th className="px-3 py-4 text-center th-style">Publish</th>
         <th className="px-4 py-4 text-center th-style">Shared Link</th>
       </>
@@ -7947,6 +7952,19 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
             >
               <MessageSquarePlus size={20} className="text-indigo-400" />
               <span className="text-xs font-black arabic-text hidden xl:inline">فيدباك / ملاحظة</span>
+            </button>
+
+            {/* Interactive Step-by-Step Tour Icon Button */}
+            <button
+              onClick={() => setShowTour(true)}
+              className="relative p-3.5 rounded-2xl bg-gradient-to-br from-blue-500/10 via-indigo-500/10 to-purple-500/10 hover:from-blue-500/25 hover:to-purple-500/25 border border-blue-500/30 hover:border-blue-400 text-blue-300 hover:text-white transition-all flex items-center justify-center cursor-pointer shadow-lg shadow-blue-500/10 hover:scale-105 active:scale-95 group"
+              title="جولة إرشادية تفاعلية خطوة بخطوة في الصفحة (Step-by-step Tour)"
+            >
+              <BookOpen size={20} className="text-blue-400 group-hover:scale-110 transition-transform" />
+              <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-blue-500"></span>
+              </span>
             </button>
 
             {/* Demo Sheets Link Button (Admin / Manager only) */}
@@ -9604,6 +9622,21 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
           currentPage={activeLabel}
           userProfile={profile}
           toast={toast}
+        />
+
+        {/* System Guide & Page Explainer Modal */}
+        <SystemGuideModal
+          isOpen={showGuideModal}
+          onClose={() => setShowGuideModal(false)}
+          currentGid={activeGid}
+          currentLabel={activeLabel}
+        />
+
+        {/* Interactive Step-by-Step Walkthrough Tour */}
+        <InteractiveTour
+          isOpen={showTour}
+          onClose={() => setShowTour(false)}
+          activeGid={activeGid}
         />
       </main>
       )}

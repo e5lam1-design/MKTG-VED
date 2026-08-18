@@ -177,6 +177,7 @@ export const Op27View: React.FC<Op27ViewProps> = ({ onNavigateToStage, onExecute
   const [subjectFilter, setSubjectFilter] = useState('All');
   const [statusFilter, setStatusFilter] = useState('All');
   const [bypassTeacherSelection, setBypassTeacherSelection] = useState(false);
+  const [copiedId, setCopiedId] = useState<string | null>(null);
   const [selectedTasks, setSelectedTasks] = useState<string[]>([]);
   const [showStats, setShowStats] = useState<boolean>(() => {
     try {

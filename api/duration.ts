@@ -32,7 +32,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     });
 
     const text = await fetchRes.text();
-    const durationMatch = text.match(/<meta property="video:duration" content="(\d+)">/i);
+    const durationMatch = text.match(/<meta[^>]*content=["'](\d+)["'][^>]*property=["']video:duration["']/i) ||
+                          text.match(/<meta[^>]*property=["']video:duration["'][^>]*content=["'](\d+)["']/i);
     if (durationMatch) {
       const seconds = parseInt(durationMatch[1], 10);
       if (!isNaN(seconds) && seconds > 0) {

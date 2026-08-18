@@ -75,84 +75,66 @@ const BunnyLinkPill: React.FC<{ task: TaskItem }> = ({ task }) => {
     : '---';
 
   const [duration, setDuration] = useState<string>(() => {
-    if (!url) return '0:00:00';
+    if (!url) return '';
     try {
       const cached = localStorage.getItem(`dur_${url}`);
       if (cached) return cached;
     } catch {}
-    return '0:00:00';
+    return '';
   });
 
   useEffect(() => {
     if (!url) return;
     let isMounted = true;
-    fetch(`/api/duration?url=${encodeURIComponent(url)}`)
-      .then(res => res.json())
-      .then(data => {
-        if (isMounted && data.duration) {
-          setDuration(data.duration);
-          try { localStorage.setItem(`dur_${url}`, data.duration); } catch {}
-        }
-      })
-      .catch(() => {});
+    const fetchDur = () => {
+      fetch(`/api/duration?url=${encodeURIComponent(url)}`)
+        .then(res => res.json())
+        .then(data => {
+          if (isMounted && data.duration) {
+            setDuration(data.duration);
+            try { localStorage.setItem(`dur_${url}`, data.duration); } catch {}
+          } else if (isMounted && data.status === 'queued') {
+            setTimeout(fetchDur, 1200);
+          }
+        })
+        .catch(() => {});
+    };
+    fetchDur();
 
     return () => {
       isMounted = false;
     };
   }, [url]);
 
-  const hasRealDuration = duration && duration !== '0:00:00' && duration !== '00:00' && duration !== '0:00' && duration !== '---' && duration !== '0:00:00:00';
-  const isFilmed = Boolean(url && hasRealDuration);
-
-  // 1. Filmed & Uploaded (Real duration exists) -> Green Capsule (الأخضر)
-  if (isFilmed && url) {
-    return (
-      <a
-        href={url}
-        target="_blank"
-        rel="noopener noreferrer"
-        className="px-4 py-2 rounded-2xl bg-emerald-950/40 hover:bg-emerald-900/50 border border-emerald-500/40 hover:border-emerald-500/70 transition-all inline-flex flex-col items-center gap-0.5 shadow-md shadow-emerald-500/10 hover:scale-105 active:scale-95 cursor-pointer min-w-[110px] group/pill"
-        title="تم التصوير ✓ (اضغط لمشاهدة الفيديو على Bunny)"
-      >
-        <span className="text-[11px] font-black text-emerald-300 font-mono leading-none flex items-center gap-1.5">
-          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0 shadow-[0_0_8px_rgba(52,211,153,0.9)] animate-pulse"></span>
-          {dateDisplay}
-        </span>
-        <span className="text-[10px] font-black text-emerald-400 flex items-center gap-1 mt-1 leading-none font-mono whitespace-nowrap group-hover/pill:text-emerald-300">
-          ⏱️ {duration}
-        </span>
-      </a>
-    );
-  }
-
-  // 2. Pending / Not Filmed Yet (Duration is 0 or no link) -> Yellow/Amber Capsule (الأصفر)
+  // 1. Has Bunny Video Link -> Always Green Capsule (الأخضر)
   if (url) {
     return (
       <a
         href={url}
         target="_blank"
         rel="noopener noreferrer"
-        className="px-4 py-2 rounded-2xl bg-amber-950/30 hover:bg-amber-900/40 border border-amber-500/35 hover:border-amber-500/60 transition-all inline-flex flex-col items-center gap-0.5 shadow-sm hover:scale-105 active:scale-95 cursor-pointer min-w-[110px]"
-        title="قيد التصوير / جاري معالجة الفيديو"
+        className="px-4 py-2 rounded-2xl bg-emerald-950/40 hover:bg-emerald-900/50 border border-emerald-500/40 hover:border-emerald-500/70 transition-all inline-flex flex-col items-center gap-0.5 shadow-md shadow-emerald-500/10 hover:scale-105 active:scale-95 cursor-pointer min-w-[110px] group/pill"
+        title="تم التصوير ورفع الفيديو ✓ (اضغط للمشاهدة على Bunny)"
       >
-        <span className="text-[11px] font-black text-amber-300 font-mono leading-none flex items-center gap-1.5">
-          <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0"></span>
+        <span className="text-[11px] font-black text-emerald-300 font-mono leading-none flex items-center gap-1.5">
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0 shadow-[0_0_8px_rgba(52,211,153,0.9)] animate-pulse"></span>
           {dateDisplay}
         </span>
-        <span className="text-[10px] font-bold text-amber-400 mt-1 leading-none font-mono whitespace-nowrap">
-          ⏱️ {duration || '0:00:00'}
+        <span className="text-[10px] font-black text-emerald-400 flex items-center gap-1 mt-1 leading-none font-mono whitespace-nowrap group-hover/pill:text-emerald-300">
+          ⏱️ {duration || 'تحميل...'}
         </span>
       </a>
     );
   }
 
+  // 2. No Link (Pending / Not Filmed Yet) -> Yellow / Amber Capsule (الأصفر)
   return (
     <div
-      className="px-4 py-2 rounded-2xl bg-amber-950/20 border border-amber-500/25 inline-flex flex-col items-center gap-0.5 min-w-[110px] opacity-90 shadow-sm"
-      title="قيد التصوير / لم يصور بعد"
+      className="px-4 py-2 rounded-2xl bg-amber-950/25 border border-amber-500/30 inline-flex flex-col items-center gap-0.5 min-w-[110px] shadow-sm"
+      title="قيد التصوير / لم يرفع بعد"
     >
       <span className="text-[11px] font-black text-amber-300/90 font-mono leading-none flex items-center gap-1.5">
-        <span className="w-1.5 h-1.5 rounded-full bg-amber-400/80 shrink-0"></span>
+        <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0"></span>
         {dateDisplay}
       </span>
       <span className="text-[10px] font-bold text-amber-400/90 mt-1 leading-none font-mono whitespace-nowrap">

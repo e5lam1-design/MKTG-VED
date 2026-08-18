@@ -77,7 +77,8 @@ const processQueue = async () => {
       }
     });
     const text = await res.text();
-    const durationMatch = text.match(/<meta property="video:duration" content="(\d+)">/i);
+    const durationMatch = text.match(/<meta[^>]*content=["'](\d+)["'][^>]*property=["']video:duration["']/i) ||
+                          text.match(/<meta[^>]*property=["']video:duration["'][^>]*content=["'](\d+)["']/i);
     if (durationMatch) {
       const seconds = parseInt(durationMatch[1], 10);
       if (!isNaN(seconds) && seconds > 0) {

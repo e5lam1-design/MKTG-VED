@@ -77,8 +77,12 @@ const BunnyLinkPill: React.FC<{ task: TaskItem }> = ({ task }) => {
   const [duration, setDuration] = useState<string>(() => {
     if (!url) return '';
     try {
-      const cached = localStorage.getItem(`dur_${url}`);
-      if (cached) return cached;
+      const cachedUrl = localStorage.getItem(`dur_${url}`);
+      if (cachedUrl) return cachedUrl;
+      if (task.bunnyVideoId) {
+        const cachedId = localStorage.getItem(`dur_${task.bunnyVideoId}`);
+        if (cachedId) return cachedId;
+      }
     } catch {}
     return '';
   });
@@ -92,9 +96,12 @@ const BunnyLinkPill: React.FC<{ task: TaskItem }> = ({ task }) => {
         .then(data => {
           if (isMounted && data.duration) {
             setDuration(data.duration);
-            try { localStorage.setItem(`dur_${url}`, data.duration); } catch {}
+            try { 
+              localStorage.setItem(`dur_${url}`, data.duration);
+              if (task.bunnyVideoId) localStorage.setItem(`dur_${task.bunnyVideoId}`, data.duration);
+            } catch {}
           } else if (isMounted && data.status === 'queued') {
-            setTimeout(fetchDur, 1200);
+            setTimeout(fetchDur, 1000);
           }
         })
         .catch(() => {});
@@ -104,7 +111,7 @@ const BunnyLinkPill: React.FC<{ task: TaskItem }> = ({ task }) => {
     return () => {
       isMounted = false;
     };
-  }, [url]);
+  }, [url, task.bunnyVideoId]);
 
   // 1. Has Bunny Video Link -> Always Green Capsule (الأخضر)
   if (url) {
@@ -121,7 +128,7 @@ const BunnyLinkPill: React.FC<{ task: TaskItem }> = ({ task }) => {
           {dateDisplay}
         </span>
         <span className="text-[10px] font-black text-emerald-400 flex items-center gap-1 mt-1 leading-none font-mono whitespace-nowrap group-hover/pill:text-emerald-300">
-          ⏱️ {duration || 'تحميل...'}
+          ⏱️ {duration || 'Bunny'}
         </span>
       </a>
     );

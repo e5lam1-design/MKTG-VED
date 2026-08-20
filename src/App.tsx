@@ -4427,10 +4427,10 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
   const reelsTable = REELS_TABLE_MAP[activeGid];
   const isReelsTableTab = !!reelsTable;
 
-  const fetchReelsDb = async (gid: string) => {
+  const fetchReelsDb = async (gid: string, isSilent = false) => {
     const tbl = REELS_TABLE_MAP[gid];
     if (!tbl) return;
-    setIsReelsDbLoading(true);
+    if (!isSilent) setIsReelsDbLoading(true);
     try {
       // If loading VE tab, ensure all filmed tasks from Shooting tab exist in VE, without overwriting existing VE edits/notes
       if (gid === '1939073164') {
@@ -6310,6 +6310,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
 
   const handleUpdateShootingRow = async (oldCode: string, newRowData: any[]) => {
     const tbl = REELS_TABLE_MAP[activeGid];
+    const newCode = newRowData[5] || oldCode;
 
     let updatedItem: any;
     let dbPayload: any;
@@ -6318,7 +6319,6 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
       const isProblem = newRowData[13] === 'TRUE' || newRowData[13] === true;
       const isMissing = newRowData[12] === 'TRUE' || newRowData[12] === true;
       const isCanceled = newRowData[17] === 'TRUE' || newRowData[17] === true;
-      const newCode = newRowData[5] || oldCode;
 
       updatedItem = {
         date: newRowData[0] || '',

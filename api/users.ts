@@ -129,11 +129,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (typeof req.body.password === 'string' && req.body.password.trim().length >= 6) {
         const cleanPass = req.body.password.trim();
         // Update user_profiles table
-        await supabaseAdminClient
-          .from('user_profiles')
-          .update({ password: cleanPass })
-          .eq('id', targetId)
-          .catch(e => console.warn('[users PATCH] profile password error:', e));
+        try {
+          await supabaseAdminClient
+            .from('user_profiles')
+            .update({ password: cleanPass })
+            .eq('id', targetId);
+        } catch (e) {
+          console.warn('[users PATCH] profile password error:', e);
+        }
 
         const { error: passErr } = await supabaseAdminClient.auth.admin.updateUserById(targetId, {
           password: cleanPass,

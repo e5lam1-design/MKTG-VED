@@ -2081,9 +2081,9 @@ const ShootingRow = ({ item, index, activeGid, onToggleFilmed, loadingFilmedCode
   const [copied, setCopied] = useState(false);
   const { profile } = useAuth();
 
-  // Sync editForm if item changes from outside (e.g. after save)
+  // Sync editForm if item changes from outside (e.g. after save or realtime sync)
   useEffect(() => {
-    setEditForm(prev => ({
+    setEditForm({
       branch: item.branch || '',
       year: item.year || '',
       teacher: item.teacher || '',
@@ -2093,15 +2093,15 @@ const ShootingRow = ({ item, index, activeGid, onToggleFilmed, loadingFilmedCode
       by: item.by || '',
       storage: item.storage || '',
       script: item.script || '',
-      notes: (item.notes !== undefined && item.notes !== '') ? item.notes : (prev.notes || ''),
-      editorNotes: (item.editorNotes !== undefined && item.editorNotes !== '') ? item.editorNotes : (prev.editorNotes || ''),
+      notes: item.notes ?? '',
+      editorNotes: item.editorNotes ?? '',
       driveRaw: item.driveRaw || '',
       editorCol: item.editorCol || '',
       driveFinal: item.driveFinal || '',
       filmed: item.filmed === true || item.filmed === 'TRUE',
       filmingDate: item.filmingDate || ''
-    }));
-  }, [item]);
+    });
+  }, [item.notes, item.editorNotes, item.filmed, item.driveFinal, item.driveRaw, item.editorCol, item.branch, item.year, item.teacher, item.extraName, item.type, item.format, item.by, item.storage, item.script]);
 
   const generatedCode = useMemo(() => {
     if (!['1436746012', '1939073164', '798246690'].includes(activeGid)) return item.id;
@@ -5203,13 +5203,26 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
       }
 
       if (updatedItem) {
-        const rowCode = String(itemKey || updatedItem.code || updatedItem.id || updatedItem.uniqueKey);
-        setReelsDbRows(prev => prev.map(r => (r.code === rowCode || r.id === rowCode || r.uniqueKey === rowCode) ? { ...r, ...updatedItem } : r));
-        setTagmeDbRows(prev => prev.map(r => (r.uniqueKey === rowCode || r.id === rowCode) ? { ...r, ...updatedItem } : r));
-        setStageDbRows(prev => prev.map(r => (r.uniqueKey === rowCode || r.id === rowCode) ? { ...r, ...updatedItem } : r));
+        const candidateKeys = [
+          itemKey,
+          updatedItem.code,
+          updatedItem.id,
+          updatedItem.uniqueKey,
+          ...(altKeys || [])
+        ].filter(Boolean).map(k => String(k).trim().toLowerCase());
+
+        const isRowMatch = (r: any) => {
+          if (!r) return false;
+          const rKeys = [r.code, r.id, r.uniqueKey, r.script].filter(Boolean).map(k => String(k).trim().toLowerCase());
+          return rKeys.some(rk => candidateKeys.includes(rk));
+        };
+
+        setReelsDbRows(prev => prev.map(r => isRowMatch(r) ? { ...r, ...updatedItem } : r));
+        setTagmeDbRows(prev => prev.map(r => isRowMatch(r) ? { ...r, ...updatedItem } : r));
+        setStageDbRows(prev => prev.map(r => isRowMatch(r) ? { ...r, ...updatedItem } : r));
         setLiveData((prev: any[]) => {
           if (!Array.isArray(prev)) return prev;
-          return prev.map((r: any) => (r.code === rowCode || r.id === rowCode || r.uniqueKey === rowCode) ? { ...r, ...updatedItem } : r);
+          return prev.map((r: any) => isRowMatch(r) ? { ...r, ...updatedItem } : r);
         });
       }
 
@@ -9438,7 +9451,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
                           const candidates = [item.id, item.code, item.uniqueKey].filter(Boolean).map(c => String(c).trim().toLowerCase());
                           return candidates.some(c => c === ck || c.includes(ck) || ck.includes(c));
                         });
-                        return <ShootingRow key={idx} item={item} index={idx} activeGid={activeGid} onToggleFilmed={handleFilmedToggle} onToggleEditCheck={handleToggleEditCheck} loadingFilmedCode={loadingFilmedCode} onUpdateShootingRow={handleUpdateShootingRow} liveData={liveData} optionsLists={{ branches: uniqueBranches, years: uniqueYears, teachers: uniqueTeachers, extraNames: uniqueExtraNames, types: uniqueTypes, formats: uniqueFormats, bys: uniqueBys, storages: uniqueStorages, editors: editorsList }} autofillDrag={autofillDrag} setAutofillDrag={setAutofillDrag} onApplyAutofill={handleApplyAutofill} activeCell={activeCell} setActiveCell={setActiveCell} toast={toast} isSubscribed={isSubscribed} onToggleSubscribe={() => toggleSubscribe(item.code || item.id || item.uniqueKey)} isSimple={activeGid === '1939073164' && veViewMode === 'SIMPLE'} />;
+                        return <ShootingRow key={item.code || item.id || item.uniqueKey || idx} item={item} index={idx} activeGid={activeGid} onToggleFilmed={handleFilmedToggle} onToggleEditCheck={handleToggleEditCheck} loadingFilmedCode={loadingFilmedCode} onUpdateShootingRow={handleUpdateShootingRow} liveData={liveData} optionsLists={{ branches: uniqueBranches, years: uniqueYears, teachers: uniqueTeachers, extraNames: uniqueExtraNames, types: uniqueTypes, formats: uniqueFormats, bys: uniqueBys, storages: uniqueStorages, editors: editorsList }} autofillDrag={autofillDrag} setAutofillDrag={setAutofillDrag} onApplyAutofill={handleApplyAutofill} activeCell={activeCell} setActiveCell={setActiveCell} toast={toast} isSubscribed={isSubscribed} onToggleSubscribe={() => toggleSubscribe(item.code || item.id || item.uniqueKey)} isSimple={activeGid === '1939073164' && veViewMode === 'SIMPLE'} />;
                       }
                       return <StageRow key={idx} item={item} index={idx} tagmeTransfers={tagmeTransfers} onTagmeToggle={handleTagmeToggle} activeLabel={activeLabel} isGlowing={isGlowing} onUpdateDate={handleUpdateDate} onUpdateWeek={handleUpdateWeek} onUpdateThumbnailLink={handleUpdateThumbnailLink} onUpdateTime={handleUpdateTime} onUpdateYoutubeLink={handleUpdateYoutubeLink} onUpdateUploaded={handleUpdateUploaded} onToggleDelivered={handleToggleDelivered} />;
                     }) : (

@@ -40,6 +40,7 @@ import {
   Trash2,
   Bookmark,
   FileSpreadsheet,
+  MessageSquarePlus,
   BookOpen,
   Key,
   Lock,

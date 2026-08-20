@@ -1379,29 +1379,32 @@ const TagmeRow = ({
           <button
             onClick={() => {
               const newDone = !done;
-              setDone(newDone);
-              if (newDone) {
-                setPriority(false);
-              }
               if (onStatusChange) {
                 onStatusChange(item.uniqueKey || generateKey(item), item.name, item.editor || '', newDone ? 'done' : 'undone');
               }
             }}
-            disabled={!(profile?.role && PERMISSIONS.canEditEditors(profile.role))}
-            className={`w-11 h-11 rounded-2xl flex items-center justify-center transition-all duration-300 ${done ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/20 scale-105' : 'bg-white/5 text-muted hover:bg-emerald-500/10 hover:text-emerald-400'} ${!(profile?.role && PERMISSIONS.canEditEditors(profile.role)) && 'opacity-50 cursor-not-allowed'}`}
+            className={`w-11 h-11 rounded-2xl flex items-center justify-center transition-all duration-300 cursor-pointer ${
+              done 
+                ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/20 scale-105' 
+                : 'bg-white/5 text-muted hover:bg-emerald-500/10 hover:text-emerald-400 hover:scale-105 active:scale-95'
+            }`}
+            title="Done"
           >
             <CheckCircle2 size={20} />
           </button>
           <button
             onClick={() => {
               const newCancel = !cancel;
-              setCancel(newCancel);
               if (onStatusChange) {
                 onStatusChange(item.uniqueKey || generateKey(item), item.name, item.editor || '', newCancel ? 'cancel' : 'uncancel');
               }
             }}
-            disabled={!(profile?.role && PERMISSIONS.canEditEditors(profile.role))}
-            className={`w-11 h-11 rounded-2xl flex items-center justify-center transition-all duration-300 ${cancel ? 'bg-amber-500 text-white shadow-lg shadow-amber-500/20 scale-105' : 'bg-white/5 text-muted hover:bg-amber-500/10 hover:text-amber-400'} ${!(profile?.role && PERMISSIONS.canEditEditors(profile.role)) && 'opacity-50 cursor-not-allowed'}`}
+            className={`w-11 h-11 rounded-2xl flex items-center justify-center transition-all duration-300 cursor-pointer ${
+              cancel 
+                ? 'bg-amber-500 text-white shadow-lg shadow-amber-500/20 scale-105' 
+                : 'bg-white/5 text-muted hover:bg-amber-500/10 hover:text-amber-400 hover:scale-105 active:scale-95'
+            }`}
+            title="Cancel"
           >
             <AlertCircle size={20} />
           </button>
@@ -1431,20 +1434,18 @@ const TagmeRow = ({
                 return;
               }
               const newPriority = !priority;
-              setPriority(newPriority);
               const editor = item.editor;
               if (onStatusChange) {
                 onStatusChange(item.uniqueKey || generateKey(item), item.name, editor || 'غير محدد', newPriority ? 'priority' : 'unpriority');
               }
             }}
-            disabled={!(profile?.role && PERMISSIONS.canEditEditors(profile.role))}
-            className={`w-11 h-11 rounded-2xl flex items-center justify-center mx-auto transition-all duration-500 ${
+            className={`w-11 h-11 rounded-2xl flex items-center justify-center mx-auto transition-all duration-500 cursor-pointer ${
               priority 
                 ? 'bg-purple-600 text-white shadow-[0_0_20px_rgba(147,51,234,0.6)] ring-2 ring-purple-400 scale-110 animate-pulse' 
                 : !canRaisePriority
                   ? 'bg-rose-500/10 text-rose-400 border border-rose-500/30 hover:bg-rose-500/20 hover:scale-105'
-                  : 'bg-white/5 text-muted hover:bg-purple-500/20 hover:text-purple-400'
-            } ${!(profile?.role && PERMISSIONS.canEditEditors(profile.role)) ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer'}`}
+                  : 'bg-white/5 text-muted hover:bg-purple-500/20 hover:text-purple-400 hover:scale-105 active:scale-95'
+            }`}
             title={!priority && !canRaisePriority ? `تم الوصول للحد اليومي (${priorityLimit}) - انقر للتفاصيل` : 'Priority'}
           >
             <AlertCircle size={20} />
@@ -4211,10 +4212,12 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
     const col = dbFieldMap[field] || field;
     const nowIso = new Date().toISOString();
     const currentUser = profile?.name || localStorage.getItem('user_editor_name') || 'مستخدم';
+    const cleanKey = String(itemKey || '').replace(/^tgm-/, '').trim().toLowerCase();
 
     // Optimistic UI update
     setTagmeDbRows(prev => prev.map(item => {
-      if (item.uniqueKey === itemKey) {
+      const itemK = String(item.uniqueKey || item.id || '').replace(/^tgm-/, '').trim().toLowerCase();
+      if (itemK === cleanKey || item.uniqueKey === itemKey || item.id === itemKey || item.name === itemKey) {
         const next = { ...item, [field]: value };
         if (field === 'notesMarketing') {
           next.notesMarketingUpdatedAt = nowIso;
@@ -4243,10 +4246,26 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
         updatePayload.notes_editors_updated_by = currentUser;
       }
 
-      const { error } = await supabase
+      const targetKeys = [
+        itemKey,
+        itemKey.startsWith('tgm-') ? itemKey : `tgm-${itemKey}`,
+        itemKey.replace(/^tgm-/, '')
+      ].filter(Boolean);
+
+      const { data: updatedRows, error } = await supabase
         .from('tagme3at_26')
         .update(updatePayload)
-        .eq('unique_key', itemKey);
+        .in('unique_key', targetKeys)
+        .select();
+
+      if (error) {
+        console.error('Error updating tagme3at_26 in Supabase:', error);
+      } else if (!updatedRows || updatedRows.length === 0) {
+        await supabase
+          .from('tagme3at_26')
+          .update(updatePayload)
+          .eq('name', itemKey);
+      }
 
       if (error) {
         console.error('Error updating tagme3at_26 in Supabase:', error);

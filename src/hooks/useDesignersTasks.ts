@@ -85,20 +85,28 @@ export function useDesignersTasks() {
   }, []);
 
   const updateTask = useCallback(async (id: number, updates: Partial<DesignerTask>) => {
+    // 1. Optimistic local update
     setTasks(prev => prev.map(t => t.id === id ? { ...t, ...updates } : t));
+
+    // 2. Prepare payload for DB
     const { error } = await supabase.from(TABLE).update(updates).eq('id', id);
     if (error) {
-      console.warn('[useDesignersTasks] update error (retrying without optional timestamp fields):', error.message);
-      const fallbackUpdates = { ...updates };
-      delete fallbackUpdates.done_designer_at;
-      delete fallbackUpdates.received_creator_at;
-      const { error: retryErr } = await supabase.from(TABLE).update(fallbackUpdates).eq('id', id);
-      if (retryErr) {
-        console.error('[useDesignersTasks] fatal update error:', retryErr.message);
-        fetchAll();
+      // If error is due to missing optional timestamp/metadata columns, retry with base columns
+      const basePayload: any = {};
+      const knownCols = ['name', 'task_name', 'date', 'designer', 'priority', 'requester', 'type', 'deadline', 'reference', 'notes', 'done', 'completed_date', 'completed_at', 'done_designer', 'received_creator', 'done_designer_at', 'received_creator_at'];
+      for (const k of Object.keys(updates)) {
+        if (knownCols.includes(k) && !k.startsWith('notes_updated')) {
+          basePayload[k] = (updates as any)[k];
+        }
+      }
+      if (Object.keys(basePayload).length > 0) {
+        const { error: retryErr } = await supabase.from(TABLE).update(basePayload).eq('id', id);
+        if (retryErr) {
+          console.error('[useDesignersTasks] update error:', retryErr.message);
+        }
       }
     }
-  }, [fetchAll]);
+  }, []);
 
   const deleteTask = useCallback(async (id: number) => {
     setTasks(prev => prev.filter(t => t.id !== id));

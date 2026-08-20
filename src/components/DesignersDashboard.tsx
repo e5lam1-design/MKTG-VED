@@ -3,6 +3,7 @@ import { Loader2, Search, CheckSquare, Square, ChevronDown, Plus, X, Undo2, Redo
 import { motion, AnimatePresence } from 'framer-motion';
 import { useDesignersTasks } from '../hooks/useDesignersTasks';
 import { useDesignersOptions, DEFAULT_DESIGNERS, DEFAULT_REQUESTERS, DEFAULT_PRIORITIES, DEFAULT_TYPES } from '../hooks/useDesignersOptions';
+import { useAuth } from '../contexts/AuthContext';
 
 // Interactive Floating Popover for Review Tasks (Opens Upwards with Distinct Filter Controls)
 const ReviewTasksPopover = ({
@@ -332,40 +333,150 @@ const HeaderFilter = ({ label, value, onChange, options }: any) => {
   );
 };
 
-// Enhanced inline editable Notes Input with Undo/Redo History system
-const NotesInput = ({ value, onChange, className, itemKey }: any) => {
-  const historyKey = `hist_design_notes_${itemKey || 'global'}`;
-  
-  const [history, setHistory] = useState<string[]>(() => {
+const formatArabicTimestamp = (isoStr?: string) => {
+  if (!isoStr) return null;
+  try {
+    const d = new Date(isoStr);
+    if (isNaN(d.getTime())) return null;
+
+    const day = String(d.getDate()).padStart(2, '0');
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const year = d.getFullYear();
+
+    let hours = d.getHours();
+    const minutes = String(d.getMinutes()).padStart(2, '0');
+    const ampm = hours >= 12 ? 'م' : 'ص';
+    hours = hours % 12;
+    hours = hours ? hours : 12;
+    const hoursStr = String(hours).padStart(2, '0');
+
+    return `${year}/${month}/${day} - ${hoursStr}:${minutes} ${ampm}`;
+  } catch {
+    return null;
+  }
+};
+
+type DesignHistoryEntry = {
+  text: string;
+  timestamp: string;
+  author: string;
+};
+
+// Enhanced inline editable Notes Input with Undo/Redo History system and Hover Badge
+const NotesInput = ({ value, onChange, className, itemKey, updatedAt, updatedBy, currentUserName }: any) => {
+  const getActiveUserName = () => {
+    if (currentUserName && currentUserName.trim() && currentUserName !== 'مستخدم') return currentUserName.trim();
     try {
-      const saved = localStorage.getItem(historyKey);
-      if (saved) return JSON.parse(saved);
-    } catch (e) {}
-    return value ? [value] : [''];
+      const raw = localStorage.getItem('local_profile_login');
+      if (raw) {
+        const p = JSON.parse(raw);
+        if (p?.name && p.name.trim()) return p.name.trim();
+      }
+    } catch {}
+    const legacy = localStorage.getItem('user_editor_name');
+    if (legacy && legacy.trim()) return legacy.trim();
+    return 'مستخدم';
+  };
+
+  const historyKey = `hist_design_notes_${itemKey || 'global'}`;
+  const timestampKey = `time_design_notes_${itemKey || 'global'}`;
+  const authorKey = `author_design_notes_${itemKey || 'global'}`;
+  
+  const [history, setHistory] = useState<DesignHistoryEntry[]>(() => {
+    const saved = localStorage.getItem(historyKey);
+    let entries: DesignHistoryEntry[] = [];
+    const activeAuthor = updatedBy || getActiveUserName();
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          entries = parsed.map((item: any) => {
+            if (typeof item === 'string') {
+              return { text: item, timestamp: updatedAt || new Date().toISOString(), author: activeAuthor };
+            }
+            return item;
+          });
+        }
+      } catch (e) {}
+    }
+    const currentText = (value || '').trim();
+    if (currentText) {
+      if (entries.length === 0 || entries[entries.length - 1].text !== currentText) {
+        entries.push({ text: currentText, timestamp: updatedAt || new Date().toISOString(), author: activeAuthor });
+      }
+    }
+    return entries.slice(-30);
   });
   
-  const [currentIndex, setCurrentIndex] = useState<number>(() => history.length - 1);
+  const [currentIndex, setCurrentIndex] = useState<number>(() => history.length > 0 ? history.length - 1 : -1);
   const [val, setVal] = useState(value || '');
+  const isUndoRedoRef = useRef(false);
+
+  const [lastEditedAt, setLastEditedAt] = useState<string | undefined>(() => {
+    return (history.length > 0 && currentIndex >= 0 && history[currentIndex]?.timestamp) 
+      ? history[currentIndex].timestamp 
+      : updatedAt || localStorage.getItem(timestampKey) || undefined;
+  });
+  const [lastEditedBy, setLastEditedBy] = useState<string | undefined>(() => {
+    return (history.length > 0 && currentIndex >= 0 && history[currentIndex]?.author) 
+      ? history[currentIndex].author 
+      : updatedBy || localStorage.getItem(authorKey) || getActiveUserName();
+  });
 
   useEffect(() => {
-    setVal(value || '');
+    if (isUndoRedoRef.current) {
+      isUndoRedoRef.current = false;
+      return;
+    }
+    const valStr = value || '';
+    if (valStr === val) return;
+
+    setVal(valStr);
+    const trimmed = valStr.trim();
+    if (trimmed) {
+      const activeAuthor = updatedBy || getActiveUserName();
+      setHistory(prev => {
+        const existingIdx = prev.findIndex(e => e.text === trimmed);
+        if (existingIdx !== -1) {
+          setCurrentIndex(existingIdx);
+          return prev;
+        }
+        const newH = [...prev, { text: trimmed, timestamp: updatedAt || new Date().toISOString(), author: activeAuthor }].slice(-30);
+        try { localStorage.setItem(historyKey, JSON.stringify(newH)); } catch {}
+        setCurrentIndex(newH.length - 1);
+        return newH;
+      });
+    }
   }, [value]);
 
   const commitValue = (newVal: string) => {
-    if (newVal !== history[currentIndex] && newVal !== history[history.length - 1]) {
-      const newHistory = [...history.slice(0, currentIndex + 1), newVal].slice(-25);
-      setHistory(newHistory);
-      setCurrentIndex(newHistory.length - 1);
-      try {
-        localStorage.setItem(historyKey, JSON.stringify(newHistory));
-      } catch (e) {}
-      onChange(newVal);
-    } else if (newVal !== (value || '')) {
-      onChange(newVal);
-    }
+    if (isUndoRedoRef.current) return;
+    const trimmed = (newVal || '').trim();
+    if (trimmed === (value || '').trim() && history.length > 0 && history[currentIndex]?.text === trimmed) return;
+
+    const nowIso = new Date().toISOString();
+    const currentUser = getActiveUserName();
+    const newEntry: DesignHistoryEntry = { text: trimmed, timestamp: nowIso, author: currentUser };
+
+    setLastEditedAt(nowIso);
+    setLastEditedBy(currentUser);
+    try {
+      localStorage.setItem(timestampKey, nowIso);
+      localStorage.setItem(authorKey, currentUser);
+    } catch {}
+
+    const newHistory = [...history.slice(0, currentIndex + 1), newEntry].slice(-30);
+    setHistory(newHistory);
+    setCurrentIndex(newHistory.length - 1);
+    try {
+      localStorage.setItem(historyKey, JSON.stringify(newHistory));
+    } catch {}
+
+    onChange(trimmed, nowIso, currentUser);
   };
 
   const handleBlur = () => {
+    if (isUndoRedoRef.current) return;
     commitValue(val);
   };
 
@@ -377,37 +488,72 @@ const NotesInput = ({ value, onChange, className, itemKey }: any) => {
 
   const undo = () => {
     if (currentIndex > 0) {
-      const prevVal = history[currentIndex - 1];
+      const prevEntry = history[currentIndex - 1];
+      if (!prevEntry) return;
+      isUndoRedoRef.current = true;
       setCurrentIndex(currentIndex - 1);
-      setVal(prevVal);
-      onChange(prevVal);
+      setVal(prevEntry.text);
+      setLastEditedAt(prevEntry.timestamp);
+      setLastEditedBy(prevEntry.author);
+      try {
+        localStorage.setItem(timestampKey, prevEntry.timestamp);
+        if (prevEntry.author) localStorage.setItem(authorKey, prevEntry.author);
+      } catch {}
+      onChange(prevEntry.text, prevEntry.timestamp, prevEntry.author);
+      setTimeout(() => { isUndoRedoRef.current = false; }, 300);
     }
   };
 
   const redo = () => {
     if (currentIndex < history.length - 1) {
-      const nextVal = history[currentIndex + 1];
+      const nextEntry = history[currentIndex + 1];
+      if (!nextEntry) return;
+      isUndoRedoRef.current = true;
       setCurrentIndex(currentIndex + 1);
-      setVal(nextVal);
-      onChange(nextVal);
+      setVal(nextEntry.text);
+      setLastEditedAt(nextEntry.timestamp);
+      setLastEditedBy(nextEntry.author);
+      try {
+        localStorage.setItem(timestampKey, nextEntry.timestamp);
+        if (nextEntry.author) localStorage.setItem(authorKey, nextEntry.author);
+      } catch {}
+      onChange(nextEntry.text, nextEntry.timestamp, nextEntry.author);
+      setTimeout(() => { isUndoRedoRef.current = false; }, 300);
     }
   };
 
   const canUndo = currentIndex > 0;
   const canRedo = currentIndex < history.length - 1;
+  const hasValue = !!val;
+  const timeLabel = formatArabicTimestamp(lastEditedAt);
 
   return (
-    <div className="relative flex items-center gap-1 group w-full max-w-[280px]">
+    <div className="relative flex items-center justify-center gap-1 group/history w-full max-w-[280px]">
+      {/* Floating Hover Tooltip Badge */}
+      {hasValue && timeLabel && (
+        <div className="absolute bottom-full mb-2 hidden group-hover/history:flex flex-col items-center z-[300] pointer-events-none animate-fadeIn left-1/2 -translate-x-1/2">
+          <div className="bg-[#0c121e]/95 border border-emerald-500/40 rounded-xl px-3 py-1.5 shadow-[0_10px_30px_rgba(0,0,0,0.7)] backdrop-blur-md text-[11px] text-white whitespace-nowrap text-right flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0"></span>
+            <span className="font-mono text-emerald-300 font-bold">{timeLabel}</span>
+            {lastEditedBy && (
+              <span className="text-muted/90 text-[10px] arabic-text font-bold">👤 {lastEditedBy}</span>
+            )}
+          </div>
+          <div className="w-2 h-2 bg-[#0c121e] border-r border-b border-emerald-500/40 rotate-45 -mt-1"></div>
+        </div>
+      )}
+
       <button 
+        onMouseDown={(e) => e.preventDefault()}
         onClick={undo} 
         disabled={!canUndo}
         type="button"
-        className={`p-1 rounded-full bg-black/40 border transition-all shrink-0 cursor-pointer ${
+        className={`p-1 rounded-full bg-black/40 border transition-all shrink-0 ${
           canUndo 
-            ? 'border-purple-500/50 text-purple-400 hover:bg-purple-500/20 hover:scale-110 shadow-lg' 
-            : 'border-white/5 text-white/10 opacity-30 cursor-not-allowed'
+            ? 'border-purple-500/50 text-purple-400 hover:bg-purple-500/20 hover:scale-110 shadow-lg opacity-100 cursor-pointer' 
+            : 'border-white/5 text-white/15 opacity-25 cursor-not-allowed'
         }`}
-        title="تراجع (Undo)"
+        title={canUndo ? `تراجع إلى النسخة السابقة (${formatArabicTimestamp(history[currentIndex - 1]?.timestamp)})` : "لا يوجد تراجع"}
       >
         <Undo2 size={12} />
       </button>
@@ -424,15 +570,16 @@ const NotesInput = ({ value, onChange, className, itemKey }: any) => {
       />
 
       <button 
+        onMouseDown={(e) => e.preventDefault()}
         onClick={redo} 
         disabled={!canRedo}
         type="button"
-        className={`p-1 rounded-full bg-black/40 border transition-all shrink-0 cursor-pointer ${
+        className={`p-1 rounded-full bg-black/40 border transition-all shrink-0 ${
           canRedo 
-            ? 'border-purple-500/50 text-purple-400 hover:bg-purple-500/20 hover:scale-110 shadow-lg' 
-            : 'border-white/5 text-white/10 opacity-30 cursor-not-allowed'
+            ? 'border-purple-500/50 text-purple-400 hover:bg-purple-500/20 hover:scale-110 shadow-lg opacity-100 cursor-pointer' 
+            : 'border-white/5 text-white/15 opacity-25 cursor-not-allowed'
         }`}
-        title="إعادة (Redo)"
+        title={canRedo ? `تقدم إلى النسخة التالية (${formatArabicTimestamp(history[currentIndex + 1]?.timestamp)})` : "لا يوجد تقدم"}
       >
         <Redo2 size={12} />
       </button>
@@ -441,6 +588,7 @@ const NotesInput = ({ value, onChange, className, itemKey }: any) => {
 };
 
 export default function DesignersDashboard({ isDemoMode = false, liveData: sheetData }: { isDemoMode?: boolean; liveData?: any[] } = {}) {
+  const { profile } = useAuth();
   const currentMonthNum = String(new Date().getMonth() + 1);
   const [selectedMonth, setSelectedMonth] = useState<string>('All');
   const [searchTerm, setSearchTerm] = useState('');
@@ -620,7 +768,7 @@ export default function DesignersDashboard({ isDemoMode = false, liveData: sheet
     }));
   };
 
-  const handleCellChange = async (rowIdOrKey: any, field: string, value: any) => {
+  const handleCellChange = async (rowIdOrKey: any, field: string, value: any, customTimestamp?: string, customAuthor?: string) => {
     // Find target row by id (number or string) or uniqueKey
     let targetRow = localRows.find((r: any) => 
       (r.id !== undefined && String(r.id) === String(rowIdOrKey)) || 
@@ -636,14 +784,40 @@ export default function DesignersDashboard({ isDemoMode = false, liveData: sheet
 
     const numericId = Number(targetRow.id);
 
+    const broadcastDesignActivity = (message: string, type: string) => {
+      try {
+        const globalCh = supabase.channel('tasks:global');
+        const taskTitle = targetRow.name || `مهمة تصميم #${targetRow.id}`;
+        globalCh.send({
+          type: 'broadcast',
+          event: 'update',
+          payload: {
+            itemKey: String(targetRow.id),
+            altKeys: [String(targetRow.id), targetRow.uniqueKey, targetRow.name].filter(Boolean),
+            taskName: taskTitle,
+            message,
+            type,
+            from: profile?.name || 'مصمم',
+            at: Date.now()
+          }
+        });
+      } catch (e) {
+        console.error('Failed to broadcast design activity:', e);
+      }
+    };
+
     if (field === 'done') {
-      if (toggleDone && !isNaN(numericId)) await toggleDone(numericId, targetRow.done);
+      if (toggleDone && !isNaN(numericId)) {
+        await toggleDone(numericId, targetRow.done);
+        broadcastDesignActivity(!targetRow.done ? '✅ أنهى مهمة التصميم بنجاح' : '↩️ أعاد فتح مهمة التصميم', !targetRow.done ? 'done' : 'undone');
+      }
     } else if (field === 'done_designer') {
       if (updateTask && !isNaN(numericId)) {
         await updateTask(numericId, {
           done_designer: Boolean(value),
           done_designer_at: value ? new Date().toISOString() : null,
         });
+        broadcastDesignActivity(Boolean(value) ? '🎨 أنهى المصمم التصميم' : '🎨 أعاد المصمم فتح التصميم', 'design_status');
       }
     } else if (field === 'received_creator') {
       if (updateTask && !isNaN(numericId)) {
@@ -651,6 +825,7 @@ export default function DesignersDashboard({ isDemoMode = false, liveData: sheet
           received_creator: Boolean(value),
           received_creator_at: value ? new Date().toISOString() : null,
         });
+        broadcastDesignActivity(Boolean(value) ? '📥 استلم الكريتور التصميم' : '📥 ألغى استلام التصميم', 'received_status');
       }
     } else if (field === 'priority') {
       const autoDeadline = calculateDeadlineFromPriority(value, targetRow.deadline);
@@ -659,6 +834,18 @@ export default function DesignersDashboard({ isDemoMode = false, liveData: sheet
           priority: value,
           ...(autoDeadline ? { deadline: autoDeadline } : {})
         });
+        broadcastDesignActivity(`🚨 عدل أولوية التصميم إلى: ${value}`, 'priority');
+      }
+    } else if (field === 'notes') {
+      if (updateTask && !isNaN(numericId)) {
+        await updateTask(numericId, {
+          notes: value,
+          notes_updated_at: customTimestamp || new Date().toISOString(),
+          notes_updated_by: customAuthor || profile?.name || 'مستخدم'
+        } as any);
+        if (value && String(value).trim()) {
+          broadcastDesignActivity(`📝 كتب ملاحظة: "${String(value).slice(0, 60)}${String(value).length > 60 ? '...' : ''}"`, 'note');
+        }
       }
     } else {
       if (updateTask && !isNaN(numericId)) {
@@ -1366,8 +1553,11 @@ export default function DesignersDashboard({ isDemoMode = false, liveData: sheet
                       <NotesInput
                         itemKey={row.id || row.uniqueKey || row.originalIndex}
                         value={row.notes}
-                        onChange={(val: string) => handleCellChange(row.id || row.uniqueKey || row.originalIndex, 'notes', val)}
+                        onChange={(val: string, time?: string, author?: string) => handleCellChange(row.id || row.uniqueKey || row.originalIndex, 'notes', val, time, author)}
                         className={textNotesClass}
+                        updatedAt={row.notes_updated_at || row.updated_at || row.date}
+                        updatedBy={row.notes_updated_by}
+                        currentUserName={profile?.name || 'مستخدم'}
                       />
                     </td>
 

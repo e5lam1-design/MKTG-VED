@@ -241,6 +241,22 @@ type HistoryEntry = {
 };
 
 const HistoryInput = ({ itemKey, fieldKey, value, onChange, placeholder, updatedAt, updatedBy }: any) => {
+  const { profile } = useAuth();
+  
+  const getLoggedInUserName = () => {
+    if (profile?.name && profile.name.trim()) return profile.name.trim();
+    try {
+      const raw = localStorage.getItem('local_profile_login');
+      if (raw) {
+        const p = JSON.parse(raw);
+        if (p?.name && p.name.trim()) return p.name.trim();
+      }
+    } catch {}
+    const legacy = localStorage.getItem('user_editor_name');
+    if (legacy && legacy.trim()) return legacy.trim();
+    return 'مستخدم';
+  };
+
   const historyKey = `hist_${fieldKey || 'note'}_${itemKey || 'global'}`;
   const timestampKey = `time_${fieldKey || 'note'}_${itemKey || 'global'}`;
   const authorKey = `author_${fieldKey || 'note'}_${itemKey || 'global'}`;
@@ -249,13 +265,14 @@ const HistoryInput = ({ itemKey, fieldKey, value, onChange, placeholder, updated
   const [history, setHistory] = useState<HistoryEntry[]>(() => {
     const saved = localStorage.getItem(historyKey);
     let entries: HistoryEntry[] = [];
+    const currentAuthor = updatedBy || getLoggedInUserName();
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) {
           entries = parsed.map((item: any) => {
             if (typeof item === 'string') {
-              return { text: item, timestamp: updatedAt || new Date().toISOString(), author: updatedBy || 'مستخدم' };
+              return { text: item, timestamp: updatedAt || new Date().toISOString(), author: currentAuthor };
             }
             return item;
           });
@@ -265,7 +282,7 @@ const HistoryInput = ({ itemKey, fieldKey, value, onChange, placeholder, updated
     const currentText = (value || '').trim();
     if (currentText) {
       if (entries.length === 0 || entries[entries.length - 1].text !== currentText) {
-        entries.push({ text: currentText, timestamp: updatedAt || new Date().toISOString(), author: updatedBy || 'مستخدم' });
+        entries.push({ text: currentText, timestamp: updatedAt || new Date().toISOString(), author: currentAuthor });
       }
     }
     return entries.slice(-30);
@@ -283,9 +300,8 @@ const HistoryInput = ({ itemKey, fieldKey, value, onChange, placeholder, updated
   const [lastEditedBy, setLastEditedBy] = useState<string | undefined>(() => {
     return (history.length > 0 && currentIndex >= 0 && history[currentIndex]?.author) 
       ? history[currentIndex].author 
-      : updatedBy || localStorage.getItem(authorKey) || undefined;
+      : updatedBy || localStorage.getItem(authorKey) || getLoggedInUserName();
   });
-  const commitTimeoutRef = useRef<any>(null);
 
   // Sync external value if it changes independently
   useEffect(() => {
@@ -294,18 +310,24 @@ const HistoryInput = ({ itemKey, fieldKey, value, onChange, placeholder, updated
       return;
     }
     const valStr = value || '';
+    if (valStr === localValue) return;
+    if (!valStr && localValue) return;
+
     setLocalValue(valStr);
     const trimmed = valStr.trim();
     if (trimmed) {
+      const currentAuthor = updatedBy || getLoggedInUserName();
       setHistory(prev => {
-        if (prev.length === 0 || prev[prev.length - 1]?.text !== trimmed) {
-          const newH = [...prev, { text: trimmed, timestamp: updatedAt || new Date().toISOString(), author: updatedBy || 'مستخدم' }].slice(-30);
-          try { localStorage.setItem(historyKey, JSON.stringify(newH)); } catch {}
-          return newH;
+        const existingIdx = prev.findIndex(e => e.text === trimmed);
+        if (existingIdx !== -1) {
+          setCurrentIndex(existingIdx);
+          return prev;
         }
-        return prev;
+        const newH = [...prev, { text: trimmed, timestamp: updatedAt || new Date().toISOString(), author: currentAuthor }].slice(-30);
+        try { localStorage.setItem(historyKey, JSON.stringify(newH)); } catch {}
+        setCurrentIndex(newH.length - 1);
+        return newH;
       });
-      setCurrentIndex(prev => Math.max(0, history.length - 1));
     }
   }, [value]);
 
@@ -318,11 +340,12 @@ const HistoryInput = ({ itemKey, fieldKey, value, onChange, placeholder, updated
   }, [localValue]);
 
   const commitValue = (newVal: string) => {
+    if (isUndoRedoRef.current) return;
     const trimmed = (newVal || '').trim();
     if (trimmed === (value || '').trim() && history.length > 0 && history[currentIndex]?.text === trimmed) return;
 
     const nowIso = new Date().toISOString();
-    const currentUser = localStorage.getItem('user_editor_name') || 'مستخدم';
+    const currentUser = getLoggedInUserName();
     const newEntry: HistoryEntry = { text: trimmed, timestamp: nowIso, author: currentUser };
 
     setLastEditedAt(nowIso);
@@ -343,32 +366,30 @@ const HistoryInput = ({ itemKey, fieldKey, value, onChange, placeholder, updated
   };
 
   const handleChange = (e: any) => {
-    const val = e.target.value;
-    setLocalValue(val);
-    if (commitTimeoutRef.current) clearTimeout(commitTimeoutRef.current);
-    commitTimeoutRef.current = setTimeout(() => {
-      commitValue(val);
-    }, 400);
+    setLocalValue(e.target.value);
   };
 
   const handleBlur = () => {
-    if (commitTimeoutRef.current) clearTimeout(commitTimeoutRef.current);
+    if (isUndoRedoRef.current) return;
     commitValue(localValue);
   };
 
   const handleKeyDown = (e: any) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      e.target.blur();
+      e.currentTarget.blur();
     }
   };
 
+  // ── Undo: Go back to previous historical snapshot (preserving its original time & author) ──
   const undo = () => {
     if (currentIndex > 0) {
       const prevEntry = history[currentIndex - 1];
+      if (!prevEntry) return;
       isUndoRedoRef.current = true;
       setCurrentIndex(currentIndex - 1);
       setLocalValue(prevEntry.text);
+      // Keep original snapshot time & author — do NOT overwrite with now or current user!
       setLastEditedAt(prevEntry.timestamp);
       setLastEditedBy(prevEntry.author);
       try {
@@ -376,15 +397,19 @@ const HistoryInput = ({ itemKey, fieldKey, value, onChange, placeholder, updated
         if (prevEntry.author) localStorage.setItem(authorKey, prevEntry.author);
       } catch {}
       onChange(prevEntry.text, prevEntry.timestamp, prevEntry.author);
+      setTimeout(() => { isUndoRedoRef.current = false; }, 300);
     }
   };
 
+  // ── Redo: Advance to next historical snapshot (preserving its original time & author) ──
   const redo = () => {
     if (currentIndex < history.length - 1) {
       const nextEntry = history[currentIndex + 1];
+      if (!nextEntry) return;
       isUndoRedoRef.current = true;
       setCurrentIndex(currentIndex + 1);
       setLocalValue(nextEntry.text);
+      // Keep original snapshot time & author — do NOT overwrite with now or current user!
       setLastEditedAt(nextEntry.timestamp);
       setLastEditedBy(nextEntry.author);
       try {
@@ -392,6 +417,7 @@ const HistoryInput = ({ itemKey, fieldKey, value, onChange, placeholder, updated
         if (nextEntry.author) localStorage.setItem(authorKey, nextEntry.author);
       } catch {}
       onChange(nextEntry.text, nextEntry.timestamp, nextEntry.author);
+      setTimeout(() => { isUndoRedoRef.current = false; }, 300);
     }
   };
 
@@ -414,16 +440,20 @@ const HistoryInput = ({ itemKey, fieldKey, value, onChange, placeholder, updated
         </div>
       )}
 
-      {history.length > 1 && (
-        <button 
-          onClick={undo} 
-          disabled={currentIndex <= 0}
-          className={`absolute -left-6 p-1.5 rounded-full bg-white/5 border border-white/10 opacity-0 group-hover/history:opacity-100 transition-all z-10 ${currentIndex <= 0 ? 'text-white/20' : 'text-blue-400 hover:bg-blue-500/20 hover:scale-110 shadow-lg'}`}
-          title={currentIndex > 0 ? `تراجع إلى النسخة السابقة (${formatArabicTimestamp(history[currentIndex - 1]?.timestamp)})` : "لا يوجد تراجع"}
-        >
-          <Undo2 size={12} />
-        </button>
-      )}
+      <button 
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={undo} 
+        disabled={currentIndex <= 0}
+        type="button"
+        className={`absolute -left-6 p-1.5 rounded-full bg-white/5 border transition-all z-10 ${
+          currentIndex > 0 
+            ? 'border-blue-500/50 text-blue-400 hover:bg-blue-500/20 hover:scale-110 shadow-lg opacity-100 cursor-pointer' 
+            : 'border-white/5 text-white/15 opacity-20 cursor-not-allowed'
+        }`}
+        title={currentIndex > 0 ? `تراجع إلى النسخة السابقة (${formatArabicTimestamp(history[currentIndex - 1]?.timestamp)})` : "لا يوجد تراجع"}
+      >
+        <Undo2 size={12} />
+      </button>
       
       <textarea
         ref={textareaRef}
@@ -441,16 +471,20 @@ const HistoryInput = ({ itemKey, fieldKey, value, onChange, placeholder, updated
         style={{ minHeight: '34px', lineHeight: '1.3' }}
       />
 
-      {history.length > 1 && (
-        <button 
-          onClick={redo} 
-          disabled={currentIndex >= history.length - 1}
-          className={`absolute -right-6 p-1.5 rounded-full bg-white/5 border border-white/10 opacity-0 group-hover/history:opacity-100 transition-all z-10 ${currentIndex >= history.length - 1 ? 'text-white/20' : 'text-emerald-400 hover:bg-emerald-500/20 hover:scale-110 shadow-lg'}`}
-          title={currentIndex < history.length - 1 ? `تقدم إلى النسخة التالية (${formatArabicTimestamp(history[currentIndex + 1]?.timestamp)})` : "لا يوجد تقدم"}
-        >
-          <Redo2 size={12} />
-        </button>
-      )}
+      <button 
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={redo} 
+        disabled={currentIndex >= history.length - 1}
+        type="button"
+        className={`absolute -right-6 p-1.5 rounded-full bg-white/5 border transition-all z-10 ${
+          currentIndex < history.length - 1 
+            ? 'border-emerald-500/50 text-emerald-400 hover:bg-emerald-500/20 hover:scale-110 shadow-lg opacity-100 cursor-pointer' 
+            : 'border-white/5 text-white/15 opacity-20 cursor-not-allowed'
+        }`}
+        title={currentIndex < history.length - 1 ? `تقدم إلى النسخة التالية (${formatArabicTimestamp(history[currentIndex + 1]?.timestamp)})` : "لا يوجد تقدم"}
+      >
+        <Redo2 size={12} />
+      </button>
     </div>
   );
 };
@@ -2039,7 +2073,7 @@ const ShootingRow = ({ item, index, activeGid, onToggleFilmed, loadingFilmedCode
 
   // Sync editForm if item changes from outside (e.g. after save)
   useEffect(() => {
-    setEditForm({
+    setEditForm(prev => ({
       branch: item.branch || '',
       year: item.year || '',
       teacher: item.teacher || '',
@@ -2049,13 +2083,14 @@ const ShootingRow = ({ item, index, activeGid, onToggleFilmed, loadingFilmedCode
       by: item.by || '',
       storage: item.storage || '',
       script: item.script || '',
-      notes: item.notes || '',
+      notes: (item.notes !== undefined && item.notes !== '') ? item.notes : (prev.notes || ''),
+      editorNotes: (item.editorNotes !== undefined && item.editorNotes !== '') ? item.editorNotes : (prev.editorNotes || ''),
       driveRaw: item.driveRaw || '',
       editorCol: item.editorCol || '',
       driveFinal: item.driveFinal || '',
       filmed: item.filmed === true || item.filmed === 'TRUE',
       filmingDate: item.filmingDate || ''
-    });
+    }));
   }, [item]);
 
   const generatedCode = useMemo(() => {
@@ -2148,7 +2183,8 @@ const ShootingRow = ({ item, index, activeGid, onToggleFilmed, loadingFilmedCode
       nextDoneStatus ? 'TRUE' : 'FALSE',
       updatedForm.driveFinal,
       item.canceled ? 'TRUE' : 'FALSE',
-      item.missingDetails ? 'TRUE' : 'FALSE'
+      item.missingDetails ? 'TRUE' : 'FALSE',
+      updatedForm.editorNotes || ''
     ];
     try {
       await onUpdateShootingRow(rowCode, rowData);
@@ -2414,6 +2450,18 @@ const ShootingRow = ({ item, index, activeGid, onToggleFilmed, loadingFilmedCode
           disabled={false}
         />
       </AutofillCell>
+      {activeGid === '1939073164' && (
+        <AutofillCell colKey="editorNotes" rowIndex={index} value={editForm.editorNotes} autofillDrag={autofillDrag} setAutofillDrag={setAutofillDrag} onApply={onApplyAutofill} activeCell={activeCell} setActiveCell={setActiveCell} liveDataLength={liveData?.length} className="px-5 py-5 text-center text-xs font-bold text-white/90 arabic-text">
+          <HistoryInput
+            itemKey={item.code || item.id}
+            fieldKey="ve_editor_notes"
+            value={editForm.editorNotes}
+            onChange={(val: string) => handleFieldChange('editorNotes', val)}
+            placeholder="ملاحظات المونتير..."
+            disabled={false}
+          />
+        </AutofillCell>
+      )}
       <td className="px-4 py-5 text-center">
         <div className="flex flex-col gap-2 items-center justify-center">
           {isEditingRaw ? (
@@ -4404,6 +4452,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
               by: sRow.by || '',
               storage: sRow.storage || '',
               notes: sRow.notes || '',
+              editor_notes: sRow.editor_notes || '',
               drive_raw: sRow.drive_raw || '',
               editor_col: sRow.editor_col || 'غير محدد',
               done: sRow.done === true,
@@ -4467,6 +4516,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
             by: i.by || '',
             storage: i.storage || '',
             notes: i.notes || '',
+            editorNotes: i.editor_notes || '',
             driveRaw: i.drive_raw || '',
             editorCol: i.editor_col || '',
             done: i.done === true,
@@ -5041,18 +5091,19 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
 
   const toggleSubscribe = (itemKey: string) => {
     const taskName = findTaskName(itemKey);
-    const isSubscribing = !subscribedTasks.includes(itemKey);
+    const cleanKey = String(itemKey).trim();
+    const isSubscribing = !subscribedTasks.some(k => String(k).trim().toLowerCase() === cleanKey.toLowerCase());
     const next = isSubscribing 
-      ? [...subscribedTasks, itemKey] 
-      : subscribedTasks.filter(k => k !== itemKey);
+      ? [...subscribedTasks, cleanKey] 
+      : subscribedTasks.filter(k => String(k).trim().toLowerCase() !== cleanKey.toLowerCase());
       
     setSubscribedTasks(next);
     localStorage.setItem('subscribed_tasks', JSON.stringify(next));
 
-    // Instantly inject a custom personal notification outside state callback
+    // Instantly inject a custom personal notification
     const notif: PersonalNotif = {
       id: String(Date.now() + Math.random()),
-      taskName: taskName,
+      taskName: taskName || cleanKey,
       message: isSubscribing 
         ? `🔔 لقد قمت بمتابعة هذه المهمة بنجاح! ستصلك تنبيهات بأي تحديثات تطرأ عليها.` 
         : `🔕 تم إلغاء متابعة المهمة بنجاح.`,
@@ -5061,7 +5112,12 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
       at: Date.now(),
       read: false,
     };
-    setMyNotifs(prevNotifs => [notif, ...prevNotifs].slice(0, 50));
+    setMyNotifs(prevNotifs => [notif, ...prevNotifs.filter(n => n.id !== notif.id)].slice(0, 50));
+    if (isSubscribing) {
+      toast.success(`🔔 تم تفعيل جرس المتابعة للمهمة: ${taskName || cleanKey}`);
+    } else {
+      toast.info(`🔕 تم إلغاء متابعة المهمة`);
+    }
   };
 
   const globalChannelRef = useRef<any>(null);
@@ -5101,7 +5157,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
     });
     globalChannelRef.current = globalCh;
     globalCh.on('broadcast', { event: 'update' }, ({ payload }: any) => {
-      const { itemKey, taskName, message, type, from, field, dict } = payload;
+      const { itemKey, taskName, message, type, from, field, dict, altKeys } = payload;
       if (!from || from.toLowerCase() === profile.name.toLowerCase()) return;
       
       if (field && dict) {
@@ -5131,8 +5187,22 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
 
       const currentEditor = assignedEditorsRef.current[itemKey];
       
-      // 1. Subscription-based receipt (user followed this row or is its assigned editor)
-      const isSub = subscribedTasksRef.current.includes(itemKey) || (currentEditor && currentEditor.toLowerCase() === profile.name.toLowerCase());
+      // Robust multi-key match for subscription
+      const userSubs = (subscribedTasksRef.current || []).map(k => String(k).trim().toLowerCase());
+      const incomingKeys = [
+        itemKey, 
+        ...(altKeys || []), 
+        taskName
+      ].filter(Boolean).map(k => String(k).trim().toLowerCase());
+      
+      const isSub = incomingKeys.some(k => {
+        if (!k) return false;
+        const cleanK = k.replace(/^tgm-/, '').trim();
+        return userSubs.some(sub => {
+          const cleanSub = sub.replace(/^tgm-/, '').trim();
+          return cleanSub === cleanK || cleanSub === k || sub === k || sub.includes(cleanK) || cleanK.includes(cleanSub);
+        });
+      }) || (currentEditor && currentEditor.toLowerCase() === profile.name.toLowerCase());
 
       // 2. Manager or Admin global receipt (receives ALL activity logs and note writes in real time!)
       const isManagerOrAdmin = profile?.role === 'admin' || profile?.role === 'manager';
@@ -5148,13 +5218,18 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
         const notif: PersonalNotif = {
           id: String(Date.now() + Math.random()),
           taskName: taskName || itemKey,
-          message,
-          type,
-          from,
+          message: message || 'تحديث جديد على المهمة',
+          type: type || 'activity',
+          from: from || 'مستخدم',
           at: Date.now(),
           read: false,
         };
-        setMyNotifs(prev => [notif, ...prev].slice(0, 50));
+        setMyNotifs(prev => [notif, ...prev.filter(n => n.id !== notif.id)].slice(0, 50));
+
+        // Floating toast alert for the subscriber
+        if (isSub && !isManagerOrAdmin) {
+          toast.info(`🔔 ${from}: ${message || 'تحديث على المهمة'}`, { duration: 6000 });
+        }
       }
     }).subscribe((status: string) => {
       console.log('[Sync] WebSocket channel status:', status);
@@ -5166,17 +5241,40 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
     };
   }, [profile?.name]);
 
-  const broadcastTaskUpdate = async (itemKey: string, taskName: string, message: string, type: string) => {
-    if (!profile?.name || !globalChannelRef.current) return;
+  const broadcastTaskActivity = async (opts: {
+    itemKey: string;
+    altKeys?: string[];
+    taskName?: string;
+    message: string;
+    type: string;
+    field?: string;
+    dict?: any;
+  }) => {
+    const senderName = profile?.name || 'مستخدم';
+    if (!globalChannelRef.current) return;
     try {
       await globalChannelRef.current.send({
         type: 'broadcast',
         event: 'update',
-        payload: { itemKey, taskName, message, type, from: profile.name },
+        payload: {
+          itemKey: opts.itemKey,
+          altKeys: (opts.altKeys || []).filter(Boolean),
+          taskName: opts.taskName || opts.itemKey,
+          message: opts.message,
+          type: opts.type,
+          from: senderName,
+          field: opts.field,
+          dict: opts.dict,
+          at: Date.now()
+        },
       });
     } catch (e) {
-      console.error('Failed to broadcast task update:', e);
+      console.error('Failed to broadcast task activity:', e);
     }
+  };
+
+  const broadcastTaskUpdate = async (itemKey: string, taskName: string, message: string, type: string) => {
+    await broadcastTaskActivity({ itemKey, taskName, message, type });
   };
 
   function findTaskName(itemKey: string) {
@@ -5445,11 +5543,11 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
     }
 
     if (!isDemo && supabase) {
-      // 1. Try reading from dedicated tab_priority_limits table
-      supabase
-        .from('tab_priority_limits')
-        .select('gid, priority_limit')
-        .then(({ data, error }) => {
+      const fetchTabPriorityLimits = async () => {
+        try {
+          const { data, error } = await supabase
+            .from('tab_priority_limits')
+            .select('gid, priority_limit');
           if (!error && data && data.length > 0) {
             const map: Record<string, number> = {};
             data.forEach((r: any) => {
@@ -5457,26 +5555,25 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
             });
             setTabPriorityLimits(prev => ({ ...prev, ...map }));
             localStorage.setItem('tab_priority_limits_v1', JSON.stringify(map));
-          } else {
-            // Fallback to dashboard_data
-            supabase
-              .from('dashboard_data')
-              .select('value')
-              .eq('key', 'tab_priority_limits_v1')
-              .maybeSingle()
-              .then(({ data: dData }) => {
-                if (dData?.value) {
-                  try {
-                    const parsed = typeof dData.value === 'string' ? JSON.parse(dData.value) : dData.value;
-                    setTabPriorityLimits(prev => ({ ...prev, ...parsed }));
-                    localStorage.setItem('tab_priority_limits_v1', JSON.stringify(parsed));
-                  } catch {}
-                }
-              });
           }
-        });
+        } catch (e) {
+          console.error('fetchTabPriorityLimits error:', e);
+        }
+      };
 
-      // 2. Realtime Postgres Changes Subscription on tab_priority_limits
+      // Initial fetch & short interval polling to stay 100% in sync
+      fetchTabPriorityLimits();
+      const intervalId = setInterval(fetchTabPriorityLimits, 2500);
+
+      // Custom window event listener for instant local sync
+      const handleCustomUpdate = (e: any) => {
+        if (e.detail?.gid && e.detail?.limit !== undefined) {
+          setTabPriorityLimits(prev => ({ ...prev, [e.detail.gid]: Number(e.detail.limit) }));
+        }
+      };
+      window.addEventListener('tab-priority-limit-updated', handleCustomUpdate);
+
+      // Realtime Postgres Changes Subscription on tab_priority_limits
       const tabLimitsChannel = supabase
         .channel('public:tab_priority_limits')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'tab_priority_limits' }, (payload: any) => {
@@ -5492,6 +5589,8 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
         .subscribe();
 
       return () => {
+        clearInterval(intervalId);
+        window.removeEventListener('tab-priority-limit-updated', handleCustomUpdate);
         supabase.removeChannel(tabLimitsChannel);
       };
     }
@@ -6243,6 +6342,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
         by: newRowData[11] || '',
         storage: newRowData[12] || '',
         notes: newRowData[13] || '',
+        editorNotes: newRowData[20] !== undefined ? newRowData[20] : '',
         driveRaw: newRowData[14] || '',
         editorCol: newRowData[15] || '',
         done: isDone,
@@ -6267,6 +6367,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
         by: updatedItem.by,
         storage: updatedItem.storage,
         notes: updatedItem.notes,
+        editor_notes: updatedItem.editorNotes || '',
         drive_raw: updatedItem.driveRaw,
         editor_col: updatedItem.editorCol,
         done: isDone,
@@ -6277,12 +6378,89 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
       };
     }
 
+    const prevItem = reelsDbRows.find(r => r.code === oldCode || r.id === oldCode) || 
+      (Array.isArray(liveData) ? liveData.find((r: any) => r.code === oldCode || r.id === oldCode) : null);
+
     // 1. Optimistic UI update
     setReelsDbRows(prev => prev.map(r => (r.code === oldCode || r.id === oldCode) ? updatedItem : r));
     setLiveData((prev: any[]) => {
       if (!Array.isArray(prev)) return prev;
       return prev.map((row: any) => (row.id === oldCode || row.code === oldCode) ? updatedItem : row);
     });
+
+    // Broadcast Realtime activity for task subscribers:
+    const taskNameStr = updatedItem.code || updatedItem.script || oldCode;
+    const altKeysArr = [oldCode, newCode, updatedItem.id, updatedItem.code, updatedItem.uniqueKey, updatedItem.script].filter(Boolean);
+
+    if (updatedItem.notes !== prevItem?.notes && updatedItem.notes?.trim()) {
+      broadcastTaskActivity({
+        itemKey: oldCode,
+        altKeys: altKeysArr,
+        taskName: taskNameStr,
+        message: `📝 أضاف ملاحظة: "${updatedItem.notes.slice(0, 60)}${updatedItem.notes.length > 60 ? '...' : ''}"`,
+        type: 'note'
+      });
+    }
+
+    if (updatedItem.editorNotes !== prevItem?.editorNotes && updatedItem.editorNotes?.trim()) {
+      broadcastTaskActivity({
+        itemKey: oldCode,
+        altKeys: altKeysArr,
+        taskName: taskNameStr,
+        message: `🎬 أضاف ملاحظات مونتير: "${updatedItem.editorNotes.slice(0, 60)}${updatedItem.editorNotes.length > 60 ? '...' : ''}"`,
+        type: 'editor_notes'
+      });
+    }
+
+    if (updatedItem.missingDetails !== prevItem?.missingDetails) {
+      broadcastTaskActivity({
+        itemKey: oldCode,
+        altKeys: altKeysArr,
+        taskName: taskNameStr,
+        message: updatedItem.missingDetails ? `🔍 حدد تفاصيل ناقصة للمهمة` : `✅ ألغى علامة التفاصيل الناقصة`,
+        type: 'missing_details'
+      });
+    }
+
+    if (updatedItem.done !== prevItem?.done) {
+      broadcastTaskActivity({
+        itemKey: oldCode,
+        altKeys: altKeysArr,
+        taskName: taskNameStr,
+        message: updatedItem.done ? `✅ تم إنهاء المهمة بنجاح` : `↩️ تم إعادة فتح المهمة`,
+        type: updatedItem.done ? 'done' : 'undone'
+      });
+    }
+
+    if (updatedItem.canceled !== prevItem?.canceled) {
+      broadcastTaskActivity({
+        itemKey: oldCode,
+        altKeys: altKeysArr,
+        taskName: taskNameStr,
+        message: updatedItem.canceled ? `❌ تم إلغاء المهمة` : `↩️ تم إلغاء إلغاء المهمة`,
+        type: updatedItem.canceled ? 'cancel' : 'uncancel'
+      });
+    }
+
+    if (updatedItem.editorCol !== prevItem?.editorCol && updatedItem.editorCol) {
+      broadcastTaskActivity({
+        itemKey: oldCode,
+        altKeys: altKeysArr,
+        taskName: taskNameStr,
+        message: `👤 أسند المهمة للمحرر: ${updatedItem.editorCol}`,
+        type: 'editor'
+      });
+    }
+
+    if (updatedItem.driveFinal !== prevItem?.driveFinal && updatedItem.driveFinal?.trim()) {
+      broadcastTaskActivity({
+        itemKey: oldCode,
+        altKeys: altKeysArr,
+        taskName: taskNameStr,
+        message: `🔗 تم إرفاق رابط الفاينال النهائي`,
+        type: 'final_link'
+      });
+    }
 
     // 2. Direct Supabase Update
     if (!isDemo && tbl) {
@@ -6293,8 +6471,16 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
           .eq('code', oldCode);
 
         if (error) {
-          console.error(`Error updating ${tbl} in Supabase:`, error);
-          toast.error(`خطأ أثناء الحفظ في قاعدة البيانات: ${error.message}`);
+          console.warn(`Error updating ${tbl} in Supabase (retrying without optional columns):`, error);
+          const fallbackPayload = { ...dbPayload };
+          delete (fallbackPayload as any).editor_notes;
+          const { error: retryErr } = await supabase.from(tbl).update(fallbackPayload).eq('code', oldCode);
+          if (retryErr) {
+            console.error(`Fatal update error in ${tbl}:`, retryErr);
+            toast.error(`خطأ أثناء الحفظ في قاعدة البيانات: ${retryErr.message}`);
+          } else {
+            toast.success("تم تحديث الصف بنجاح في Supabase! 🚀");
+          }
         } else {
           toast.success("تم تحديث الصف بنجاح في Supabase! 🚀");
         }
@@ -6396,6 +6582,15 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
       setActiveVeToast({ item: { ...item, filmed: isFilmed, filmingDate } });
     }
 
+    // Broadcast Realtime activity for subscribers
+    broadcastTaskActivity({
+      itemKey: itemCode,
+      altKeys: [item.code, item.id, item.uniqueKey, item.script],
+      taskName: item.code || item.script || itemCode,
+      message: isFilmed ? `🎥 تم تحديد تصوير المهمة` : `🎥 تم إلغاء تحديد تصوير المهمة`,
+      type: 'filmed'
+    });
+
     if (!isDemo && tbl) {
       try {
         const { error } = await supabase
@@ -6477,6 +6672,15 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
     setLiveData((prev: any[]) => {
       if (!Array.isArray(prev)) return prev;
       return prev.map((r: any) => (r.code === rowCode || r.id === rowCode) ? { ...r, editCheck: true, edit_check: true, done: false } : r);
+    });
+
+    // Broadcast Realtime activity for subscribers
+    broadcastTaskActivity({
+      itemKey: rowCode,
+      altKeys: [item.code, item.id, item.uniqueKey, item.script],
+      taskName: item.code || item.script || rowCode,
+      message: `⚠️ طلب تعديلاً (EDIT) على المهمة`,
+      type: 'edit_check'
     });
 
     // 2. Direct Supabase update
@@ -7363,6 +7567,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
         <th className="px-3 py-4 text-center th-style"><ColFilter colKey="format" label="المقاس" /></th>
         <th className="px-3 py-4 text-center th-style">اتصور</th>
         <th className="px-5 py-4 text-center th-style">NOTES</th>
+        <th className="px-5 py-4 text-center th-style">EDITOR NOTES</th>
         <th className="px-4 py-4 text-center th-style">Drive Link (Raw)</th>
         <th className="px-4 py-4 text-center th-style"><ColFilter colKey="editorCol" label="EDITOR" /></th>
         <th className="px-3 py-4 text-center th-style">تفاصيل ناقصة</th>
@@ -7390,6 +7595,9 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
         <th className="px-3 py-4 text-center th-style"><ColFilter colKey="by" label="BY" /></th>
         <th className="px-4 py-4 text-center th-style"><ColFilter colKey="storage" label="STORAGE" /></th>
         <th className="px-5 py-4 text-center th-style">NOTES</th>
+        {activeGid === '1939073164' && (
+          <th className="px-5 py-4 text-center th-style">EDITOR NOTES</th>
+        )}
         <th className="px-4 py-4 text-center th-style" id="tour-shooting-raw-col">Drive Link (Raw)</th>
         {activeGid === '1939073164' && (
           <>
@@ -7581,7 +7789,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
     return Array.from(list);
   }, [uniqueTeachers]);
 
-  const colSpan = isOperations ? 7 : isTagme3at ? (tagmeViewMode === 'SIMPLE' ? 8 : 13) : activeGid === '0' ? 18 : activeGid === '1939073164' ? (veViewMode === 'SIMPLE' ? 15 : 21) : ['1436746012', '798246690'].includes(activeGid) ? 16 : 7;
+  const colSpan = isOperations ? 7 : isTagme3at ? (tagmeViewMode === 'SIMPLE' ? 8 : 13) : activeGid === '0' ? 18 : activeGid === '1939073164' ? (veViewMode === 'SIMPLE' ? 16 : 22) : ['1436746012', '798246690'].includes(activeGid) ? 16 : 7;
 
   const effectiveLoading = !isDemo && isTagme3at 
     ? isTagmeDbLoading 
@@ -7870,6 +8078,14 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
                               <span className={`text-[10px] font-black px-2 py-0.5 rounded-full border ${
                                 n.type === 'done' ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-400' :
                                 n.type === 'cancel' ? 'bg-rose-500/15 border-rose-500/30 text-rose-400' :
+                                n.type === 'edit_check' ? 'bg-amber-500/15 border-amber-500/30 text-amber-400' :
+                                n.type === 'missing_details' ? 'bg-orange-500/15 border-orange-500/30 text-orange-400' :
+                                n.type === 'editor_notes' ? 'bg-teal-500/15 border-teal-500/30 text-teal-400' :
+                                n.type === 'marketing_note' ? 'bg-sky-500/15 border-sky-500/30 text-sky-400' :
+                                n.type === 'final_link' ? 'bg-emerald-500/15 border-emerald-500/30 text-emerald-400' :
+                                n.type === 'filmed' ? 'bg-cyan-500/15 border-cyan-500/30 text-cyan-400' :
+                                n.type === 'priority' ? 'bg-rose-500/15 border-rose-500/30 text-rose-400' :
+                                n.type === 'editor' ? 'bg-indigo-500/15 border-indigo-500/30 text-indigo-400' :
                                 n.type === 'new_entry' ? 'bg-amber-500/15 border-amber-500/30 text-amber-400' :
                                 n.type === 'tagme_transfer' ? 'bg-purple-500/15 border-purple-500/30 text-purple-400' :
                                 n.type === 'subscribe' ? 'bg-rose-500/15 border-rose-500/30 text-rose-400' :
@@ -7879,6 +8095,14 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
                                 {n.type === 'done' ? '✅ مكتملة' : 
                                  n.type === 'cancel' ? '❌ ملغاة' : 
                                  n.type === 'undone' ? '↩️ تراجع' : 
+                                 n.type === 'edit_check' ? '⚠️ طلب تعديل' :
+                                 n.type === 'missing_details' ? '🔍 تفاصيل ناقصة' :
+                                 n.type === 'editor_notes' ? '🎬 ملاحظات مونتير' :
+                                 n.type === 'marketing_note' ? '💬 ملاحظات تسويق' :
+                                 n.type === 'final_link' ? '🔗 رابط فاينال' :
+                                 n.type === 'filmed' ? '🎥 تصوير' :
+                                 n.type === 'priority' ? '🚨 أولوية' :
+                                 n.type === 'editor' ? '👤 إسناد محرر' :
                                  n.type === 'new_entry' ? '🆕 مهمة جديدة' :
                                  n.type === 'tagme_transfer' ? '🔄 تحويل' :
                                  n.type === 'subscribe' ? '🔔 متابعة' :
@@ -8526,65 +8750,6 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
                       }`} />
                     </div>
                   </button>
-
-                  {/* Tab Priority Limit Controller */}
-                  {(() => {
-                    const currentTabLimit = tabPriorityLimits[activeGid] ?? 10;
-                    const currentTabPriorityCount = combinedData.filter((i: any) => {
-                      const key = i.uniqueKey || generateKey(i);
-                      const isDone = taskStatuses[key]?.done !== undefined ? taskStatuses[key].done === true : (String(i.done) === 'true' || i.done === true);
-                      if (isDone) return false;
-                      const isPri = !isDemo && (isTagme3at || isAnalyticsTagme)
-                        ? (i.priority === true || taskPriorities[key] === true)
-                        : (taskPriorities[key] !== undefined ? taskPriorities[key] === true : (String(i.priority) === 'true' || i.priority === true));
-                      return isPri;
-                    }).length;
-                    const isLimitReached = currentTabLimit < 999 && currentTabPriorityCount >= currentTabLimit;
-
-                    return (
-                      <div className={`flex items-center gap-3 px-4 py-2 rounded-2xl border text-xs font-bold transition-all shadow-sm ${
-                        isLimitReached
-                          ? 'bg-rose-500/15 border-rose-500/40 text-rose-300 shadow-[0_0_15px_rgba(244,63,94,0.15)]'
-                          : 'bg-purple-500/10 border-purple-500/30 text-purple-300'
-                      }`} dir="rtl">
-                        <div className="flex items-center gap-2">
-                          <span className="text-base">🎯</span>
-                          <span className="arabic-text font-black text-white/90">أولوية التاب:</span>
-                          <span dir="ltr" className={`font-mono font-black px-2.5 py-0.5 rounded-xl border shadow-inner text-xs ${
-                            isLimitReached
-                              ? 'bg-rose-600/40 text-rose-200 border-rose-400/40'
-                              : 'bg-purple-600/40 text-white border-purple-400/40'
-                          }`}>
-                            {currentTabPriorityCount} / {currentTabLimit >= 999 ? '∞' : currentTabLimit}
-                          </span>
-                        </div>
-
-                        {profile?.role && (profile.role === 'admin' || profile.role === 'manager') && (
-                          <div className="flex items-center gap-2 mr-1 border-r border-white/10 pr-3">
-                            <span className="text-[11px] text-white/60 font-black whitespace-nowrap">تعديل الحد:</span>
-                            <select
-                              value={currentTabLimit}
-                              onChange={(e) => handleUpdateTabPriorityLimit(activeGid, parseInt(e.target.value, 10))}
-                              className="bg-[#0b1019] text-purple-200 border border-purple-500/50 hover:border-purple-400 rounded-xl px-3 py-1 text-xs font-black font-mono outline-none cursor-pointer transition-all min-w-[90px] text-center"
-                              title="تغيير الحد الأقصى لأولوية هذا التاب"
-                            >
-                              <option value={1} className="bg-[#0d1219] text-white">1 مهمة</option>
-                              <option value={2} className="bg-[#0d1219] text-white">2 مهمة</option>
-                              <option value={3} className="bg-[#0d1219] text-white">3 مهام</option>
-                              <option value={5} className="bg-[#0d1219] text-white">5 مهام</option>
-                              <option value={10} className="bg-[#0d1219] text-white">10 مهام</option>
-                              <option value={15} className="bg-[#0d1219] text-white">15 مهمة</option>
-                              <option value={20} className="bg-[#0d1219] text-white">20 مهمة</option>
-                              <option value={30} className="bg-[#0d1219] text-white">30 مهمة</option>
-                              <option value={50} className="bg-[#0d1219] text-white">50 مهمة</option>
-                              <option value={100} className="bg-[#0d1219] text-white">100 مهمة</option>
-                              <option value={999} className="bg-[#0d1219] text-amber-400 font-bold">غير محدود (∞)</option>
-                            </select>
-                          </div>
-                        )}
-                      </div>
-                    );
-                  })()}
                 </>
               )}
 
@@ -9251,10 +9416,19 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
                           ? (item.priority === true || taskPriorities[key] === true)
                           : (taskPriorities[key] !== undefined ? taskPriorities[key] === true : (item.priority === true));
                         const canRaisePriority = tabLimit >= 999 ? true : (totalPriorityToday < tabLimit);
-                        const isSubscribed = subscribedTasks.includes(key) || (item.editor && item.editor.toLowerCase() === profile?.name?.toLowerCase());
-                        return <TagmeRow key={idx} item={item} index={idx} isSimple={tagmeViewMode === 'SIMPLE'} onUpdateEditor={handleUpdateEditor} editorsList={editorsList} onUpdateEditorNotes={handleUpdateEditorNotes} onUpdateMarketingNotes={handleUpdateMarketingNotes} opSheetsList={opSheetsList} branchesList={branchesList} onUpdateOpSheet={handleUpdateOpSheet} onUpdateBranch={handleUpdateBranch} onUpdateDate={handleUpdateDate} isGlowing={isGlowing} liveData={liveData} canRaisePriority={canRaisePriority || isItemPri} priorityLimit={tabLimit} onStatusChange={handleStatusChange} isSubscribed={isSubscribed} onToggleSubscribe={() => toggleSubscribe(key)} priorityOverride={isItemPri} statusOverride={taskStatuses[key]} onUpdateThumbnailLink={handleUpdateThumbnailLink} onUpdateTime={handleUpdateTime} onUpdateYoutubeLink={handleUpdateYoutubeLink} onUpdateUploaded={handleUpdateUploaded} onShowPriorityLimitModal={(limit: number) => setPriorityLimitModal({ isOpen: true, limit })} />;
+                        const isSubscribed = (subscribedTasks || []).some(k => {
+                          const ck = String(k).trim().toLowerCase().replace(/^tgm-/, '');
+                          const candidates = [key, item.uniqueKey, item.id, item.name].filter(Boolean).map(c => String(c).trim().toLowerCase().replace(/^tgm-/, ''));
+                          return candidates.some(c => c === ck || c.includes(ck) || ck.includes(c));
+                        }) || (item.editor && item.editor.toLowerCase() === profile?.name?.toLowerCase());
+                        return <TagmeRow key={idx} item={item} index={idx} isSimple={tagmeViewMode === 'SIMPLE'} onUpdateEditor={handleUpdateEditor} editorsList={editorsList} onUpdateEditorNotes={handleUpdateEditorNotes} onUpdateMarketingNotes={handleUpdateMarketingNotes} opSheetsList={opSheetsList} branchesList={branchesList} onUpdateOpSheet={handleUpdateOpSheet} onUpdateBranch={handleUpdateBranch} onUpdateDate={handleUpdateDate} isGlowing={isGlowing} liveData={liveData} canRaisePriority={canRaisePriority || isItemPri} priorityLimit={tabLimit} onStatusChange={handleStatusChange} isSubscribed={isSubscribed} onToggleSubscribe={() => toggleSubscribe(item.uniqueKey || key)} priorityOverride={isItemPri} statusOverride={taskStatuses[key]} onUpdateThumbnailLink={handleUpdateThumbnailLink} onUpdateTime={handleUpdateTime} onUpdateYoutubeLink={handleUpdateYoutubeLink} onUpdateUploaded={handleUpdateUploaded} onShowPriorityLimitModal={(limit: number) => setPriorityLimitModal({ isOpen: true, limit })} />;
                       }
                       if (activeGid === '0') {
+                        const isSubscribed = (subscribedTasks || []).some(k => {
+                          const ck = String(k).trim().toLowerCase();
+                          const candidates = [item.id, item.code, item.uniqueKey].filter(Boolean).map(c => String(c).trim().toLowerCase());
+                          return candidates.some(c => c === ck || c.includes(ck) || ck.includes(c));
+                        });
                         return <CutsRow 
                           key={idx} 
                           item={item} 
@@ -9268,12 +9442,17 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
                           activeCell={activeCell} 
                           setActiveCell={setActiveCell} 
                           toast={toast}
-                          isSubscribed={subscribedTasks.includes(item.id)}
-                          onToggleSubscribe={toggleSubscribe}
+                          isSubscribed={isSubscribed}
+                          onToggleSubscribe={() => toggleSubscribe(item.code || item.id || item.uniqueKey)}
                         />;
                       }
                       if (['1436746012', '1939073164', '798246690'].includes(activeGid)) {
-                        return <ShootingRow key={idx} item={item} index={idx} activeGid={activeGid} onToggleFilmed={handleFilmedToggle} onToggleEditCheck={handleToggleEditCheck} loadingFilmedCode={loadingFilmedCode} onUpdateShootingRow={handleUpdateShootingRow} liveData={liveData} optionsLists={{ branches: uniqueBranches, years: uniqueYears, teachers: uniqueTeachers, extraNames: uniqueExtraNames, types: uniqueTypes, formats: uniqueFormats, bys: uniqueBys, storages: uniqueStorages, editors: editorsList }} autofillDrag={autofillDrag} setAutofillDrag={setAutofillDrag} onApplyAutofill={handleApplyAutofill} activeCell={activeCell} setActiveCell={setActiveCell} toast={toast} isSubscribed={subscribedTasks.includes(item.id)} onToggleSubscribe={toggleSubscribe} isSimple={activeGid === '1939073164' && veViewMode === 'SIMPLE'} />;
+                        const isSubscribed = (subscribedTasks || []).some(k => {
+                          const ck = String(k).trim().toLowerCase();
+                          const candidates = [item.id, item.code, item.uniqueKey].filter(Boolean).map(c => String(c).trim().toLowerCase());
+                          return candidates.some(c => c === ck || c.includes(ck) || ck.includes(c));
+                        });
+                        return <ShootingRow key={idx} item={item} index={idx} activeGid={activeGid} onToggleFilmed={handleFilmedToggle} onToggleEditCheck={handleToggleEditCheck} loadingFilmedCode={loadingFilmedCode} onUpdateShootingRow={handleUpdateShootingRow} liveData={liveData} optionsLists={{ branches: uniqueBranches, years: uniqueYears, teachers: uniqueTeachers, extraNames: uniqueExtraNames, types: uniqueTypes, formats: uniqueFormats, bys: uniqueBys, storages: uniqueStorages, editors: editorsList }} autofillDrag={autofillDrag} setAutofillDrag={setAutofillDrag} onApplyAutofill={handleApplyAutofill} activeCell={activeCell} setActiveCell={setActiveCell} toast={toast} isSubscribed={isSubscribed} onToggleSubscribe={() => toggleSubscribe(item.code || item.id || item.uniqueKey)} isSimple={activeGid === '1939073164' && veViewMode === 'SIMPLE'} />;
                       }
                       return <StageRow key={idx} item={item} index={idx} tagmeTransfers={tagmeTransfers} onTagmeToggle={handleTagmeToggle} activeLabel={activeLabel} isGlowing={isGlowing} onUpdateDate={handleUpdateDate} onUpdateWeek={handleUpdateWeek} onUpdateThumbnailLink={handleUpdateThumbnailLink} onUpdateTime={handleUpdateTime} onUpdateYoutubeLink={handleUpdateYoutubeLink} onUpdateUploaded={handleUpdateUploaded} onToggleDelivered={handleToggleDelivered} />;
                     }) : (
@@ -9598,11 +9777,18 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
                 <div className="w-16 h-16 rounded-3xl bg-rose-500/20 border border-rose-500/40 text-rose-400 flex items-center justify-center mx-auto mb-4 animate-bounce">
                   <AlertCircle size={36} />
                 </div>
-                <h3 className="text-xl font-black text-white arabic-text mb-2">تم الوصول للحد الأقصى للأولوية! ⚠️</h3>
-                <p className="text-sm text-white/80 arabic-text leading-relaxed mb-6">
-                  لقد تم استهلاك الحد الأقصى للمهام ذات الأولوية في هذا التاب (<span className="font-bold text-rose-400 font-mono text-base">{priorityLimitModal.limit} مهام</span>). 
-                  <br /><br />
-                  لا يمكنك تفعيل الأولوية لمهمة إضافية إلا بعد إزالة الأولوية عن مهمة أخرى، أو تعديل الحد من قبل الإدارة.
+                <h3 className="text-xl font-black text-white arabic-text mb-3">تم الوصول للحد الأقصى للأولوية! ⚠️</h3>
+                <p className="text-sm text-white/80 arabic-text leading-relaxed mb-4">
+                  لقد تم استهلاك الحد الأقصى للمهام ذات الأولوية في هذا التاب:
+                </p>
+                <div className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-rose-300 mb-5 font-black text-sm">
+                  <span>الحد الأقصى المسموح به:</span>
+                  <span className="font-mono text-base text-rose-200 bg-rose-500/25 px-3 py-0.5 rounded-xl border border-rose-400/30 font-bold" dir="ltr">
+                    {priorityLimitModal.limit} {priorityLimitModal.limit === 1 ? 'مهمة' : priorityLimitModal.limit === 2 ? 'مهمتان' : 'مهام'}
+                  </span>
+                </div>
+                <p className="text-xs text-white/60 arabic-text leading-relaxed mb-6 bg-white/[0.03] border border-white/10 rounded-2xl p-3">
+                  💡 لا يمكنك تفعيل الأولوية لمهمة إضافية إلا بعد إزالة الأولوية عن مهمة أخرى، أو تعديل الحد من قبل الإدارة.
                 </p>
                 <button
                   onClick={() => setPriorityLimitModal(null)}

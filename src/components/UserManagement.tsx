@@ -411,7 +411,63 @@ export const UserManagement = () => {
   const [filterRole, setFilterRole] = useState<Role | 'all'>('all');
   const [rolePermissions, setRolePermissions] = useState(DEFAULT_ROLE_PERMISSIONS);
   const [permissionsToast, setPermissionsToast] = useState<'success' | 'error' | null>(null);
+  const [tagmePriorityLimit, setTagmePriorityLimit] = useState<number>(10);
+  const [priorityLimitToast, setPriorityLimitToast] = useState<string | null>(null);
   const [activityLogs, setActivityLogs] = useState<Array<{ id?: string; user_id?: string; name?: string; email?: string; event_type: string; timestamp: string }>>([]);
+
+  const fetchPriorityLimits = async () => {
+    try {
+      const { data } = await supabase
+        .from('tab_priority_limits')
+        .select('*')
+        .eq('gid', '1535230545')
+        .maybeSingle();
+      if (data && data.priority_limit !== undefined) {
+        setTagmePriorityLimit(Number(data.priority_limit));
+      }
+    } catch (err) {
+      console.error('[fetchPriorityLimits]', err);
+    }
+  };
+
+  const handleSaveTagmePriorityLimit = async (val: number) => {
+    setTagmePriorityLimit(val);
+    try {
+      localStorage.setItem('tab_priority_limits_v1', JSON.stringify({ '1535230545': val }));
+      window.dispatchEvent(new CustomEvent('tab-priority-limit-updated', { detail: { gid: '1535230545', limit: val } }));
+
+      const { error } = await supabase
+        .from('tab_priority_limits')
+        .upsert({
+          gid: '1535230545',
+          tab_name: 'تجميعات',
+          priority_limit: val,
+          updated_at: new Date().toISOString(),
+          updated_by: profile?.name || profile?.email || 'Admin'
+        }, { onConflict: 'gid' });
+
+      if (error) throw error;
+
+      // Broadcast realtime update
+      const globalCh = supabase.channel('global-sync-hub');
+      await globalCh.send({
+        type: 'broadcast',
+        event: 'update',
+        payload: {
+          field: 'tab_priority_limits',
+          dict: { '1535230545': val },
+          from: profile?.name || 'Admin',
+          message: `⚙️ تم تحديث أقصى حد لأولوية التجميعات إلى: ${val >= 999 ? 'غير محدود' : val}`
+        }
+      });
+
+      setPriorityLimitToast('تم حفظ حد أولوية التجميعات بنجاح!');
+    } catch (err: any) {
+      console.error('[savePriorityLimit]', err);
+      setPriorityLimitToast('فشل حفظ حد الأولوية');
+    }
+    setTimeout(() => setPriorityLimitToast(null), 3000);
+  };
 
   const fetchActivityLogs = async () => {
     try {
@@ -562,7 +618,7 @@ const DEFAULT_SYSTEM_USERS: UserProfile[] = [
     setTimeout(() => setPermissionsToast(null), 3000);
   };
 
-  useEffect(() => { fetchUsers(); fetchPermissions(); fetchUserTeams(); fetchActivityLogs(); }, [session?.access_token]);
+  useEffect(() => { fetchUsers(); fetchPermissions(); fetchUserTeams(); fetchActivityLogs(); fetchPriorityLimits(); }, [session?.access_token]);
 
   const handleUpdateUser = async (id: string, updates: Partial<UserProfile>, team: 'marketing' | 'video' | '') => {
     // 1. Optimistic UI update
@@ -725,6 +781,52 @@ const DEFAULT_SYSTEM_USERS: UserProfile[] = [
         </div>
       </div>
 
+      {/* System Priority Limits Configuration (Admin / Manager / Supervisor only) */}
+      {(profile?.role === 'admin' || profile?.role === 'manager' || profile?.role === 'supervisor') && (
+        <div className="bg-gradient-to-br from-purple-950/20 via-indigo-950/20 to-black/30 border border-purple-500/30 rounded-3xl p-5 space-y-3 relative overflow-hidden shadow-lg shadow-purple-500/5">
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <div className="flex items-center gap-2.5">
+              <div className="w-9 h-9 rounded-xl bg-purple-500/20 text-purple-300 border border-purple-500/40 flex items-center justify-center text-lg">
+                🎯
+              </div>
+              <div>
+                <h3 className="text-sm font-black text-white arabic-text">إعدادات أقصى حد لأولوية التجميعات (Tagme3at Max Priority)</h3>
+                <p className="text-[11px] text-white/50 font-bold arabic-text">الحد الأقصى لعدد المهام المفعل عليها أولوية ⭐ في شيت التجميعات في نفس الوقت</p>
+              </div>
+            </div>
+            {priorityLimitToast && (
+              <span className="text-xs font-bold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-3 py-1 rounded-xl animate-fadeIn">
+                {priorityLimitToast}
+              </span>
+            )}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3 pt-1" dir="rtl">
+            <span className="text-xs font-bold text-purple-200">أقصى عدد للأولويات في التجميعات:</span>
+            <select
+              value={tagmePriorityLimit}
+              onChange={(e) => handleSaveTagmePriorityLimit(parseInt(e.target.value, 10))}
+              className="bg-[#0b1019] text-purple-200 border border-purple-500/50 hover:border-purple-400 rounded-xl px-4 py-2 text-xs font-black font-mono outline-none cursor-pointer transition-all min-w-[120px] text-center shadow-inner"
+            >
+              <option value={1} className="bg-[#0d1219] text-white">1 مهمة</option>
+              <option value={2} className="bg-[#0d1219] text-white">2 مهمة</option>
+              <option value={3} className="bg-[#0d1219] text-white">3 مهام</option>
+              <option value={5} className="bg-[#0d1219] text-white">5 مهام</option>
+              <option value={10} className="bg-[#0d1219] text-white">10 مهام (الافتراضي)</option>
+              <option value={15} className="bg-[#0d1219] text-white">15 مهمة</option>
+              <option value={20} className="bg-[#0d1219] text-white">20 مهمة</option>
+              <option value={30} className="bg-[#0d1219] text-white">30 مهمة</option>
+              <option value={50} className="bg-[#0d1219] text-white">50 مهمة</option>
+              <option value={100} className="bg-[#0d1219] text-white">100 مهمة</option>
+              <option value={999} className="bg-[#0d1219] text-amber-400 font-bold">غير محدود (∞)</option>
+            </select>
+            <span className="text-[11px] text-muted font-bold">
+              (يتم الحفظ في Supabase والمزامنة مع جميع المستخدمين فوراً)
+            </span>
+          </div>
+        </div>
+      )}
+
       {/* Role Permissions */}
       <div className="bg-white/[0.02] border border-white/[0.06] rounded-3xl p-4 space-y-4">
         <div className="flex items-center justify-between">
@@ -753,44 +855,6 @@ const DEFAULT_SYSTEM_USERS: UserProfile[] = [
                 </button>
               ))}
             </div>
-            {r === 'junior' && (
-              <div className="mt-2 flex flex-wrap gap-4 border-t border-white/5 pt-2">
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-white/60">حد الأولوية اليومي (تجميعات)</span>
-                  <input
-                    type="number"
-                    min={0}
-                    max={50}
-                    value={rolePermissions.junior.dailyPriorityLimitTagme ?? rolePermissions.junior.dailyPriorityLimit ?? 1}
-                    onChange={(e) => setRolePermissions(prev => ({ 
-                      ...prev, 
-                      junior: { 
-                        ...prev.junior, 
-                        dailyPriorityLimitTagme: Math.max(0, Number(e.target.value || 0)) 
-                      } 
-                    }))}
-                    className="w-20 px-2 py-1 rounded-lg bg-white/5 border border-white/10 text-white text-xs"
-                  />
-                </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-white/60">حد الأولوية اليومي (الريلز)</span>
-                  <input
-                    type="number"
-                    min={0}
-                    max={50}
-                    value={rolePermissions.junior.dailyPriorityLimitReels ?? rolePermissions.junior.dailyPriorityLimit ?? 1}
-                    onChange={(e) => setRolePermissions(prev => ({ 
-                      ...prev, 
-                      junior: { 
-                        ...prev.junior, 
-                        dailyPriorityLimitReels: Math.max(0, Number(e.target.value || 0)) 
-                      } 
-                    }))}
-                    className="w-20 px-2 py-1 rounded-lg bg-white/5 border border-white/10 text-white text-xs"
-                  />
-                </div>
-              </div>
-            )}
           </div>
         ))}
       </div>

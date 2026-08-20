@@ -116,14 +116,14 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   // ─── Subscribe to Realtime changes on user_profiles ────────────────────────
   const subscribeToProfileChanges = (profileId: string) => {
     const channelName = `profile-${profileId}`;
-    // Remove existing channel if already created to avoid error
     const existing = supabase.getChannels().find(ch => ch.name === channelName);
     if (existing) {
-      supabase.removeChannel(existing);
+      try { supabase.removeChannel(existing); } catch {}
     }
 
+    const uniqueChannelName = `profile-${profileId}-${Date.now()}`;
     const channel = supabase
-      .channel(channelName)
+      .channel(uniqueChannelName)
       .on(
         'postgres_changes',
         {

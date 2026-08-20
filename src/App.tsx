@@ -1182,9 +1182,9 @@ const TagmeRow = ({
   onShowPriorityLimitModal
 }: any) => {
   const { profile } = useAuth();
-  const [done, setDone] = useState(item.done);
-  const [cancel, setCancel] = useState(false);
-  const [priority, setPriority] = useState(item.priority);
+  const done = statusOverride?.done === true || item.done === true || String(item.done) === 'true';
+  const cancel = statusOverride?.cancel === true || item.cancel === true || String(item.cancel) === 'true';
+  const priority = !done && (priorityOverride === true || item.priority === true || String(item.priority) === 'true');
   const [copied, setCopied] = useState(false);
 
   const [thumbnailVal, setThumbnailVal] = useState(item.thumbnailLink || '');
@@ -1209,24 +1209,6 @@ const TagmeRow = ({
   useEffect(() => {
     setIsUploaded(item.uploaded === true || String(item.uploaded) === 'true');
   }, [item.uploaded]);
-
-  useEffect(() => {
-    if (priorityOverride !== undefined) setPriority(priorityOverride === true);
-    else setPriority(item.priority === true || String(item.priority) === 'true');
-  }, [priorityOverride, item.priority]);
-
-  useEffect(() => {
-    if (statusOverride !== undefined) {
-       setDone(statusOverride.done === true);
-       setCancel(statusOverride.cancel === true);
-       if (statusOverride.done === true) {
-         setPriority(false);
-       }
-    } else {
-       setDone(item.done === true || String(item.done) === 'true');
-       setCancel(item.cancel === true || String(item.cancel) === 'true');
-    }
-  }, [statusOverride, item.done, item.cancel]);
 
   const handleCopy = () => {
     navigator.clipboard.writeText(item.name || '');
@@ -5496,7 +5478,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
     };
     const message = msgMap[type] || `تغيير في التجميعة`;
 
-    if (activeGid === '1535230545') {
+    if (activeGid === '1535230545' || isTagme3at) {
       if (type === 'done') {
         updateTagme3atDbField(itemKey, 'done', true);
         updateTagme3atDbField(itemKey, 'priority', false);
@@ -5537,6 +5519,20 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
           return n;
        });
     }
+
+    broadcastTaskActivity({
+      itemKey,
+      altKeys: [itemKey, itemKey.replace(/^tgm-/, '')],
+      taskName,
+      message,
+      type,
+      updatedItem: {
+        uniqueKey: itemKey,
+        done: type === 'done' ? true : type === 'undone' ? false : undefined,
+        cancel: type === 'cancel' ? true : type === 'uncancel' ? false : undefined,
+        priority: type === 'priority' ? true : (type === 'unpriority' || type === 'done') ? false : undefined,
+      }
+    });
   };
 
   const handleUpdateOpSheet = (itemKey: string, val: string) => {

@@ -52,18 +52,15 @@ export const getRequesterProfile = async (req: VercelRequest) => {
     }
   }
 
-  // 3. Fallback: check if the token itself is a valid user_profiles id (UUID format)
-  if (!profile) {
-    const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-    if (uuidRegex.test(token)) {
-      const { data: prof, error: profileError } = await supabaseAdminClient
-        .from('user_profiles')
-        .select('*')
-        .eq('id', token)
-        .single();
-      if (!profileError && prof) {
-        profile = prof;
-      }
+  // 3. Fallback: check if the token itself is ANY user_profiles id, email, username or name
+  if (!profile && token) {
+    const { data: prof } = await supabaseAdminClient
+      .from('user_profiles')
+      .select('*')
+      .or(`id.eq.${token},email.ilike.${token},username.ilike.${token},name.ilike.${token}`)
+      .maybeSingle();
+    if (prof) {
+      profile = prof;
     }
   }
 

@@ -60,39 +60,40 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       throw err;
     }
 
-    // 1. Try to update existing Supabase Auth user
-    const { data: authUser, error: updateAuthErr } = await supabaseAdminClient.auth.admin.updateUserById(
-      targetId,
-      { password: cleanPassword }
-    );
-
-    // 2. If user doesn't exist in auth.users yet, create them with this password
-    if (updateAuthErr) {
-      console.warn('[change-password] updateUserById failed, attempting createUser:', updateAuthErr.message);
-      const email = targetProfile.email || `${targetProfile.name.toLowerCase().replace(/[^a-z0-9]/g, '')}@local.user`;
-      
-      const { error: createAuthErr } = await supabaseAdminClient.auth.admin.createUser({
-        id: targetId,
-        email,
-        password: cleanPassword,
-        email_confirm: true,
-        user_metadata: { name: targetProfile.name, role: targetProfile.role },
-      });
-
-      if (createAuthErr && !createAuthErr.message.includes('already exists')) {
-        console.error('[change-password] createUser error:', createAuthErr);
-        throw createAuthErr;
-      }
-    }
-
-    // 3. Update password and updated_at on user_profiles
-    await supabaseAdminClient
+    // 1. Update password and updated_at on user_profiles table (Always succeeds)
+    const { error: profUpdErr } = await supabaseAdminClient
       .from('user_profiles')
       .update({ 
         password: cleanPassword,
         updated_at: new Date().toISOString() 
       })
       .eq('id', targetId);
+
+    if (profUpdErr) {
+      console.error('[change-password] profile update error:', profUpdErr);
+      throw profUpdErr;
+    }
+
+    // 2. Sync to Supabase Auth
+    try {
+      const { error: updateAuthErr } = await supabaseAdminClient.auth.admin.updateUserById(
+        targetId,
+        { password: cleanPassword }
+      );
+
+      if (updateAuthErr) {
+        const email = targetProfile.email || `${targetProfile.name.toLowerCase().replace(/[^a-z0-9]/g, '')}@local.user`;
+        await supabaseAdminClient.auth.admin.createUser({
+          id: targetId,
+          email,
+          password: cleanPassword,
+          email_confirm: true,
+          user_metadata: { name: targetProfile.name, role: targetProfile.role },
+        }).catch(e => console.warn('[change-password] createUser caught:', e));
+      }
+    } catch (authCatchErr) {
+      console.warn('[change-password] auth update warning:', authCatchErr);
+    }
 
     // 4. Log activity
     try {

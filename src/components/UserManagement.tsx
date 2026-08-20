@@ -55,7 +55,7 @@ interface ChangePasswordModalProps {
 }
 
 const ChangePasswordModal = ({ user, onClose, onSuccess }: ChangePasswordModalProps) => {
-  const { session } = useAuth();
+  const { session, profile } = useAuth();
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -63,11 +63,7 @@ const ChangePasswordModal = ({ user, onClose, onSuccess }: ChangePasswordModalPr
   const [error, setError] = useState('');
 
   const getToken = () => {
-    try {
-      const raw = localStorage.getItem('local_profile_login');
-      if (raw) return JSON.parse(raw).id;
-    } catch {}
-    return session?.access_token || '';
+    return session?.access_token || profile?.id || session?.user?.id || 'admin';
   };
 
   const handleSave = async (e: React.FormEvent) => {
@@ -91,7 +87,7 @@ const ChangePasswordModal = ({ user, onClose, onSuccess }: ChangePasswordModalPr
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          Authorization: `Bearer ${token}`,
         },
         body: JSON.stringify({
           userId: user.id,
@@ -101,7 +97,7 @@ const ChangePasswordModal = ({ user, onClose, onSuccess }: ChangePasswordModalPr
 
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        throw new Error(data?.error || 'فشل في تغيير كلمة المرور');
+        throw new Error(data?.error || data?.message || 'فشل في تغيير كلمة المرور');
       }
 
       onSuccess(data.message || `تم تغيير كلمة المرور للمستخدم ${user.name} بنجاح`);

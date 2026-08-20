@@ -6540,7 +6540,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
             type: updatedItem.type,
             format: updatedItem.format,
             editor_col: updatedItem.editorCol,
-            done: isDone,
+            done: updatedItem.done === true,
             drive_final: updatedItem.driveFinal,
             updated_at: new Date().toISOString()
           }).or(`code.eq."${oldCode}",code.eq."${newCode}",code.eq."${updatedItem.code}"`);

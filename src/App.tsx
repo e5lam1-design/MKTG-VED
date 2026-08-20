@@ -311,7 +311,6 @@ const HistoryInput = ({ itemKey, fieldKey, value, onChange, placeholder, updated
     }
     const valStr = value || '';
     if (valStr === localValue) return;
-    if (!valStr && localValue) return;
 
     setLocalValue(valStr);
     const trimmed = valStr.trim();
@@ -339,8 +338,11 @@ const HistoryInput = ({ itemKey, fieldKey, value, onChange, placeholder, updated
     }
   }, [localValue]);
 
+  const typingTimerRef = useRef<any>(null);
+
   const commitValue = (newVal: string) => {
     if (isUndoRedoRef.current) return;
+    if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
     const trimmed = (newVal || '').trim();
     if (trimmed === (value || '').trim() && history.length > 0 && history[currentIndex]?.text === trimmed) return;
 
@@ -366,17 +368,25 @@ const HistoryInput = ({ itemKey, fieldKey, value, onChange, placeholder, updated
   };
 
   const handleChange = (e: any) => {
-    setLocalValue(e.target.value);
+    const val = e.target.value;
+    setLocalValue(val);
+    if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
+    typingTimerRef.current = setTimeout(() => {
+      commitValue(val);
+    }, 1000);
   };
 
   const handleBlur = () => {
     if (isUndoRedoRef.current) return;
+    if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
     commitValue(localValue);
   };
 
   const handleKeyDown = (e: any) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
+      if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
+      commitValue(localValue);
       e.currentTarget.blur();
     }
   };

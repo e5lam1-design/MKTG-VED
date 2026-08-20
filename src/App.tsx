@@ -4643,7 +4643,8 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
                 updatedAt: i.updated_at
               };
             }
-            setReelsDbRows(prev => [newItem, ...prev.filter(x => x.code !== newItem.code)]);
+            setReelsDbRows(prev => [newItem, ...prev.filter(x => x.code !== newItem.code && x.id !== newItem.id)]);
+            setLiveData((prev: any[]) => Array.isArray(prev) ? [newItem, ...prev.filter((x: any) => x.code !== newItem.code && x.id !== newItem.id)] : [newItem]);
           } else if (payload.eventType === 'UPDATE') {
             const i = payload.new;
             let updated: any;
@@ -4704,11 +4705,16 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
                 updatedAt: i.updated_at
               };
             }
-            setReelsDbRows(prev => prev.map(x => x.code === updated.code ? updated : x));
+            setReelsDbRows(prev => prev.map(x => (x.code === updated.code || x.id === updated.code || x.uniqueKey === updated.code) ? updated : x));
+            setLiveData((prev: any[]) => {
+              if (!Array.isArray(prev)) return prev;
+              return prev.map((x: any) => (x.code === updated.code || x.id === updated.code || x.uniqueKey === updated.code) ? updated : x);
+            });
           } else if (payload.eventType === 'DELETE') {
-            const delCode = payload.old?.code;
+            const delCode = payload.old?.code || payload.old?.id;
             if (delCode) {
-              setReelsDbRows(prev => prev.filter(x => x.code !== delCode));
+              setReelsDbRows(prev => prev.filter(x => x.code !== delCode && x.id !== delCode));
+              setLiveData((prev: any[]) => Array.isArray(prev) ? prev.filter((x: any) => x.code !== delCode && x.id !== delCode) : []);
             }
           }
         }

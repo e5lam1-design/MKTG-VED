@@ -2050,7 +2050,7 @@ const parseScriptValue = (val: string) => {
 };
 
 // ─── REELS Row (Shooting, Ve, Counter) ────────────────────────────────────────
-const ShootingRow = ({ item, index, activeGid, onToggleFilmed, loadingFilmedCode, onUpdateShootingRow, onToggleEditCheck, liveData, optionsLists, autofillDrag, setAutofillDrag, onApplyAutofill, activeCell, setActiveCell, toast, isSubscribed, onToggleSubscribe, isSimple }: any) => {
+const ShootingRow = ({ item, index, activeGid, onToggleFilmed, loadingFilmedCode, onUpdateShootingRow, onToggleEditCheck, liveData, optionsLists, autofillDrag, setAutofillDrag, onApplyAutofill, activeCell, setActiveCell, toast, isSubscribed, onToggleSubscribe, isSimple, publishedTasks, sharedLinks, onTogglePublish, onUpdateSharedLink }: any) => {
   const isGlowing = false;
   const [isEditChecked, setIsEditChecked] = useState(Boolean(item.editCheck || item.edit_check));
   useEffect(() => {
@@ -2778,13 +2778,19 @@ const ShootingRow = ({ item, index, activeGid, onToggleFilmed, loadingFilmedCode
       <td className="px-3 py-5 text-center">
         {(() => {
           const itemKey = item.code || item.id || generateKey(item);
-          const isSharedChecked = localStorage.getItem(`shared_check_${itemKey}`) === 'true';
+          const isSharedChecked = publishedTasks?.[itemKey] !== undefined 
+            ? publishedTasks[itemKey] === true 
+            : (item.publish === true || localStorage.getItem(`shared_check_${itemKey}`) === 'true');
+
           return (
             <button
               onClick={() => {
-                const nextState = !isSharedChecked;
-                localStorage.setItem(`shared_check_${itemKey}`, String(nextState));
-                setEditForm(prev => ({ ...prev })); // trigger re-render cleanly
+                if (onTogglePublish) onTogglePublish(itemKey);
+                else {
+                  const nextState = !isSharedChecked;
+                  localStorage.setItem(`shared_check_${itemKey}`, String(nextState));
+                  setEditForm(prev => ({ ...prev }));
+                }
               }}
               className={`w-6 h-6 rounded-md flex items-center justify-center mx-auto transition-all duration-300 cursor-pointer ${
                 isSharedChecked 
@@ -2803,7 +2809,9 @@ const ShootingRow = ({ item, index, activeGid, onToggleFilmed, loadingFilmedCode
       <td className="px-4 py-5 text-center">
         {(() => {
           const itemKey = item.code || item.id || generateKey(item);
-          const sharedUrl = localStorage.getItem(`shared_link_${itemKey}`) || '';
+          const sharedUrl = sharedLinks?.[itemKey] !== undefined
+            ? sharedLinks[itemKey]
+            : (item.sharedLink || localStorage.getItem(`shared_link_${itemKey}`) || '');
           const isEditingShared = activeCell?.colKey === 'sharedLink' && activeCell?.rowIndex === index;
 
           return (
@@ -2814,13 +2822,21 @@ const ShootingRow = ({ item, index, activeGid, onToggleFilmed, loadingFilmedCode
                   type="text"
                   defaultValue={sharedUrl}
                   onBlur={(e) => {
-                    localStorage.setItem(`shared_link_${itemKey}`, e.target.value.trim());
+                    if (onUpdateSharedLink) onUpdateSharedLink(itemKey, e.target.value);
+                    else {
+                      localStorage.setItem(`shared_link_${itemKey}`, e.target.value.trim());
+                      setEditForm(prev => ({ ...prev }));
+                    }
                     setActiveCell(null);
-                    setEditForm(prev => ({ ...prev }));
                   }}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') {
-                      e.currentTarget.blur();
+                      if (onUpdateSharedLink) onUpdateSharedLink(itemKey, (e.target as HTMLInputElement).value);
+                      else {
+                        localStorage.setItem(`shared_link_${itemKey}`, (e.target as HTMLInputElement).value.trim());
+                        setEditForm(prev => ({ ...prev }));
+                      }
+                      setActiveCell(null);
                     }
                   }}
                   className="w-full max-w-[150px] bg-white/5 border border-white/10 hover:bg-white/10 rounded-xl px-3 py-1.5 text-xs font-bold text-center text-white/90 outline-none transition-all focus:bg-[#0b1019] focus:border-cyan-500 focus:ring-2 focus:ring-cyan-500/30 text-left"
@@ -4865,6 +4881,22 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
     return {};
   });
 
+  const [publishedTasks, setPublishedTasks] = useState<Record<string, boolean>>(() => {
+    const saved = localStorage.getItem('published_tasks');
+    if (saved) {
+      try { return JSON.parse(saved); } catch (e) {}
+    }
+    return {};
+  });
+
+  const [sharedLinks, setSharedLinks] = useState<Record<string, string>>(() => {
+    const saved = localStorage.getItem('shared_links');
+    if (saved) {
+      try { return JSON.parse(saved); } catch (e) {}
+    }
+    return {};
+  });
+
   const [localEntries, setLocalEntries] = useState<{ [gid: string]: any[] }>({});
 
   const combinedData = useMemo(() => {
@@ -5041,6 +5073,27 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
     }
   };
 
+  const handleTogglePublish = async (itemKey: string) => {
+    const current = !!publishedTasks[itemKey];
+    const next = !current;
+    const updatedDict = { ...publishedTasks, [itemKey]: next };
+    setPublishedTasks(updatedDict);
+    localStorage.setItem('published_tasks', JSON.stringify(updatedDict));
+    localStorage.setItem(`shared_check_${itemKey}`, String(next));
+
+    await syncState('published_tasks', updatedDict, itemKey, findTaskName(itemKey), 'publish', next ? '🚀 تم تفعيل النشر (Publish)' : '↩️ تم إلغاء النشر');
+  };
+
+  const handleUpdateSharedLink = async (itemKey: string, link: string) => {
+    const cleanLink = link.trim();
+    const updatedDict = { ...sharedLinks, [itemKey]: cleanLink };
+    setSharedLinks(updatedDict);
+    localStorage.setItem('shared_links', JSON.stringify(updatedDict));
+    localStorage.setItem(`shared_link_${itemKey}`, cleanLink);
+
+    await syncState('shared_links', updatedDict, itemKey, findTaskName(itemKey), 'shared_link', `🔗 تم تحديث الرابط المشترك`);
+  };
+
   const syncState = async (field: string, dict: any, itemKey: string, taskName: string, type: string, message: string) => {
     localStorage.setItem(field, JSON.stringify(dict));
     const token = session?.access_token || profile?.id;
@@ -5118,6 +5171,8 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
             if (m.tagme3at_transfers) { setTagmeTransfers(m.tagme3at_transfers); localStorage.setItem('tagme3at_transfers', JSON.stringify(m.tagme3at_transfers)); }
             if (m.youtube_transfers) { setYoutubeItems(m.youtube_transfers); localStorage.setItem('youtube_transfers', JSON.stringify(m.youtube_transfers)); }
             if (m.assigned_bunny_links) { setAssignedBunnyLinks(m.assigned_bunny_links); localStorage.setItem('assigned_bunny_links', JSON.stringify(m.assigned_bunny_links)); }
+            if (m.published_tasks) { setPublishedTasks(m.published_tasks); localStorage.setItem('published_tasks', JSON.stringify(m.published_tasks)); }
+            if (m.shared_links) { setSharedLinks(m.shared_links); localStorage.setItem('shared_links', JSON.stringify(m.shared_links)); }
             if (m.tab_priority_limits) {
               setTabPriorityLimits(m.tab_priority_limits);
               localStorage.setItem('tab_priority_limits_v1', JSON.stringify(m.tab_priority_limits));
@@ -5229,6 +5284,8 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
          else if (field === 'assigned_times') setAssignedTimes(dict);
          else if (field === 'assigned_youtube_links') setAssignedYoutubeLinks(dict);
          else if (field === 'uploaded_statuses') setUploadedStatuses(dict);
+         else if (field === 'published_tasks') setPublishedTasks(dict);
+         else if (field === 'shared_links') setSharedLinks(dict);
          else if (field === 'tab_priority_limits') {
            setTabPriorityLimits(dict);
            localStorage.setItem('tab_priority_limits_v1', JSON.stringify(dict));
@@ -9496,7 +9553,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
                           const candidates = [item.id, item.code, item.uniqueKey].filter(Boolean).map(c => String(c).trim().toLowerCase());
                           return candidates.some(c => c === ck || c.includes(ck) || ck.includes(c));
                         });
-                        return <ShootingRow key={item.code || item.id || item.uniqueKey || idx} item={item} index={idx} activeGid={activeGid} onToggleFilmed={handleFilmedToggle} onToggleEditCheck={handleToggleEditCheck} loadingFilmedCode={loadingFilmedCode} onUpdateShootingRow={handleUpdateShootingRow} liveData={liveData} optionsLists={{ branches: uniqueBranches, years: uniqueYears, teachers: uniqueTeachers, extraNames: uniqueExtraNames, types: uniqueTypes, formats: uniqueFormats, bys: uniqueBys, storages: uniqueStorages, editors: editorsList }} autofillDrag={autofillDrag} setAutofillDrag={setAutofillDrag} onApplyAutofill={handleApplyAutofill} activeCell={activeCell} setActiveCell={setActiveCell} toast={toast} isSubscribed={isSubscribed} onToggleSubscribe={() => toggleSubscribe(item.code || item.id || item.uniqueKey)} isSimple={activeGid === '1939073164' && veViewMode === 'SIMPLE'} />;
+                        return <ShootingRow key={item.code || item.id || item.uniqueKey || idx} item={item} index={idx} activeGid={activeGid} onToggleFilmed={handleFilmedToggle} onToggleEditCheck={handleToggleEditCheck} loadingFilmedCode={loadingFilmedCode} onUpdateShootingRow={handleUpdateShootingRow} liveData={liveData} optionsLists={{ branches: uniqueBranches, years: uniqueYears, teachers: uniqueTeachers, extraNames: uniqueExtraNames, types: uniqueTypes, formats: uniqueFormats, bys: uniqueBys, storages: uniqueStorages, editors: editorsList }} autofillDrag={autofillDrag} setAutofillDrag={setAutofillDrag} onApplyAutofill={handleApplyAutofill} activeCell={activeCell} setActiveCell={setActiveCell} toast={toast} isSubscribed={isSubscribed} onToggleSubscribe={() => toggleSubscribe(item.code || item.id || item.uniqueKey)} isSimple={activeGid === '1939073164' && veViewMode === 'SIMPLE'} publishedTasks={publishedTasks} sharedLinks={sharedLinks} onTogglePublish={handleTogglePublish} onUpdateSharedLink={handleUpdateSharedLink} />;
                       }
                       return <StageRow key={idx} item={item} index={idx} tagmeTransfers={tagmeTransfers} onTagmeToggle={handleTagmeToggle} activeLabel={activeLabel} isGlowing={isGlowing} onUpdateDate={handleUpdateDate} onUpdateWeek={handleUpdateWeek} onUpdateThumbnailLink={handleUpdateThumbnailLink} onUpdateTime={handleUpdateTime} onUpdateYoutubeLink={handleUpdateYoutubeLink} onUpdateUploaded={handleUpdateUploaded} onToggleDelivered={handleToggleDelivered} />;
                     }) : (

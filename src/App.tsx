@@ -4065,18 +4065,17 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
   };
 
   useEffect(() => {
-    if (!isDemo && (isTagme3at || isAnalyticsTagme)) {
+    if (isTagme3at || isAnalyticsTagme) {
       fetchTagmeDb();
       const intervalId = setInterval(() => {
         fetchTagmeDb(true);
       }, 3500);
       return () => clearInterval(intervalId);
     }
-  }, [isDemo, activeGid, isTagme3at, isAnalyticsTagme]);
+  }, [activeGid, isTagme3at, isAnalyticsTagme]);
 
   // Realtime subscription on tagme3at_26
   useEffect(() => {
-    if (isDemo) return;
 
     const channel = supabase
       .channel('tagme3at_26_realtime')
@@ -4280,18 +4279,18 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
   };
 
   useEffect(() => {
-    if (!isDemo && isStageTab) {
+    if (isStageTab) {
       fetchStageDb(activeGid);
       const intervalId = setInterval(() => {
         fetchStageDb(activeGid, true);
       }, 3500);
       return () => clearInterval(intervalId);
     }
-  }, [isDemo, activeGid, isStageTab]);
+  }, [activeGid, isStageTab]);
 
   // Realtime subscription on active stage table
   useEffect(() => {
-    if (isDemo || !isStageTab) return;
+    if (!isStageTab) return;
     const tbl = STAGE_TABLE_MAP[activeGid];
     if (!tbl) return;
 
@@ -4549,18 +4548,18 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
   };
 
   useEffect(() => {
-    if (!isDemo && isReelsTableTab) {
+    if (isReelsTableTab) {
       fetchReelsDb(activeGid);
       const intervalId = setInterval(() => {
         fetchReelsDb(activeGid, true);
       }, 3500);
       return () => clearInterval(intervalId);
     }
-  }, [isDemo, activeGid, isReelsTableTab]);
+  }, [activeGid, isReelsTableTab]);
 
   // Realtime subscription on active reels table
   useEffect(() => {
-    if (isDemo || !isReelsTableTab) return;
+    if (!isReelsTableTab) return;
     const tbl = REELS_TABLE_MAP[activeGid];
     if (!tbl) return;
 
@@ -4830,20 +4829,11 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
     let baseList = [];
     if (isOperations) baseList = [...currentLocal, ...liveData];
     else if (isTagme3at || isAnalyticsTagme) {
-      if (!isDemo) {
-        // EXCLUSIVELY FROM SUPABASE tagme3at_26 TABLE
-        baseList = tagmeDbRows;
-      } else {
-        baseList = [...currentLocal, ...tagmeTransfers, ...liveData];
-      }
-    } else if (isStageTab && !isDemo) {
-      // EXCLUSIVELY FROM SUPABASE STAGE TABLES (stage_j4_26 -> stage_s3_26)
-      // Pure Supabase: exactly and only what exists in the database table
-      baseList = stageDbRows;
-    } else if (isReelsTableTab && !isDemo) {
-      // EXCLUSIVELY FROM SUPABASE REELS TABLES (reels_shooting_26, reels_ve_26, reels_cuts_26)
-      // Pure Supabase: single authoritative source of truth for reels
-      baseList = reelsDbRows;
+      baseList = tagmeDbRows.length > 0 ? tagmeDbRows : [...currentLocal, ...tagmeTransfers, ...liveData];
+    } else if (isStageTab) {
+      baseList = stageDbRows.length > 0 ? stageDbRows : [...currentLocal, ...liveData];
+    } else if (isReelsTableTab) {
+      baseList = reelsDbRows.length > 0 ? reelsDbRows : [...currentLocal, ...liveData];
     } else {
       const transfers = youtubeItems[activeGid] || [];
       baseList = [...currentLocal, ...transfers, ...liveData];
@@ -4853,8 +4843,8 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
       const key = item.uniqueKey || generateKey(item);
       const updated = { ...item };
 
-      // For Tagme3at, Stage, and Reels tables in live mode, Supabase is the authoritative single source of truth
-      if (!isDemo && (isTagme3at || isAnalyticsTagme || isStageTab || isReelsTableTab)) {
+      // For Tagme3at, Stage, and Reels tables, Supabase is the authoritative single source of truth
+      if (isTagme3at || isAnalyticsTagme || isStageTab || isReelsTableTab) {
         return updated;
       }
 
@@ -7781,13 +7771,13 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
 
   const colSpan = isOperations ? 7 : isTagme3at ? (tagmeViewMode === 'SIMPLE' ? 8 : 13) : activeGid === '0' ? 18 : activeGid === '1939073164' ? (veViewMode === 'SIMPLE' ? 16 : 22) : ['1436746012', '798246690'].includes(activeGid) ? 16 : 7;
 
-  const effectiveLoading = !isDemo && isTagme3at 
-    ? isTagmeDbLoading 
-    : !isDemo && isStageTab 
-    ? isStageDbLoading 
-    : !isDemo && isReelsTableTab 
-    ? isReelsDbLoading 
-    : loading;
+  const effectiveLoading = isTagme3at 
+    ? (isTagmeDbLoading && tagmeDbRows.length === 0)
+    : isStageTab 
+    ? (isStageDbLoading && stageDbRows.length === 0)
+    : isReelsTableTab 
+    ? (isReelsDbLoading && reelsDbRows.length === 0)
+    : (loading && liveData.length === 0);
 
   return (
     <div className="flex min-h-screen bg-[#05070a] text-foreground selection:bg-primary/30">

@@ -4020,8 +4020,8 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
   const [tagmeDbRows, setTagmeDbRows] = useState<any[]>([]);
   const [isTagmeDbLoading, setIsTagmeDbLoading] = useState(false);
 
-  const fetchTagmeDb = async () => {
-    setIsTagmeDbLoading(true);
+  const fetchTagmeDb = async (isSilent = false) => {
+    if (!isSilent) setIsTagmeDbLoading(true);
     try {
       const { data, error } = await supabase
         .from('tagme3at_26')
@@ -4060,13 +4060,17 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
     } catch (e) {
       console.error('Error fetching tagme3at_26 from Supabase:', e);
     } finally {
-      setIsTagmeDbLoading(false);
+      if (!isSilent) setIsTagmeDbLoading(false);
     }
   };
 
   useEffect(() => {
     if (!isDemo && (isTagme3at || isAnalyticsTagme)) {
       fetchTagmeDb();
+      const intervalId = setInterval(() => {
+        fetchTagmeDb(true);
+      }, 3500);
+      return () => clearInterval(intervalId);
     }
   }, [isDemo, activeGid, isTagme3at, isAnalyticsTagme]);
 
@@ -4235,10 +4239,10 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
   const stageTable = STAGE_TABLE_MAP[activeGid];
   const isStageTab = !!stageTable;
 
-  const fetchStageDb = async (gid: string) => {
+  const fetchStageDb = async (gid: string, isSilent = false) => {
     const tbl = STAGE_TABLE_MAP[gid];
     if (!tbl) return;
-    setIsStageDbLoading(true);
+    if (!isSilent) setIsStageDbLoading(true);
     try {
       const { data, error } = await supabase
         .from(tbl)
@@ -4271,13 +4275,17 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
     } catch (e) {
       console.error(`Error fetching ${tbl} from Supabase:`, e);
     } finally {
-      setIsStageDbLoading(false);
+      if (!isSilent) setIsStageDbLoading(false);
     }
   };
 
   useEffect(() => {
     if (!isDemo && isStageTab) {
       fetchStageDb(activeGid);
+      const intervalId = setInterval(() => {
+        fetchStageDb(activeGid, true);
+      }, 3500);
+      return () => clearInterval(intervalId);
     }
   }, [isDemo, activeGid, isStageTab]);
 
@@ -4536,13 +4544,17 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
     } catch (e) {
       console.error(`Error fetching ${tbl} from Supabase:`, e);
     } finally {
-      setIsReelsDbLoading(false);
+      if (!isSilent) setIsReelsDbLoading(false);
     }
   };
 
   useEffect(() => {
     if (!isDemo && isReelsTableTab) {
       fetchReelsDb(activeGid);
+      const intervalId = setInterval(() => {
+        fetchReelsDb(activeGid, true);
+      }, 3500);
+      return () => clearInterval(intervalId);
     }
   }, [isDemo, activeGid, isReelsTableTab]);
 
@@ -4553,7 +4565,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
     if (!tbl) return;
 
     const channel = supabase
-      .channel(`${tbl}_realtime`)
+      .channel(`${tbl}_realtime_${Date.now()}`)
       .on(
         'postgres_changes',
         { event: '*', schema: 'public', table: tbl },
@@ -4603,12 +4615,16 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
                 by: i.by || '',
                 storage: i.storage || '',
                 notes: i.notes || '',
+                editorNotes: i.editor_notes || '',
                 driveRaw: i.drive_raw || '',
                 editorCol: i.editor_col || '',
                 done: i.done === true,
                 driveFinal: i.drive_final || '',
                 canceled: i.canceled === true,
                 missingDetails: i.missing_details === true,
+                editCheck: i.edit_check === true,
+                publish: i.publish === true || i.is_published === true || i.check === true,
+                sharedLink: i.shared_link || '',
                 uniqueKey: i.code,
                 createdAt: i.created_at,
                 updatedAt: i.updated_at
@@ -4660,6 +4676,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
                 by: i.by || '',
                 storage: i.storage || '',
                 notes: i.notes || '',
+                editorNotes: i.editor_notes || '',
                 driveRaw: i.drive_raw || '',
                 editorCol: i.editor_col || '',
                 done: i.done === true,
@@ -5157,7 +5174,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
     });
     globalChannelRef.current = globalCh;
     globalCh.on('broadcast', { event: 'update' }, ({ payload }: any) => {
-      const { itemKey, taskName, message, type, from, field, dict, altKeys } = payload;
+      const { itemKey, taskName, message, type, from, field, dict, altKeys, updatedItem } = payload;
       if (!from || from.toLowerCase() === profile.name.toLowerCase()) return;
       
       if (field && dict) {
@@ -5183,6 +5200,17 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
            setTabPriorityLimits(dict);
            localStorage.setItem('tab_priority_limits_v1', JSON.stringify(dict));
          }
+      }
+
+      if (updatedItem) {
+        const rowCode = String(itemKey || updatedItem.code || updatedItem.id || updatedItem.uniqueKey);
+        setReelsDbRows(prev => prev.map(r => (r.code === rowCode || r.id === rowCode || r.uniqueKey === rowCode) ? { ...r, ...updatedItem } : r));
+        setTagmeDbRows(prev => prev.map(r => (r.uniqueKey === rowCode || r.id === rowCode) ? { ...r, ...updatedItem } : r));
+        setStageDbRows(prev => prev.map(r => (r.uniqueKey === rowCode || r.id === rowCode) ? { ...r, ...updatedItem } : r));
+        setLiveData((prev: any[]) => {
+          if (!Array.isArray(prev)) return prev;
+          return prev.map((r: any) => (r.code === rowCode || r.id === rowCode || r.uniqueKey === rowCode) ? { ...r, ...updatedItem } : r);
+        });
       }
 
       const currentEditor = assignedEditorsRef.current[itemKey];
@@ -5249,6 +5277,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
     type: string;
     field?: string;
     dict?: any;
+    updatedItem?: any;
   }) => {
     const senderName = profile?.name || 'مستخدم';
     if (!globalChannelRef.current) return;
@@ -5265,6 +5294,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
           from: senderName,
           field: opts.field,
           dict: opts.dict,
+          updatedItem: opts.updatedItem,
           at: Date.now()
         },
       });
@@ -6388,79 +6418,39 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
       return prev.map((row: any) => (row.id === oldCode || row.code === oldCode) ? updatedItem : row);
     });
 
-    // Broadcast Realtime activity for task subscribers:
+    // Broadcast Realtime activity for task subscribers & instant multi-account sync:
     const taskNameStr = updatedItem.code || updatedItem.script || oldCode;
     const altKeysArr = [oldCode, newCode, updatedItem.id, updatedItem.code, updatedItem.uniqueKey, updatedItem.script].filter(Boolean);
 
-    if (updatedItem.notes !== prevItem?.notes && updatedItem.notes?.trim()) {
-      broadcastTaskActivity({
-        itemKey: oldCode,
-        altKeys: altKeysArr,
-        taskName: taskNameStr,
-        message: `📝 أضاف ملاحظة: "${updatedItem.notes.slice(0, 60)}${updatedItem.notes.length > 60 ? '...' : ''}"`,
-        type: 'note'
-      });
-    }
-
-    if (updatedItem.editorNotes !== prevItem?.editorNotes && updatedItem.editorNotes?.trim()) {
-      broadcastTaskActivity({
-        itemKey: oldCode,
-        altKeys: altKeysArr,
-        taskName: taskNameStr,
-        message: `🎬 أضاف ملاحظات مونتير: "${updatedItem.editorNotes.slice(0, 60)}${updatedItem.editorNotes.length > 60 ? '...' : ''}"`,
-        type: 'editor_notes'
-      });
-    }
-
-    if (updatedItem.missingDetails !== prevItem?.missingDetails) {
-      broadcastTaskActivity({
-        itemKey: oldCode,
-        altKeys: altKeysArr,
-        taskName: taskNameStr,
-        message: updatedItem.missingDetails ? `🔍 حدد تفاصيل ناقصة للمهمة` : `✅ ألغى علامة التفاصيل الناقصة`,
-        type: 'missing_details'
-      });
-    }
-
-    if (updatedItem.done !== prevItem?.done) {
-      broadcastTaskActivity({
-        itemKey: oldCode,
-        altKeys: altKeysArr,
-        taskName: taskNameStr,
-        message: updatedItem.done ? `✅ تم إنهاء المهمة بنجاح` : `↩️ تم إعادة فتح المهمة`,
-        type: updatedItem.done ? 'done' : 'undone'
-      });
-    }
-
-    if (updatedItem.canceled !== prevItem?.canceled) {
-      broadcastTaskActivity({
-        itemKey: oldCode,
-        altKeys: altKeysArr,
-        taskName: taskNameStr,
-        message: updatedItem.canceled ? `❌ تم إلغاء المهمة` : `↩️ تم إلغاء إلغاء المهمة`,
-        type: updatedItem.canceled ? 'cancel' : 'uncancel'
-      });
-    }
-
-    if (updatedItem.editorCol !== prevItem?.editorCol && updatedItem.editorCol) {
-      broadcastTaskActivity({
-        itemKey: oldCode,
-        altKeys: altKeysArr,
-        taskName: taskNameStr,
-        message: `👤 أسند المهمة للمحرر: ${updatedItem.editorCol}`,
-        type: 'editor'
-      });
-    }
-
-    if (updatedItem.driveFinal !== prevItem?.driveFinal && updatedItem.driveFinal?.trim()) {
-      broadcastTaskActivity({
-        itemKey: oldCode,
-        altKeys: altKeysArr,
-        taskName: taskNameStr,
-        message: `🔗 تم إرفاق رابط الفاينال النهائي`,
-        type: 'final_link'
-      });
-    }
+    broadcastTaskActivity({
+      itemKey: oldCode,
+      altKeys: altKeysArr,
+      taskName: taskNameStr,
+      message: (updatedItem.notes !== prevItem?.notes && updatedItem.notes?.trim()) 
+        ? `📝 أضاف ملاحظة: "${updatedItem.notes.slice(0, 60)}${updatedItem.notes.length > 60 ? '...' : ''}"`
+        : (updatedItem.editorNotes !== prevItem?.editorNotes && updatedItem.editorNotes?.trim())
+        ? `🎬 أضاف ملاحظات مونتير: "${updatedItem.editorNotes.slice(0, 60)}${updatedItem.editorNotes.length > 60 ? '...' : ''}"`
+        : (updatedItem.missingDetails !== prevItem?.missingDetails)
+        ? (updatedItem.missingDetails ? `🔍 حدد تفاصيل ناقصة للمهمة` : `✅ ألغى علامة التفاصيل الناقصة`)
+        : (updatedItem.done !== prevItem?.done)
+        ? (updatedItem.done ? `✅ تم إنهاء المهمة بنجاح` : `↩️ تم إعادة فتح المهمة`)
+        : (updatedItem.canceled !== prevItem?.canceled)
+        ? (updatedItem.canceled ? `❌ تم إلغاء المهمة` : `↩️ تم إلغاء إلغاء المهمة`)
+        : (updatedItem.editorCol !== prevItem?.editorCol && updatedItem.editorCol)
+        ? `👤 أسند المهمة للمحرر: ${updatedItem.editorCol}`
+        : (updatedItem.driveFinal !== prevItem?.driveFinal && updatedItem.driveFinal?.trim())
+        ? `🔗 تم إرفاق رابط الفاينال النهائي`
+        : `✏️ تم تحديث بيانات المهمة`,
+      type: (updatedItem.notes !== prevItem?.notes && updatedItem.notes?.trim()) ? 'note'
+        : (updatedItem.editorNotes !== prevItem?.editorNotes && updatedItem.editorNotes?.trim()) ? 'editor_notes'
+        : (updatedItem.missingDetails !== prevItem?.missingDetails) ? 'missing_details'
+        : (updatedItem.done !== prevItem?.done) ? (updatedItem.done ? 'done' : 'undone')
+        : (updatedItem.canceled !== prevItem?.canceled) ? (updatedItem.canceled ? 'cancel' : 'uncancel')
+        : (updatedItem.editorCol !== prevItem?.editorCol) ? 'editor'
+        : (updatedItem.driveFinal !== prevItem?.driveFinal) ? 'final_link'
+        : 'activity',
+      updatedItem: updatedItem
+    });
 
     // 2. Direct Supabase Update
     if (!isDemo && tbl) {

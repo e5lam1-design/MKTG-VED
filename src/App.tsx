@@ -4914,7 +4914,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
   const handleUpdateWeek = (itemKey: string, val: string) => {
     setAssignedWeeks(prev => {
       const updated = { ...prev, [itemKey]: val };
-      if (!isDemo && isStageTab) {
+      if (isStageTab) {
         updateStageDbField(activeGid, itemKey, 'week', val);
       }
       const taskName = findTaskName(itemKey);
@@ -4926,9 +4926,9 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
   const handleUpdateDate = (itemKey: string, val: string) => {
     setAssignedDates(prev => {
       const updated = { ...prev, [itemKey]: val };
-      if (!isDemo && activeGid === '1535230545') {
+      if (activeGid === '1535230545') {
         updateTagme3atDbField(itemKey, 'date', val);
-      } else if (!isDemo && isStageTab) {
+      } else if (isStageTab) {
         updateStageDbField(activeGid, itemKey, 'date', val);
       }
       const taskName = findTaskName(itemKey);
@@ -4949,9 +4949,9 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
   const handleUpdateThumbnailLink = (itemKey: string, val: string) => {
     setAssignedThumbnailLinks(prev => {
       const updated = { ...prev, [itemKey]: val };
-      if (!isDemo && activeGid === '1535230545') {
+      if (activeGid === '1535230545') {
         updateTagme3atDbField(itemKey, 'thumbnailLink', val);
-      } else if (!isDemo && isStageTab) {
+      } else if (isStageTab) {
         updateStageDbField(activeGid, itemKey, 'thumbnailLink', val);
       }
       const taskName = findTaskName(itemKey);
@@ -4963,9 +4963,9 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
   const handleUpdateTime = (itemKey: string, val: string) => {
     setAssignedTimes(prev => {
       const updated = { ...prev, [itemKey]: val };
-      if (!isDemo && activeGid === '1535230545') {
+      if (activeGid === '1535230545') {
         updateTagme3atDbField(itemKey, 'time', val);
-      } else if (!isDemo && isStageTab) {
+      } else if (isStageTab) {
         updateStageDbField(activeGid, itemKey, 'time', val);
       }
       const taskName = findTaskName(itemKey);
@@ -4977,9 +4977,9 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
   const handleUpdateYoutubeLink = (itemKey: string, val: string) => {
     setAssignedYoutubeLinks(prev => {
       const updated = { ...prev, [itemKey]: val };
-      if (!isDemo && activeGid === '1535230545') {
+      if (activeGid === '1535230545') {
         updateTagme3atDbField(itemKey, 'youtubeLink', val);
-      } else if (!isDemo && isStageTab) {
+      } else if (isStageTab) {
         updateStageDbField(activeGid, itemKey, 'youtubeLink', val);
       }
       const taskName = findTaskName(itemKey);
@@ -4991,9 +4991,9 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
   const handleUpdateUploaded = (itemKey: string, val: boolean) => {
     setUploadedStatuses(prev => {
       const updated = { ...prev, [itemKey]: val };
-      if (!isDemo && activeGid === '1535230545') {
+      if (activeGid === '1535230545') {
         updateTagme3atDbField(itemKey, 'uploaded', val);
-      } else if (!isDemo && isStageTab) {
+      } else if (isStageTab) {
         updateStageDbField(activeGid, itemKey, 'uploaded', val);
       }
       const taskName = findTaskName(itemKey);
@@ -5003,7 +5003,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
   };
 
   const handleToggleDelivered = (itemKey: string, delivered: boolean) => {
-    if (!isDemo && isStageTab) {
+    if (isStageTab) {
       updateStageDbField(activeGid, itemKey, 'delivered', delivered);
     }
   };
@@ -5027,7 +5027,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
         else if (field === 'assigned_youtube_links') dbPayload = { youtube_link: dict[itemKey] };
         else if (field === 'uploaded_statuses') dbPayload = { uploaded: dict[itemKey] === true };
         
-        if (Object.keys(dbPayload).length > 0 && !isDemo) {
+        if (Object.keys(dbPayload).length > 0) {
           // 1. Direct Supabase Client update
           supabase
             .from('tagme3at_26')
@@ -5315,7 +5315,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
   const handleUpdateEditor = (itemKey: string, newEditor: string) => {
     setAssignedEditors(prev => {
       const updated = { ...prev, [itemKey]: newEditor };
-      if (!isDemo && activeGid === '1535230545') {
+      if (activeGid === '1535230545') {
         updateTagme3atDbField(itemKey, 'editor', newEditor);
       }
       const taskName = findTaskName(itemKey);
@@ -5327,7 +5327,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
   const handleUpdateEditorNotes = (itemKey: string, noteText: string, editorName?: string, customTimestamp?: string, customAuthor?: string) => {
     setEditorNotes(prev => {
       const updated = { ...prev, [itemKey]: noteText };
-      if (!isDemo && activeGid === '1535230545') {
+      if (activeGid === '1535230545') {
         updateTagme3atDbField(itemKey, 'notesEditors', noteText, customTimestamp, customAuthor);
       }
       if (noteText.trim()) {
@@ -5347,7 +5347,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
   const handleUpdateMarketingNotes = (itemKey: string, noteText: string, editorName?: string, customTimestamp?: string, customAuthor?: string) => {
     setMarketingNotes(prev => {
       const updated = { ...prev, [itemKey]: noteText };
-      if (!isDemo && activeGid === '1535230545') {
+      if (activeGid === '1535230545') {
         updateTagme3atDbField(itemKey, 'notesMarketing', noteText, customTimestamp, customAuthor);
       }
       if (noteText.trim()) {
@@ -5375,7 +5375,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
     };
     const message = msgMap[type] || `تغيير في التجميعة`;
 
-    if (!isDemo && activeGid === '1535230545') {
+    if (activeGid === '1535230545') {
       if (type === 'done') {
         updateTagme3atDbField(itemKey, 'done', true);
         updateTagme3atDbField(itemKey, 'priority', false);
@@ -5421,7 +5421,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
   const handleUpdateOpSheet = (itemKey: string, val: string) => {
     setAssignedOpSheets(prev => {
       const updated = { ...prev, [itemKey]: val };
-      if (!isDemo && activeGid === '1535230545') {
+      if (activeGid === '1535230545') {
         updateTagme3atDbField(itemKey, 'opSheet', val);
       }
       const taskName = findTaskName(itemKey);
@@ -5433,7 +5433,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
   const handleUpdateBranch = (itemKey: string, val: string) => {
     setAssignedBranches(prev => {
       const updated = { ...prev, [itemKey]: val };
-      if (!isDemo && activeGid === '1535230545') {
+      if (activeGid === '1535230545') {
         updateTagme3atDbField(itemKey, 'branch', val);
       }
       const taskName = findTaskName(itemKey);
@@ -5755,7 +5755,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
           uniqueKey: generatedCode
         };
 
-        if (!isDemo && tbl) {
+        if (tbl) {
           try {
             const { error } = await supabase.from(tbl).insert([{
               date: newCut.date,
@@ -5820,7 +5820,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
           uniqueKey: generatedCode
         };
 
-        if (!isDemo && tbl) {
+        if (tbl) {
           try {
             const { error } = await supabase.from(tbl).insert([{
               date: newShooting.date,
@@ -5918,59 +5918,57 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
         updatedAt: new Date().toISOString()
       };
 
-      if (!isDemo) {
-        try {
-          // 1. Direct insert to Supabase tagme3at_26 table
-          const { error } = await supabase.from('tagme3at_26').insert([{
-            unique_key: newKey,
-            name: newTagme.name,
-            filing_name: newTagme.filingName,
-            op_sheet: newTagme.opSheet,
-            branch: newTagme.branch,
-            date: newTagme.date,
-            notes_marketing: newTagme.notesMarketing,
-            editor: newTagme.editor,
-            notes_editors: '',
-            done: false,
-            priority: false,
-            cancel: false,
-            thumbnail_link: '',
-            time: '',
-            youtube_link: '',
-            uploaded: false,
-            is_transfer: false,
-            updated_at: new Date().toISOString()
-          }]);
+      try {
+        // 1. Direct insert to Supabase tagme3at_26 table
+        const { error } = await supabase.from('tagme3at_26').insert([{
+          unique_key: newKey,
+          name: newTagme.name,
+          filing_name: newTagme.filingName,
+          op_sheet: newTagme.opSheet,
+          branch: newTagme.branch,
+          date: newTagme.date,
+          notes_marketing: newTagme.notesMarketing,
+          editor: newTagme.editor,
+          notes_editors: '',
+          done: false,
+          priority: false,
+          cancel: false,
+          thumbnail_link: '',
+          time: '',
+          youtube_link: '',
+          uploaded: false,
+          is_transfer: false,
+          updated_at: new Date().toISOString()
+        }]);
 
-          if (error) {
-            console.error('Error inserting into tagme3at_26:', error);
-            toast.error(`حدث خطأ أثناء الحفظ في قاعدة البيانات: ${error.message}`);
-            return;
-          }
-
-          // 2. Optimistic UI update
-          setTagmeDbRows(prev => [newTagme, ...prev.filter(x => x.uniqueKey !== newKey)]);
-
-          // 3. Broadcast to all clients
-          if (globalChannelRef.current && profile?.name) {
-            globalChannelRef.current.send({
-              type: 'broadcast',
-              event: 'update',
-              payload: {
-                itemKey: newKey,
-                taskName: newTagme.name,
-                message: `➕ تم إضافة تجميعة جديدة: "${newTagme.name}"`,
-                type: 'tagme_add',
-                from: profile.name,
-                activeGid
-              }
-            });
-          }
-        } catch (err: any) {
-          console.error('Exception inserting into tagme3at_26:', err);
-          toast.error(`فشل الإضافة: ${err.message}`);
+        if (error) {
+          console.error('Error inserting into tagme3at_26:', error);
+          toast.error(`حدث خطأ أثناء الحفظ في قاعدة البيانات: ${error.message}`);
           return;
         }
+
+        // 2. Optimistic UI update
+        setTagmeDbRows(prev => [newTagme, ...prev.filter(x => x.uniqueKey !== newKey)]);
+
+        // 3. Broadcast to all clients
+        if (globalChannelRef.current && profile?.name) {
+          globalChannelRef.current.send({
+            type: 'broadcast',
+            event: 'update',
+            payload: {
+              itemKey: newKey,
+              taskName: newTagme.name,
+              message: `➕ تم إضافة تجميعة جديدة: "${newTagme.name}"`,
+              type: 'tagme_add',
+              from: profile.name,
+              activeGid
+            }
+          });
+        }
+      } catch (err: any) {
+        console.error('Exception inserting into tagme3at_26:', err);
+        toast.error(`فشل الإضافة: ${err.message}`);
+        return;
       }
 
       setShowAddModal(false);
@@ -5979,7 +5977,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
       return;
     }
 
-    if (isStageTab && !isDemo) {
+    if (isStageTab) {
       const newKey = `stg-${activeGid}-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
       const newStageItem = {
         uniqueKey: newKey,
@@ -6453,7 +6451,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
     });
 
     // 2. Direct Supabase Update
-    if (!isDemo && tbl) {
+    if (tbl) {
       try {
         const { error } = await supabase
           .from(tbl)
@@ -6581,7 +6579,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
       type: 'filmed'
     });
 
-    if (!isDemo && tbl) {
+    if (tbl) {
       try {
         const { error } = await supabase
           .from(tbl)
@@ -6674,26 +6672,24 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
     });
 
     // 2. Direct Supabase update
-    if (!isDemo) {
-      try {
-        const { error } = await supabase
-          .from('reels_ve_26')
-          .update({ 
-            edit_check: true, 
-            done: false, 
-            updated_at: new Date().toISOString() 
-          })
-          .eq('code', rowCode);
+    try {
+      const { error } = await supabase
+        .from('reels_ve_26')
+        .update({ 
+          edit_check: true, 
+          done: false, 
+          updated_at: new Date().toISOString() 
+        })
+        .eq('code', rowCode);
 
-        if (error) {
-          console.error("Error updating edit_check in reels_ve_26:", error);
-          toast.error(`خطأ أثناء الحفظ في قاعدة البيانات: ${error.message}`);
-        } else {
-          toast.success("⚠️ تم تسجيل طلب التعديل (EDIT) وإعادة فتح المهمة!");
-        }
-      } catch (err: any) {
-        console.error(err);
+      if (error) {
+        console.error("Error updating edit_check in reels_ve_26:", error);
+        toast.error(`خطأ أثناء الحفظ في قاعدة البيانات: ${error.message}`);
+      } else {
+        toast.success("⚠️ تم تسجيل طلب التعديل (EDIT) وإعادة فتح المهمة!");
       }
+    } catch (err: any) {
+      console.error(err);
     }
   };
 

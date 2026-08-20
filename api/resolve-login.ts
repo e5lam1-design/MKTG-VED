@@ -16,13 +16,29 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    const { token } = req.body;
-    if (!token) {
-      return res.status(400).json({ error: 'Token is required' });
-    }
+    const { token, identifier } = req.body || {};
 
     if (!supabaseAuthClient || !supabaseAdminClient) {
       throw new Error('Supabase admin not configured');
+    }
+
+    // 1. If identifier provided, resolve username to email for login
+    if (identifier) {
+      const idStr = String(identifier).trim().toLowerCase();
+      const { data: prof } = await supabaseAdminClient
+        .from('user_profiles')
+        .select('email, id, name')
+        .or(`name.ilike.${idStr},email.ilike.${idStr}`)
+        .maybeSingle();
+
+      if (prof) {
+        return res.status(200).json({ email: prof.email, id: prof.id, name: prof.name });
+      }
+      return res.status(200).json({ email: idStr.includes('@') ? idStr : `${idStr}@local.user` });
+    }
+
+    if (!token) {
+      return res.status(400).json({ error: 'Token or identifier is required' });
     }
 
     const { data: userData, error: userError } = await supabaseAuthClient.auth.getUser(token);

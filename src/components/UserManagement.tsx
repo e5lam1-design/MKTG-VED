@@ -5,7 +5,8 @@ import type { UserProfile, Role } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import {
   Users, UserPlus, Shield, Search, X, Check,
-  Loader2, AlertCircle, ChevronDown, ToggleLeft, ToggleRight, Trash2
+  Loader2, AlertCircle, ChevronDown, ToggleLeft, ToggleRight, Trash2,
+  Key, Eye, EyeOff, Lock
 } from 'lucide-react';
 
 const MARKETING_TABS = [
@@ -47,11 +48,185 @@ const AvatarInitials = ({ name, role, team }: { name: string; role: Role; team?:
   );
 };
 
+interface ChangePasswordModalProps {
+  user: UserProfile;
+  onClose: () => void;
+  onSuccess: (msg: string) => void;
+}
+
+const ChangePasswordModal = ({ user, onClose, onSuccess }: ChangePasswordModalProps) => {
+  const { session } = useAuth();
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  const getToken = () => {
+    try {
+      const raw = localStorage.getItem('local_profile_login');
+      if (raw) return JSON.parse(raw).id;
+    } catch {}
+    return session?.access_token || '';
+  };
+
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+
+    if (!newPassword || newPassword.length < 6) {
+      setError('كلمة المرور يجب أن تكون 6 أحرف أو أرقام على الأقل');
+      return;
+    }
+
+    if (confirmPassword && newPassword !== confirmPassword) {
+      setError('كلمتا المرور غير متطابقتين');
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const token = getToken();
+      const res = await fetch('/api/change-password', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: JSON.stringify({
+          userId: user.id,
+          newPassword: newPassword.trim(),
+        }),
+      });
+
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(data?.error || 'فشل في تغيير كلمة المرور');
+      }
+
+      onSuccess(data.message || `تم تغيير كلمة المرور للمستخدم ${user.name} بنجاح`);
+      onClose();
+    } catch (err: any) {
+      setError(err.message || 'حدث خطأ أثناء تغيير كلمة المرور');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      className="fixed inset-0 z-[300] bg-black/75 backdrop-blur-md flex items-center justify-center p-4"
+      onClick={e => e.target === e.currentTarget && onClose()}
+    >
+      <motion.div
+        initial={{ opacity: 0, scale: 0.95, y: 20 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        exit={{ opacity: 0, scale: 0.95, y: 20 }}
+        className="bg-[#0d1219] border border-white/10 rounded-3xl p-6 w-full max-w-md shadow-[0_0_80px_rgba(0,0,0,0.8)]"
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between mb-6 border-b border-white/5 pb-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-2xl bg-purple-500/20 text-purple-400 border border-purple-500/30 flex items-center justify-center shadow-lg">
+              <Key size={20} />
+            </div>
+            <div>
+              <h3 className="text-base font-black text-white arabic-text">تغيير كلمة المرور</h3>
+              <p className="text-xs text-white/40 arabic-text">تحديث كلمة المرور في Supabase Auth</p>
+            </div>
+          </div>
+          <button onClick={onClose} className="w-8 h-8 rounded-xl bg-white/5 hover:bg-white/10 flex items-center justify-center text-white/50 hover:text-white transition-all cursor-pointer">
+            <X size={16} />
+          </button>
+        </div>
+
+        {/* User Card info */}
+        <div className="flex items-center gap-3 mb-5 p-3.5 rounded-2xl bg-white/[0.03] border border-white/[0.06]">
+          <AvatarInitials name={user.name} role={user.role} team={user.team} />
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-bold text-white truncate arabic-text">{user.name}</p>
+            <span className={`text-[10px] font-black px-2 py-0.5 rounded-lg border inline-block mt-1 ${ROLE_COLORS[user.role]}`}>
+              {ROLE_LABELS[user.role]}
+            </span>
+          </div>
+        </div>
+
+        <form onSubmit={handleSave} className="space-y-4">
+          <div className="space-y-1.5">
+            <label className="text-[11px] font-black text-white/60 uppercase tracking-wider block">
+              كلمة المرور الجديدة 🔒
+            </label>
+            <div className="relative">
+              <input
+                type={showPassword ? 'text' : 'password'}
+                value={newPassword}
+                onChange={e => setNewPassword(e.target.value)}
+                required
+                minLength={6}
+                placeholder="اكتب كلمة مرور جديدة (6 خانات على الأقل)..."
+                className="w-full px-4 py-3 rounded-xl bg-white/[0.05] border border-white/[0.1] text-white placeholder-white/25 text-sm font-medium focus:outline-none focus:border-purple-500/60 focus:bg-white/[0.08] transition-all pr-4 pl-11"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(v => !v)}
+                className="absolute left-3.5 top-1/2 -translate-y-1/2 text-white/40 hover:text-white transition-colors cursor-pointer"
+              >
+                {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+              </button>
+            </div>
+          </div>
+
+          <div className="space-y-1.5">
+            <label className="text-[11px] font-black text-white/60 uppercase tracking-wider block">
+              تأكيد كلمة المرور 🔐
+            </label>
+            <input
+              type={showPassword ? 'text' : 'password'}
+              value={confirmPassword}
+              onChange={e => setConfirmPassword(e.target.value)}
+              placeholder="أعد كتابة كلمة المرور للتأكيد..."
+              className="w-full px-4 py-3 rounded-xl bg-white/[0.05] border border-white/[0.1] text-white placeholder-white/25 text-sm font-medium focus:outline-none focus:border-purple-500/60 focus:bg-white/[0.08] transition-all"
+            />
+          </div>
+
+          {error && (
+            <div className="p-3 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs font-bold flex items-center gap-2">
+              <AlertCircle size={14} className="shrink-0 text-rose-400" />
+              <span>{error}</span>
+            </div>
+          )}
+
+          <div className="flex gap-3 pt-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex-1 py-3 rounded-xl bg-white/5 hover:bg-white/10 text-white/70 font-bold text-xs transition-all cursor-pointer"
+            >
+              إلغاء
+            </button>
+            <button
+              type="submit"
+              disabled={saving || !newPassword || newPassword.length < 6}
+              className="flex-1 py-3 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-black text-xs transition-all shadow-[0_0_20px_rgba(147,51,234,0.4)] cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2"
+            >
+              {saving ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
+              <span>حفظ في Supabase</span>
+            </button>
+          </div>
+        </form>
+      </motion.div>
+    </motion.div>
+  );
+};
+
 interface EditUserModalProps {
   user: UserProfile;
   initialTeam: 'marketing' | 'video' | '';
   onClose: () => void;
-  onSave: (id: string, updates: Partial<UserProfile>, team: 'marketing' | 'video' | '') => Promise<void>;
+  onSave: (id: string, updates: Partial<UserProfile> & { password?: string }, team: 'marketing' | 'video' | '') => Promise<void>;
 }
 
 const EditUserModal = ({ user, initialTeam, onClose, onSave }: EditUserModalProps) => {
@@ -60,6 +235,8 @@ const EditUserModal = ({ user, initialTeam, onClose, onSave }: EditUserModalProp
   const [selectedTeam, setSelectedTeam] = useState<'marketing' | 'video' | ''>(initialTeam);
   const [saving, setSaving] = useState(false);
   const [defaultMode, setDefaultMode] = useState<'operations' | 'reels' | 'designers'>(user.default_mode || 'operations');
+  const [newPassword, setNewPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
 
   const toggleTab = (tab: string) => {
     setAllowedTabs(prev =>
@@ -68,10 +245,18 @@ const EditUserModal = ({ user, initialTeam, onClose, onSave }: EditUserModalProp
   };
 
   const handleSave = () => {
-    onSave(user.id, { role, allowed_tabs: allowedTabs, default_mode: defaultMode }, selectedTeam)
-      .catch(err => {
-        console.error('[handleSave]', err);
-      });
+    onSave(
+      user.id, 
+      { 
+        role, 
+        allowed_tabs: allowedTabs, 
+        default_mode: defaultMode,
+        ...(newPassword.trim().length >= 6 ? { password: newPassword.trim() } : {})
+      }, 
+      selectedTeam
+    ).catch(err => {
+      console.error('[handleSave]', err);
+    });
     onClose();
   };
 
@@ -262,6 +447,33 @@ const EditUserModal = ({ user, initialTeam, onClose, onSave }: EditUserModalProp
           </div>
         </div>
 
+        {/* Change Password field (Optional) */}
+        <div className="mb-6 p-4 rounded-2xl bg-white/[0.02] border border-white/[0.06]">
+          <label className="text-[11px] font-black text-white/60 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+            <Lock size={13} className="text-purple-400" />
+            <span>تغيير كلمة المرور في Supabase (اختياري)</span>
+          </label>
+          <div className="relative">
+            <input
+              type={showPassword ? 'text' : 'password'}
+              value={newPassword}
+              onChange={e => setNewPassword(e.target.value)}
+              placeholder="اكتب كلمة مرور جديدة (اتركه فارغاً إذا لم ترغب في التغيير)..."
+              className="w-full px-4 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white placeholder-white/20 text-xs font-medium focus:outline-none focus:border-purple-500/60 transition-all pr-4 pl-10"
+            />
+            <button
+              type="button"
+              onClick={() => setShowPassword(v => !v)}
+              className="absolute left-3 top-1/2 -translate-y-1/2 text-white/30 hover:text-white transition-colors cursor-pointer"
+            >
+              {showPassword ? <EyeOff size={14} /> : <Eye size={14} />}
+            </button>
+          </div>
+          {newPassword && newPassword.length < 6 && (
+            <p className="text-[10px] text-rose-400 mt-1 font-bold">⚠️ يجب ألا تقل كلمة المرور عن 6 أحرف أو أرقام</p>
+          )}
+        </div>
+
         {/* Actions */}
         <div className="flex gap-3">
           <button
@@ -407,6 +619,8 @@ export const UserManagement = () => {
   const [fetchError, setFetchError] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [editingUser, setEditingUser] = useState<UserProfile | null>(null);
+  const [passwordUser, setPasswordUser] = useState<UserProfile | null>(null);
+  const [passwordToast, setPasswordToast] = useState<string | null>(null);
   const [showInvite, setShowInvite] = useState(false);
   const [filterRole, setFilterRole] = useState<Role | 'all'>('all');
   const [rolePermissions, setRolePermissions] = useState(DEFAULT_ROLE_PERMISSIONS);
@@ -950,11 +1164,19 @@ const DEFAULT_SYSTEM_USERS: UserProfile[] = [
                     )}
                   </button>
                 </div>
-                <div className="flex justify-center">
+                <div className="flex items-center justify-center gap-2">
+                  <button
+                    onClick={() => setPasswordUser(u)}
+                    className="w-8 h-8 rounded-xl bg-purple-500/10 hover:bg-purple-500/25 hover:text-purple-300 text-purple-400 flex items-center justify-center transition-all cursor-pointer shadow-sm hover:scale-105 active:scale-95"
+                    title="تغيير كلمة المرور في Supabase 🔑"
+                  >
+                    <Key size={14} />
+                  </button>
                   <button
                     onClick={() => setEditingUser(u)}
                     disabled={u.id === profile?.id && u.role === 'admin'}
-                    className="w-8 h-8 rounded-xl bg-white/5 hover:bg-purple-500/20 hover:text-purple-400 text-white/40 flex items-center justify-center transition-all cursor-pointer disabled:opacity-30"
+                    className="w-8 h-8 rounded-xl bg-white/5 hover:bg-purple-500/20 hover:text-purple-400 text-white/40 flex items-center justify-center transition-all cursor-pointer disabled:opacity-30 shadow-sm hover:scale-105 active:scale-95"
+                    title="تعديل الصلاحيات والمستخدم 🛡️"
                   >
                     <Shield size={14} />
                   </button>
@@ -1050,6 +1272,16 @@ const DEFAULT_SYSTEM_USERS: UserProfile[] = [
 
       {/* Modals */}
       <AnimatePresence>
+        {passwordUser && (
+          <ChangePasswordModal
+            user={passwordUser}
+            onClose={() => setPasswordUser(null)}
+            onSuccess={(msg) => {
+              setPasswordToast(msg);
+              setTimeout(() => setPasswordToast(null), 4000);
+            }}
+          />
+        )}
         {editingUser && (
           <EditUserModal
             user={editingUser}
@@ -1063,6 +1295,16 @@ const DEFAULT_SYSTEM_USERS: UserProfile[] = [
             onClose={() => setShowInvite(false)}
             onInvite={handleInviteUser}
           />
+        )}
+        {passwordToast && (
+          <motion.div
+            initial={{ opacity: 0, y: 30, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 20, scale: 0.95 }}
+            className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[400] px-5 py-3 rounded-2xl border text-sm font-bold shadow-2xl bg-emerald-500/20 border-emerald-400/40 text-emerald-300 shadow-[0_0_30px_rgba(16,185,129,0.45)] arabic-text"
+          >
+            {passwordToast}
+          </motion.div>
         )}
         {permissionsToast && (
           <motion.div

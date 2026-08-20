@@ -125,6 +125,32 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         .single();
       if (updateError) throw updateError;
 
+      // If password is provided, update password in Supabase Auth and user_profiles table
+      if (typeof req.body.password === 'string' && req.body.password.trim().length >= 6) {
+        const cleanPass = req.body.password.trim();
+        // Update user_profiles table
+        await supabaseAdminClient
+          .from('user_profiles')
+          .update({ password: cleanPass })
+          .eq('id', targetId)
+          .catch(e => console.warn('[users PATCH] profile password error:', e));
+
+        const { error: passErr } = await supabaseAdminClient.auth.admin.updateUserById(targetId, {
+          password: cleanPass,
+        });
+        if (passErr) {
+          console.warn('[users PATCH] updateUserById error, attempting createUser:', passErr.message);
+          const email = updates.email || target.email || `${target.name.toLowerCase().replace(/[^a-z0-9]/g, '')}@local.user`;
+          await supabaseAdminClient.auth.admin.createUser({
+            id: targetId,
+            email,
+            password: cleanPass,
+            email_confirm: true,
+            user_metadata: { name: updates.name || target.name, role: nextRole },
+          }).catch(e => console.warn('[users PATCH] createUser error:', e));
+        }
+      }
+
       return res.status(200).json({ user: data });
     }
 

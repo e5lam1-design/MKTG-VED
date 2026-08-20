@@ -4003,7 +4003,13 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
   type PersonalNotif = { id: string; taskName: string; message: string; type: string; from: string; at: number; read: boolean; };
   const [myNotifs, setMyNotifs] = useState<PersonalNotif[]>(() => {
     try {
-      return JSON.parse(localStorage.getItem('my_notifications') || '[]');
+      const stored: PersonalNotif[] = JSON.parse(localStorage.getItem('my_notifications') || '[]');
+      const unique: PersonalNotif[] = [];
+      stored.forEach(n => {
+        const isDup = unique.some(u => u.taskName === n.taskName && u.message === n.message && Math.abs(u.at - n.at) < 10000);
+        if (!isDup) unique.push(n);
+      });
+      return unique;
     } catch (e) {
       return [];
     }
@@ -4013,6 +4019,23 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
   const [showGuideModal, setShowGuideModal] = useState(false);
   const [showTour, setShowTour] = useState(false);
   const unreadCount = myNotifs.filter(n => !n.read).length;
+
+  const pushNotification = (notif: PersonalNotif) => {
+    setMyNotifs(prev => {
+      // Prevent duplicate notification for identical task and message within 10 seconds
+      const isDuplicate = prev.some(n =>
+        n.taskName === notif.taskName &&
+        n.message === notif.message &&
+        Math.abs(notif.at - n.at) < 10000
+      );
+      if (isDuplicate) return prev;
+      const next = [notif, ...prev.filter(n => n.id !== notif.id)].slice(0, 50);
+      try {
+        localStorage.setItem('my_notifications', JSON.stringify(next));
+      } catch {}
+      return next;
+    });
+  };
 
   useEffect(() => {
     localStorage.setItem('my_notifications', JSON.stringify(myNotifs));
@@ -5175,7 +5198,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
         at: Date.now(),
         read: false,
       };
-      setMyNotifs(prev => [notif, ...prev].slice(0, 50));
+      pushNotification(notif);
     }).subscribe();
 
     // Subscribe to global channel for tasks
@@ -5275,7 +5298,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
           at: Date.now(),
           read: false,
         };
-        setMyNotifs(prev => [notif, ...prev.filter(n => n.id !== notif.id)].slice(0, 50));
+        pushNotification(notif);
 
         // Floating toast alert for the subscriber
         if (isSub && !isManagerOrAdmin) {
@@ -5292,6 +5315,8 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
     };
   }, [profile?.name]);
 
+  const lastBroadcastRef = useRef<Map<string, number>>(new Map());
+
   const broadcastTaskActivity = async (opts: {
     itemKey: string;
     altKeys?: string[];
@@ -5304,6 +5329,16 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
   }) => {
     const senderName = profile?.name || 'مستخدم';
     if (!globalChannelRef.current) return;
+
+    // Deduplicate outgoing broadcasts for identical key + message within 2 seconds
+    const broadcastKey = `${opts.itemKey}_${opts.message}`;
+    const now = Date.now();
+    const lastTime = lastBroadcastRef.current.get(broadcastKey) || 0;
+    if (now - lastTime < 2000 && !opts.field) {
+      return;
+    }
+    lastBroadcastRef.current.set(broadcastKey, now);
+
     try {
       await globalChannelRef.current.send({
         type: 'broadcast',
@@ -5318,7 +5353,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
           field: opts.field,
           dict: opts.dict,
           updatedItem: opts.updatedItem,
-          at: Date.now()
+          at: now
         },
       });
     } catch (e) {

@@ -1211,20 +1211,20 @@ const TagmeRow = ({
   }, [item.uploaded]);
 
   useEffect(() => {
-    if (priorityOverride !== undefined) setPriority(priorityOverride);
-    else setPriority(item.priority === true);
+    if (priorityOverride !== undefined) setPriority(priorityOverride === true);
+    else setPriority(item.priority === true || String(item.priority) === 'true');
   }, [priorityOverride, item.priority]);
 
   useEffect(() => {
     if (statusOverride !== undefined) {
-       setDone(statusOverride.done);
-       setCancel(statusOverride.cancel);
-       if (statusOverride.done) {
+       setDone(statusOverride.done === true);
+       setCancel(statusOverride.cancel === true);
+       if (statusOverride.done === true) {
          setPriority(false);
        }
     } else {
-       setDone(item.done === true);
-       setCancel(item.cancel === true);
+       setDone(item.done === true || String(item.done) === 'true');
+       setCancel(item.cancel === true || String(item.cancel) === 'true');
     }
   }, [statusOverride, item.done, item.cancel]);
 
@@ -1401,9 +1401,8 @@ const TagmeRow = ({
               if (newDone) {
                 setPriority(false);
               }
-              const editor = item.editor;
-              if (editor && editor !== 'غير محدد' && onStatusChange) {
-                onStatusChange(item.uniqueKey || generateKey(item), item.name, editor, newDone ? 'done' : 'undone');
+              if (onStatusChange) {
+                onStatusChange(item.uniqueKey || generateKey(item), item.name, item.editor || '', newDone ? 'done' : 'undone');
               }
             }}
             disabled={!(profile?.role && PERMISSIONS.canEditEditors(profile.role))}
@@ -1415,9 +1414,8 @@ const TagmeRow = ({
             onClick={() => {
               const newCancel = !cancel;
               setCancel(newCancel);
-              const editor = item.editor;
-              if (editor && editor !== 'غير محدد' && onStatusChange) {
-                onStatusChange(item.uniqueKey || generateKey(item), item.name, editor, newCancel ? 'cancel' : 'uncancel');
+              if (onStatusChange) {
+                onStatusChange(item.uniqueKey || generateKey(item), item.name, item.editor || '', newCancel ? 'cancel' : 'uncancel');
               }
             }}
             disabled={!(profile?.role && PERMISSIONS.canEditEditors(profile.role))}
@@ -4186,6 +4184,14 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
               updatedAt: payload.new.updated_at
             };
             setTagmeDbRows(prev => prev.map(x => x.uniqueKey === updated.uniqueKey ? updated : x));
+            setTaskStatuses(prev => ({
+              ...prev,
+              [updated.uniqueKey]: { done: updated.done, cancel: updated.cancel }
+            }));
+            setTaskPriorities(prev => ({
+              ...prev,
+              [updated.uniqueKey]: updated.priority
+            }));
           } else if (payload.eventType === 'DELETE') {
             const delKey = payload.old?.unique_key;
             if (delKey) {
@@ -9522,7 +9528,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
                           const candidates = [key, item.uniqueKey, item.id, item.name].filter(Boolean).map(c => String(c).trim().toLowerCase().replace(/^tgm-/, ''));
                           return candidates.some(c => c === ck || c.includes(ck) || ck.includes(c));
                         }) || (item.editor && item.editor.toLowerCase() === profile?.name?.toLowerCase());
-                        return <TagmeRow key={idx} item={item} index={idx} isSimple={tagmeViewMode === 'SIMPLE'} onUpdateEditor={handleUpdateEditor} editorsList={editorsList} onUpdateEditorNotes={handleUpdateEditorNotes} onUpdateMarketingNotes={handleUpdateMarketingNotes} opSheetsList={opSheetsList} branchesList={branchesList} onUpdateOpSheet={handleUpdateOpSheet} onUpdateBranch={handleUpdateBranch} onUpdateDate={handleUpdateDate} isGlowing={isGlowing} liveData={liveData} canRaisePriority={canRaisePriority || isItemPri} priorityLimit={tabLimit} onStatusChange={handleStatusChange} isSubscribed={isSubscribed} onToggleSubscribe={() => toggleSubscribe(item.uniqueKey || key)} priorityOverride={isItemPri} statusOverride={taskStatuses[key]} onUpdateThumbnailLink={handleUpdateThumbnailLink} onUpdateTime={handleUpdateTime} onUpdateYoutubeLink={handleUpdateYoutubeLink} onUpdateUploaded={handleUpdateUploaded} onShowPriorityLimitModal={(limit: number) => setPriorityLimitModal({ isOpen: true, limit })} />;
+                        return <TagmeRow key={idx} item={item} index={idx} isSimple={tagmeViewMode === 'SIMPLE'} onUpdateEditor={handleUpdateEditor} editorsList={editorsList} onUpdateEditorNotes={handleUpdateEditorNotes} onUpdateMarketingNotes={handleUpdateMarketingNotes} opSheetsList={opSheetsList} branchesList={branchesList} onUpdateOpSheet={handleUpdateOpSheet} onUpdateBranch={handleUpdateBranch} onUpdateDate={handleUpdateDate} isGlowing={isGlowing} liveData={liveData} canRaisePriority={canRaisePriority || isItemPri} priorityLimit={tabLimit} onStatusChange={handleStatusChange} isSubscribed={isSubscribed} onToggleSubscribe={() => toggleSubscribe(item.uniqueKey || key)} priorityOverride={isItemPri} statusOverride={taskStatuses[key] || taskStatuses[item.uniqueKey] || taskStatuses[item.id] || (item.done !== undefined || item.cancel !== undefined ? { done: item.done === true, cancel: item.cancel === true } : undefined)} onUpdateThumbnailLink={handleUpdateThumbnailLink} onUpdateTime={handleUpdateTime} onUpdateYoutubeLink={handleUpdateYoutubeLink} onUpdateUploaded={handleUpdateUploaded} onShowPriorityLimitModal={(limit: number) => setPriorityLimitModal({ isOpen: true, limit })} />;
                       }
                       if (activeGid === '0') {
                         const isSubscribed = (subscribedTasks || []).some(k => {

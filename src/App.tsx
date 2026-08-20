@@ -3840,50 +3840,6 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
   const { data: liveData, updateData: setLiveData, loading, refresh } = useGoogleSheets(sheetGidToFetch, activeDocId);
 
   const [itemToasts, setItemToasts] = useState<{ id: string, name: string, filingName?: string }[]>([]);
-  const [showMyPasswordModal, setShowMyPasswordModal] = useState(false);
-  const [myNewPassword, setMyNewPassword] = useState('');
-  const [myConfirmPassword, setMyConfirmPassword] = useState('');
-  const [showMyPasswordText, setShowMyPasswordText] = useState(false);
-  const [myPasswordSaving, setMyPasswordSaving] = useState(false);
-  const [myPasswordError, setMyPasswordError] = useState('');
-
-  const handleSaveMyPassword = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setMyPasswordError('');
-    if (!myNewPassword || myNewPassword.length < 6) {
-      setMyPasswordError('كلمة المرور يجب أن تكون 6 أحرف أو أرقام على الأقل');
-      return;
-    }
-    if (myConfirmPassword && myNewPassword !== myConfirmPassword) {
-      setMyPasswordError('كلمتا المرور غير متطابقتين');
-      return;
-    }
-    setMyPasswordSaving(true);
-    try {
-      const token = session?.access_token || profile?.id || '';
-      const res = await fetch('/api/change-password', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({
-          userId: profile?.id,
-          newPassword: myNewPassword.trim(),
-        }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data?.error || 'فشل في تغيير كلمة المرور');
-      toast.success(data.message || 'تم تحديث كلمة المرور بنجاح 🚀');
-      setShowMyPasswordModal(false);
-      setMyNewPassword('');
-      setMyConfirmPassword('');
-    } catch (err: any) {
-      setMyPasswordError(err.message || 'حدث خطأ أثناء تغيير كلمة المرور');
-    } finally {
-      setMyPasswordSaving(false);
-    }
-  };
 
   const toast = useMemo(() => {
     const show = (msg: string, variant: 'success' | 'error' | 'loading' = 'success', options?: { id?: string }) => {
@@ -8183,13 +8139,6 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
               </span>
             </div>
             <button
-              onClick={() => setShowMyPasswordModal(true)}
-              className="p-2.5 rounded-xl bg-purple-500/15 hover:bg-purple-500/30 border border-purple-500/30 text-purple-300 transition-all cursor-pointer shadow-sm hover:scale-105 active:scale-95 shrink-0"
-              title="تغيير كلمة المرور الخاصة بي 🔑"
-            >
-              <Key size={14} />
-            </button>
-            <button
               onClick={() => signOut()}
               className="px-3 py-2 rounded-xl bg-rose-500/15 hover:bg-rose-500/30 border border-rose-500/30 text-rose-300 font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer shadow-sm hover:scale-105 active:scale-95 shrink-0 arabic-text"
               title="تسجيل الخروج"
@@ -9996,104 +9945,6 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
         />
 
         {/* Interactive Step-by-Step Walkthrough Tour */}
-        {/* Change My Password Modal */}
-        <AnimatePresence>
-          {showMyPasswordModal && (
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="fixed inset-0 z-[600] bg-black/80 backdrop-blur-md flex items-center justify-center p-4"
-              onClick={e => e.target === e.currentTarget && setShowMyPasswordModal(false)}
-            >
-              <motion.div
-                initial={{ opacity: 0, scale: 0.95, y: 20 }}
-                animate={{ opacity: 1, scale: 1, y: 0 }}
-                exit={{ opacity: 0, scale: 0.95, y: 20 }}
-                className="bg-[#0d1219] border border-white/10 rounded-3xl p-6 w-full max-w-md shadow-[0_0_80px_rgba(0,0,0,0.8)]"
-              >
-                <div className="flex items-center justify-between mb-6 border-b border-white/5 pb-4">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-2xl bg-purple-500/20 text-purple-400 border border-purple-500/30 flex items-center justify-center shadow-lg">
-                      <Key size={20} />
-                    </div>
-                    <div>
-                      <h3 className="text-base font-black text-white arabic-text">تغيير كلمة المرور الخاصة بي</h3>
-                      <p className="text-xs text-white/40 arabic-text">حفظ كلمة المرور الجديدة في Supabase</p>
-                    </div>
-                  </div>
-                  <button onClick={() => setShowMyPasswordModal(false)} className="w-8 h-8 rounded-xl bg-white/5 hover:bg-white/10 flex items-center justify-center text-white/50 hover:text-white transition-all cursor-pointer">
-                    <XCircle size={18} />
-                  </button>
-                </div>
-
-                <form onSubmit={handleSaveMyPassword} className="space-y-4">
-                  <div className="space-y-1.5">
-                    <label className="text-[11px] font-black text-white/60 uppercase tracking-wider block arabic-text">
-                      كلمة المرور الجديدة 🔒
-                    </label>
-                    <div className="relative">
-                      <input
-                        type={showMyPasswordText ? 'text' : 'password'}
-                        value={myNewPassword}
-                        onChange={e => setMyNewPassword(e.target.value)}
-                        required
-                        minLength={6}
-                        placeholder="اكتب كلمة مرور جديدة (6 خانات على الأقل)..."
-                        className="w-full px-4 py-3 rounded-xl bg-white/[0.05] border border-white/[0.1] text-white placeholder-white/25 text-sm font-medium focus:outline-none focus:border-purple-500/60 focus:bg-white/[0.08] transition-all pr-4 pl-11"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowMyPasswordText(v => !v)}
-                        className="absolute left-3.5 top-1/2 -translate-y-1/2 text-white/40 hover:text-white transition-colors cursor-pointer"
-                      >
-                        {showMyPasswordText ? <EyeOff size={16} /> : <Eye size={16} />}
-                      </button>
-                    </div>
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <label className="text-[11px] font-black text-white/60 uppercase tracking-wider block arabic-text">
-                      تأكيد كلمة المرور 🔐
-                    </label>
-                    <input
-                      type={showMyPasswordText ? 'text' : 'password'}
-                      value={myConfirmPassword}
-                      onChange={e => setMyConfirmPassword(e.target.value)}
-                      placeholder="أعد كتابة كلمة المرور للتأكيد..."
-                      className="w-full px-4 py-3 rounded-xl bg-white/[0.05] border border-white/[0.1] text-white placeholder-white/25 text-sm font-medium focus:outline-none focus:border-purple-500/60 focus:bg-white/[0.08] transition-all"
-                    />
-                  </div>
-
-                  {myPasswordError && (
-                    <div className="p-3 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs font-bold flex items-center gap-2">
-                      <AlertCircle size={14} className="shrink-0 text-rose-400" />
-                      <span>{myPasswordError}</span>
-                    </div>
-                  )}
-
-                  <div className="flex gap-3 pt-2">
-                    <button
-                      type="button"
-                      onClick={() => setShowMyPasswordModal(false)}
-                      className="flex-1 py-3 rounded-xl bg-white/5 hover:bg-white/10 text-white/70 font-bold text-xs transition-all cursor-pointer"
-                    >
-                      إلغاء
-                    </button>
-                    <button
-                      type="submit"
-                      disabled={myPasswordSaving || !myNewPassword || myNewPassword.length < 6}
-                      className="flex-1 py-3 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-black text-xs transition-all shadow-[0_0_20px_rgba(147,51,234,0.4)] cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2"
-                    >
-                      {myPasswordSaving ? <RefreshCw size={14} className="animate-spin" /> : <Check size={14} />}
-                      <span>حفظ في Supabase</span>
-                    </button>
-                  </div>
-                </form>
-              </motion.div>
-            </motion.div>
-          )}
-        </AnimatePresence>
       </main>
       )}
     </div>

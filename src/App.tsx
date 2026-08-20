@@ -4432,7 +4432,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
     if (!tbl) return;
     setIsReelsDbLoading(true);
     try {
-      // If loading VE tab, automatically sync and ensure all filmed tasks from Shooting tab exist in VE, and remove any unfilmed tasks
+      // If loading VE tab, ensure all filmed tasks from Shooting tab exist in VE, without overwriting existing VE edits/notes
       if (gid === '1939073164') {
         const { data: filmedShooting } = await supabase
           .from('reels_shooting_26')
@@ -4443,6 +4443,8 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
 
         // 1. Delete any row in VE that is no longer filmed in shooting
         const { data: currentVe } = await supabase.from('reels_ve_26').select('code');
+        const existingVeCodes = new Set((currentVe || []).map(v => v.code));
+
         if (currentVe && currentVe.length > 0) {
           for (const v of currentVe) {
             if (!filmedCodes.includes(v.code)) {
@@ -4451,34 +4453,36 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
           }
         }
 
-        // 2. Upsert all filmed shooting rows into VE
+        // 2. Insert ONLY new filmed shooting rows that do not exist yet in VE
         if (filmedShooting && filmedShooting.length > 0) {
           for (const sRow of filmedShooting) {
-            const veRecord = {
-              code: sRow.code,
-              date: sRow.date || new Date().toLocaleDateString('en-US'),
-              branch: sRow.branch || '',
-              year: sRow.year || '',
-              teacher: sRow.teacher || '',
-              extra_name: sRow.extra_name || '',
-              script: sRow.script || '',
-              type: sRow.type || '',
-              format: sRow.format || '',
-              filmed: true,
-              filming_date: sRow.filming_date || new Date().toLocaleDateString('en-US'),
-              by: sRow.by || '',
-              storage: sRow.storage || '',
-              notes: sRow.notes || '',
-              editor_notes: sRow.editor_notes || '',
-              drive_raw: sRow.drive_raw || '',
-              editor_col: sRow.editor_col || 'غير محدد',
-              done: sRow.done === true,
-              drive_final: sRow.drive_final || '',
-              canceled: sRow.canceled === true,
-              missing_details: sRow.missing_details === true,
-              updated_at: new Date().toISOString()
-            };
-            await supabase.from('reels_ve_26').upsert(veRecord, { onConflict: 'code' });
+            if (!existingVeCodes.has(sRow.code)) {
+              const veRecord = {
+                code: sRow.code,
+                date: sRow.date || new Date().toLocaleDateString('en-US'),
+                branch: sRow.branch || '',
+                year: sRow.year || '',
+                teacher: sRow.teacher || '',
+                extra_name: sRow.extra_name || '',
+                script: sRow.script || '',
+                type: sRow.type || '',
+                format: sRow.format || '',
+                filmed: true,
+                filming_date: sRow.filming_date || new Date().toLocaleDateString('en-US'),
+                by: sRow.by || '',
+                storage: sRow.storage || '',
+                notes: sRow.notes || '',
+                editor_notes: sRow.editor_notes || '',
+                drive_raw: sRow.drive_raw || '',
+                editor_col: sRow.editor_col || 'غير محدد',
+                done: sRow.done === true,
+                drive_final: sRow.drive_final || '',
+                canceled: sRow.canceled === true,
+                missing_details: sRow.missing_details === true,
+                updated_at: new Date().toISOString()
+              };
+              await supabase.from('reels_ve_26').insert([veRecord]);
+            }
           }
         }
       }

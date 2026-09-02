@@ -56,17 +56,54 @@ export interface Op27ViewProps {
 }
 
 export const getTargetStage26 = (item: any) => {
-  const str = String(item?.stage || item?.stageCode || item?.fullName || item?.filingName || item?.name || '').toUpperCase();
-  if (str.includes('J4') || str.includes('JUNIOR 4')) return { gid: '1877995166', label: 'Junior 4', year: 'j4' };
-  if (str.includes('J5') || str.includes('JUNIOR 5')) return { gid: '787130252', label: 'Junior 5', year: 'j5' };
-  if (str.includes('J6') || str.includes('JUNIOR 6')) return { gid: '2023530687', label: 'Junior 6', year: 'j6' };
-  if (str.includes('M1') || str.includes('MIDDLE 1')) return { gid: '716035071', label: 'Middle 1', year: 'm1' };
-  if (str.includes('M2') || str.includes('MIDDLE 2')) return { gid: '1138865611', label: 'Middle 2', year: 'm2' };
-  if (str.includes('M3') || str.includes('MIDDLE 3')) return { gid: '1120286828', label: 'Middle 3', year: 'm3' };
-  if (str.includes('S1') || str.includes('SENIOR 1')) return { gid: '812264560', label: 'Senior 1', year: 's1' };
-  if (str.includes('S2') || str.includes('SENIOR 2')) return { gid: '1241088469', label: 'Senior 2', year: 's2' };
-  if (str.includes('S3') || str.includes('SENIOR 3')) return { gid: '1130635955', label: 'Senior 3', year: 's3' };
-  return { gid: '1877995166', label: 'Junior 4', year: 'j4' };
+  const code = String(item?.stageCode || '').toUpperCase().trim();
+  const stage = String(item?.stage || '').toUpperCase().trim();
+  const full = String(item?.fullName || item?.filingName || item?.name || item?.course || '').toUpperCase();
+  const combined = `${code} | ${stage} | ${full}`;
+
+  // 1. Check exact stageCode first (highest priority and precision)
+  if (code === 'S1') return { gid: '812264560', label: 'Senior 1', year: 's1' };
+  if (code === 'S2') return { gid: '1241088469', label: 'Senior 2', year: 's2' };
+  if (code === 'S3') return { gid: '1130635955', label: 'Senior 3', year: 's3' };
+  if (code === 'M1') return { gid: '716035071', label: 'Middle 1', year: 'm1' };
+  if (code === 'M2') return { gid: '1138865611', label: 'Middle 2', year: 'm2' };
+  if (code === 'M3') return { gid: '1120286828', label: 'Middle 3', year: 'm3' };
+  if (code === 'J4') return { gid: '1877995166', label: 'Junior 4', year: 'j4' };
+  if (code === 'J5') return { gid: '787130252', label: 'Junior 5', year: 'j5' };
+  if (code === 'J6') return { gid: '2023530687', label: 'Junior 6', year: 'j6' };
+
+  // 2. Check stage names (Senior / Secondary / Middle / Preparatory / Junior / Primary)
+  if (stage.includes('SECONDARY 3') || stage.includes('SENIOR 3') || combined.includes('SENIOR 3') || combined.includes('SECONDARY 3') || combined.includes('ثالثة ثانوي') || combined.includes('3RD SEC') || /[\b\-_]S3[\b\-_]/.test(combined) || combined.startsWith('S3-')) {
+    return { gid: '1130635955', label: 'Senior 3', year: 's3' };
+  }
+  if (stage.includes('SECONDARY 2') || stage.includes('SENIOR 2') || combined.includes('SENIOR 2') || combined.includes('SECONDARY 2') || combined.includes('ثانية ثانوي') || combined.includes('2ND SEC') || /[\b\-_]S2[\b\-_]/.test(combined) || combined.startsWith('S2-')) {
+    return { gid: '1241088469', label: 'Senior 2', year: 's2' };
+  }
+  if (stage.includes('SECONDARY 1') || stage.includes('SENIOR 1') || combined.includes('SENIOR 1') || combined.includes('SECONDARY 1') || combined.includes('أولى ثانوي') || combined.includes('اولي ثانوي') || combined.includes('1ST SEC') || /[\b\-_]S1[\b\-_]/.test(combined) || combined.startsWith('S1-')) {
+    return { gid: '812264560', label: 'Senior 1', year: 's1' };
+  }
+
+  if (stage.includes('MIDDLE 3') || stage.includes('PREPARATORY 3') || combined.includes('MIDDLE 3') || combined.includes('ثالثة إعدادي') || combined.includes('ثالثة اعدادي') || /[\b\-_]M3[\b\-_]/.test(combined) || combined.startsWith('M3-')) {
+    return { gid: '1120286828', label: 'Middle 3', year: 'm3' };
+  }
+  if (stage.includes('MIDDLE 2') || stage.includes('PREPARATORY 2') || combined.includes('MIDDLE 2') || combined.includes('ثانية إعدادي') || combined.includes('ثانية اعدادي') || /[\b\-_]M2[\b\-_]/.test(combined) || combined.startsWith('M2-')) {
+    return { gid: '1138865611', label: 'Middle 2', year: 'm2' };
+  }
+  if (stage.includes('MIDDLE 1') || stage.includes('PREPARATORY 1') || combined.includes('MIDDLE 1') || combined.includes('أولى إعدادي') || combined.includes('اولي اعدادي') || /[\b\-_]M1[\b\-_]/.test(combined) || combined.startsWith('M1-')) {
+    return { gid: '716035071', label: 'Middle 1', year: 'm1' };
+  }
+
+  if (stage.includes('JUNIOR 6') || stage.includes('PRIMARY 6') || combined.includes('JUNIOR 6') || combined.includes('سادسة ابتدائي') || /[\b\-_]J6[\b\-_]/.test(combined) || combined.startsWith('J6-')) {
+    return { gid: '2023530687', label: 'Junior 6', year: 'j6' };
+  }
+  if (stage.includes('JUNIOR 5') || stage.includes('PRIMARY 5') || combined.includes('JUNIOR 5') || combined.includes('خامسة ابتدائي') || /[\b\-_]J5[\b\-_]/.test(combined) || combined.startsWith('J5-')) {
+    return { gid: '787130252', label: 'Junior 5', year: 'j5' };
+  }
+  if (stage.includes('JUNIOR 4') || stage.includes('PRIMARY 4') || combined.includes('JUNIOR 4') || combined.includes('رابعة ابتدائي') || /[\b\-_]J4[\b\-_]/.test(combined) || combined.startsWith('J4-')) {
+    return { gid: '1877995166', label: 'Junior 4', year: 'j4' };
+  }
+
+  return { gid: '812264560', label: 'Senior 1', year: 's1' };
 };
 
 const BunnyLinkPill: React.FC<{ task: TaskItem }> = ({ task }) => {
@@ -569,15 +606,16 @@ export const Op27View: React.FC<Op27ViewProps> = ({
   // Helper for stage short label
   const getStageShort = (stage: string) => {
     if (!stage) return '---';
-    if (stage.includes('Senior 3')) return 'S3';
-    if (stage.includes('Senior 2')) return 'S2';
-    if (stage.includes('Senior 1')) return 'S1';
-    if (stage.includes('Middle 3')) return 'M3';
-    if (stage.includes('Middle 2')) return 'M2';
-    if (stage.includes('Middle 1')) return 'M1';
-    if (stage.includes('Junior 6')) return 'J6';
-    if (stage.includes('Junior 5')) return 'J5';
-    if (stage.includes('Junior 4')) return 'J4';
+    const s = stage.toUpperCase();
+    if (s.includes('SENIOR 3') || s.includes('SECONDARY 3') || s === 'S3') return 'S3';
+    if (s.includes('SENIOR 2') || s.includes('SECONDARY 2') || s === 'S2') return 'S2';
+    if (s.includes('SENIOR 1') || s.includes('SECONDARY 1') || s === 'S1') return 'S1';
+    if (s.includes('MIDDLE 3') || s.includes('PREPARATORY 3') || s === 'M3') return 'M3';
+    if (s.includes('MIDDLE 2') || s.includes('PREPARATORY 2') || s === 'M2') return 'M2';
+    if (s.includes('MIDDLE 1') || s.includes('PREPARATORY 1') || s === 'M1') return 'M1';
+    if (s.includes('JUNIOR 6') || s.includes('PRIMARY 6') || s === 'J6') return 'J6';
+    if (s.includes('JUNIOR 5') || s.includes('PRIMARY 5') || s === 'J5') return 'J5';
+    if (s.includes('JUNIOR 4') || s.includes('PRIMARY 4') || s === 'J4') return 'J4';
     return stage.slice(0, 3).toUpperCase();
   };
 

@@ -55,7 +55,7 @@ import { ReelsAnalytics } from './components/ReelsAnalytics';
 import DesignersDashboard from './components/DesignersDashboard';
 import { DesignAnalytics } from './components/DesignAnalytics';
 import { DesignersTeamManagement } from './components/DesignersTeamManagement';
-import { Op27View } from './components/Op27View';
+import { Op27View, getTargetStage26 } from './components/Op27View';
 import { FeedbackModal } from './components/FeedbackModal';
 import { SystemGuideModal } from './components/SystemGuideModal';
 import { InteractiveTour } from './components/InteractiveTour';
@@ -9137,6 +9137,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
           {/* Main Content View (Table vs Analytics vs OP 27) */}
           {isOp27 ? (
             <Op27View
+              youtubeItems={youtubeItems}
               onNavigateToStage={(gid, label, uniqueKey) => {
                 setActiveGid(gid);
                 setActiveLabel(label);
@@ -9194,6 +9195,128 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
                 });
 
                 toast.success(`🚀 تم تجميع الدروس وتحويلها بنجاح لمرحلة ${mergedItem.val || ''}!`);
+              }}
+              onExecuteSingleTransfer={async (taskItem: any, isAdd: boolean) => {
+                const targetStage = getTargetStage26(taskItem);
+                const uniqueKey = 'yt-op27-' + taskItem.id;
+                const targetTable = STAGE_TABLE_MAP[targetStage.gid];
+
+                if (isAdd) {
+                  // Get duration from cache if available
+                  let itemDuration = '';
+                  try {
+                    if (taskItem.bunnyVideoId && taskItem.bunnyLibraryId) {
+                      const url = `https://video.bunnycdn.com/play/${taskItem.bunnyLibraryId}/${taskItem.bunnyVideoId}`;
+                      itemDuration = localStorage.getItem(`dur_${url}`) || localStorage.getItem(`dur_${taskItem.bunnyVideoId}`) || '';
+                    }
+                  } catch {}
+
+                  if (itemDuration === '0:00:00' || itemDuration === '00:00') itemDuration = '';
+
+                  const transferredItem = {
+                    uniqueKey: uniqueKey,
+                    id: uniqueKey,
+                    name: `[يوتيوب] ${taskItem.name || taskItem.fullName}`,
+                    filingName: taskItem.fullName || taskItem.name,
+                    val: targetStage.label,
+                    idVal: taskItem.teacher || '---',
+                    date: taskItem.dueDate || taskItem.startDate || new Date().toISOString().split('T')[0],
+                    subject: taskItem.subject || 'عام',
+                    extra: 'يوتيوب العمليات',
+                    branch: 'يوتيوب العمليات',
+                    opSheet: 'OP 26/27',
+                    check1: false,
+                    check2: false,
+                    isYoutubeTransfer: true,
+                    time: itemDuration,
+                    week: 'أسبوع 1',
+                    isTagme3a: false,
+                    delivered: false,
+                    thumbnailLink: '',
+                    youtubeLink: '',
+                    uploaded: false,
+                    createdAt: new Date().toISOString(),
+                    updatedAt: new Date().toISOString()
+                  };
+
+                  // 1. Insert/Upsert to Supabase stage table
+                  if (!isDemo && targetTable) {
+                    try {
+                      await supabase.from(targetTable).upsert([{
+                        unique_key: uniqueKey,
+                        name: transferredItem.name,
+                        filing_name: transferredItem.filingName,
+                        week: transferredItem.week,
+                        date: transferredItem.date,
+                        subject: transferredItem.subject,
+                        branch: transferredItem.branch,
+                        op_sheet: transferredItem.opSheet,
+                        is_tagme3a: false,
+                        delivered: false,
+                        thumbnail_link: '',
+                        time: transferredItem.time,
+                        youtube_link: '',
+                        uploaded: false,
+                        created_at: new Date().toISOString(),
+                        updated_at: new Date().toISOString()
+                      }], { onConflict: 'unique_key' });
+
+                      if (activeGid === targetStage.gid) {
+                        setStageDbRows(prev => [transferredItem, ...prev.filter(x => x.uniqueKey !== uniqueKey)]);
+                      }
+                    } catch (err) {
+                      console.error('Error inserting single transfer to stage:', err);
+                    }
+                  }
+
+                  // 2. Add to youtubeItems state and localStorage
+                  setYoutubeItems((prev: any) => {
+                    const list = prev[targetStage.gid] || [];
+                    const updated = [transferredItem, ...list.filter((x: any) => x.uniqueKey !== uniqueKey)];
+                    const map = { ...prev, [targetStage.gid]: updated };
+                    syncState('youtube_transfers', map, uniqueKey, taskItem.name || taskItem.fullName, 'youtube_transfer', `🎬 تم نقل درس OP 26/27 ليوتيوب: "${taskItem.name}"`);
+                    return map;
+                  });
+
+                  // 3. Show non-intrusive bottom toast with option to navigate
+                  setActiveToast({
+                    item: { name: taskItem.name || taskItem.fullName },
+                    stage: targetStage,
+                    uniqueKey: uniqueKey
+                  });
+
+                  setTimeout(() => {
+                    setActiveToast(prev => prev?.uniqueKey === uniqueKey ? null : prev);
+                  }, 8000);
+
+                  toast.success(`🚀 تم وضع الدرس في شيت ${targetStage.label}!`);
+                } else {
+                  // REMOVE / UNCHECK
+                  if (!isDemo && targetTable) {
+                    try {
+                      await supabase.from(targetTable).delete().eq('unique_key', uniqueKey);
+                      if (activeGid === targetStage.gid) {
+                        setStageDbRows(prev => prev.filter(x => x.uniqueKey !== uniqueKey));
+                      }
+                    } catch (err) {
+                      console.error('Error deleting single transfer from stage:', err);
+                    }
+                  }
+
+                  setYoutubeItems((prev: any) => {
+                    const list = prev[targetStage.gid] || [];
+                    const updated = list.filter((x: any) => x.uniqueKey !== uniqueKey);
+                    const map = { ...prev, [targetStage.gid]: updated };
+                    syncState('youtube_transfers', map, uniqueKey, taskItem.name || taskItem.fullName, 'youtube_untransfer', `↩️ تم إلغاء وحذف درس OP 26/27: "${taskItem.name}"`);
+                    return map;
+                  });
+
+                  if (activeToast?.uniqueKey === uniqueKey) {
+                    setActiveToast(null);
+                  }
+
+                  toast.info(`↩️ تم حذف الدرس من شيت ${targetStage.label}`);
+                }
               }}
             />
           ) : isReelsAnalytics ? (

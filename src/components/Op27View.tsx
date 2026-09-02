@@ -21,6 +21,7 @@ import {
   ChevronDown,
   ChevronUp
 } from 'lucide-react';
+import { supabase } from '../lib/supabase';
 import op27Data from '../data/op27_tasks.json';
 
 interface TaskItem {
@@ -50,6 +51,8 @@ interface TaskItem {
 export interface Op27ViewProps {
   onNavigateToStage?: (gid: string, label: string, uniqueKey?: string) => void;
   onExecuteMergeToStage?: (mergedItem: any, targetStageGid: string, combinedNames: string) => void;
+  onExecuteSingleTransfer?: (taskItem: any, isAdd: boolean) => void;
+  youtubeItems?: { [gid: string]: any[] };
 }
 
 export const getTargetStage26 = (item: any) => {
@@ -153,7 +156,12 @@ const BunnyLinkPill: React.FC<{ task: TaskItem }> = ({ task }) => {
   );
 };
 
-export const Op27View: React.FC<Op27ViewProps> = ({ onNavigateToStage, onExecuteMergeToStage }) => {
+export const Op27View: React.FC<Op27ViewProps> = ({ 
+  onNavigateToStage, 
+  onExecuteMergeToStage,
+  onExecuteSingleTransfer,
+  youtubeItems
+}) => {
   const [tasks, setTasks] = useState<TaskItem[]>(() => {
     try {
       const saved = localStorage.getItem('op27_tasks_live');
@@ -165,11 +173,64 @@ export const Op27View: React.FC<Op27ViewProps> = ({ onNavigateToStage, onExecute
     return op27Data as TaskItem[];
   });
 
+  const transferredKeys = useMemo(() => {
+    const set = new Set<string>();
+    if (youtubeItems) {
+      Object.values(youtubeItems).forEach(list => {
+        if (Array.isArray(list)) {
+          list.forEach((it: any) => {
+            if (it.uniqueKey) {
+              set.add(it.uniqueKey);
+              if (it.uniqueKey.startsWith('yt-op27-')) {
+                set.add(it.uniqueKey.replace('yt-op27-', ''));
+              }
+            }
+            if (it.id) set.add(it.id);
+            if (it.name) set.add(it.name);
+          });
+        }
+      });
+    }
+    return set;
+  }, [youtubeItems]);
+
   const [isSyncing, setIsSyncing] = useState(false);
   const [lastSyncTime, setLastSyncTime] = useState<string>(() => {
     return localStorage.getItem('op27_last_synced') || '';
   });
   const [syncFeedback, setSyncFeedback] = useState<string | null>(null);
+
+  // Fetch latest cloud-synced tasks from Supabase on mount
+  useEffect(() => {
+    const fetchCloudTasks = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('dashboard_data')
+          .select('value, updated_at')
+          .eq('key', 'op27_tasks_latest')
+          .maybeSingle();
+
+        if (data && data.value) {
+          const cloudTasks = typeof data.value === 'string' ? JSON.parse(data.value) : data.value;
+          if (Array.isArray(cloudTasks) && cloudTasks.length > 0) {
+            setTasks(cloudTasks);
+            try {
+              localStorage.setItem('op27_tasks_live', JSON.stringify(cloudTasks));
+              if (data.updated_at) {
+                const dateObj = new Date(data.updated_at);
+                const timeStr = dateObj.toLocaleDateString('ar-EG', { month: 'numeric', day: 'numeric' }) + ' ' + dateObj.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' });
+                setLastSyncTime(timeStr);
+                localStorage.setItem('op27_last_synced', timeStr);
+              }
+            } catch {}
+          }
+        }
+      } catch (e) {
+        console.warn('Failed to load cloud op27 tasks:', e);
+      }
+    };
+    fetchCloudTasks();
+  }, []);
 
   const [searchQuery, setSearchQuery] = useState('');
   const [stageFilter, setStageFilter] = useState('All');
@@ -224,13 +285,27 @@ export const Op27View: React.FC<Op27ViewProps> = ({ onNavigateToStage, onExecute
 
       if (data.success && Array.isArray(data.tasks)) {
         setTasks(data.tasks);
+        const now = new Date();
+        const nowStr = now.toLocaleDateString('ar-EG', { month: 'numeric', day: 'numeric' }) + ' ' + now.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' });
+        setLastSyncTime(nowStr);
         try {
           localStorage.setItem('op27_tasks_live', JSON.stringify(data.tasks));
-          const nowStr = new Date().toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' });
-          setLastSyncTime(nowStr);
           localStorage.setItem('op27_last_synced', nowStr);
         } catch {}
-        setSyncFeedback(`✅ تم تحديث البيانات بنجاح من المنصة (${data.count} مهمة) 🚀`);
+
+        // Guarantee direct Supabase persistence from client as well
+        try {
+          await supabase.from('dashboard_data').upsert({
+            key: 'op27_tasks_latest',
+            field: 'tasks',
+            value: JSON.stringify(data.tasks),
+            updated_at: new Date().toISOString()
+          }, { onConflict: 'key,field' });
+        } catch (dbErr) {
+          console.warn('Supabase direct sync error:', dbErr);
+        }
+
+        setSyncFeedback(`✅ تم تحديث وتثبيت البيانات بنجاح من المنصة (${data.count} مهمة) 🚀`);
         setTimeout(() => setSyncFeedback(null), 5000);
       } else {
         throw new Error(data.error || 'فشل تحديث البيانات من المنصة');
@@ -441,6 +516,56 @@ export const Op27View: React.FC<Op27ViewProps> = ({ onNavigateToStage, onExecute
     setSelectedTasks([]);
   };
 
+  const handleSingleTransfer = (task: TaskItem) => {
+    const targetStage = getTargetStage26(task);
+    const uniqueKey = 'op27-transfer-' + task.id + '-' + Date.now();
+
+    // Get duration from cache if available
+    let itemDuration = '';
+    try {
+      if (task.bunnyVideoId && task.bunnyLibraryId) {
+        const url = `https://video.bunnycdn.com/play/${task.bunnyLibraryId}/${task.bunnyVideoId}`;
+        itemDuration = localStorage.getItem(`dur_${url}`) || localStorage.getItem(`dur_${task.bunnyVideoId}`) || '';
+      }
+    } catch {}
+
+    if (itemDuration === '0:00:00' || itemDuration === '00:00') itemDuration = '';
+
+    const transferredItem = {
+      uniqueKey: uniqueKey,
+      id: uniqueKey,
+      name: task.fullName || task.name,
+      filingName: task.name || task.fullName,
+      val: targetStage.label,
+      idVal: task.teacher || '---',
+      date: task.dueDate || task.startDate || new Date().toISOString().split('T')[0],
+      subject: task.subject || 'عام',
+      extra: 'يوتيوب العمليات',
+      branch: 'يوتيوب العمليات',
+      opSheet: 'OP 26/27',
+      check1: false,
+      check2: false,
+      isYoutubeTransfer: true,
+      time: itemDuration,
+      week: 'أسبوع 1',
+      isTagme3a: false,
+      delivered: false,
+      thumbnailLink: '',
+      youtubeLink: '',
+      uploaded: false,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+
+    if (onExecuteMergeToStage) {
+      onExecuteMergeToStage(transferredItem, targetStage.gid, task.name || task.fullName);
+    }
+
+    if (onNavigateToStage) {
+      onNavigateToStage(targetStage.gid, targetStage.label, uniqueKey);
+    }
+  };
+
   // Helper for stage short label
   const getStageShort = (stage: string) => {
     if (!stage) return '---';
@@ -477,17 +602,24 @@ export const Op27View: React.FC<Op27ViewProps> = ({ onNavigateToStage, onExecute
           </div>
 
           <div className="flex flex-wrap items-center gap-3">
-            {/* Sync Button */}
-            <button
-              id="tour-sync-btn"
-              onClick={handleSyncPlatform}
-              disabled={isSyncing}
-              className="flex items-center gap-2 px-5 py-3.5 rounded-2xl bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white font-bold text-xs shadow-xl shadow-blue-500/25 transition-all hover:scale-105 active:scale-95 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed border border-white/15"
-              title="سحب وتحديث جميع المهام والدروس الجديدة من منصة tasks.elkheta.org"
-            >
-              <RefreshCw size={15} className={isSyncing ? "animate-spin text-white" : "text-white"} />
-              <span className="font-extrabold">{isSyncing ? "جاري التحديث..." : "🔄 تحديث من المنصة"}</span>
-            </button>
+            {/* Sync Button & Timestamp */}
+            <div className="flex flex-col items-center gap-1.5">
+              <button
+                id="tour-sync-btn"
+                onClick={handleSyncPlatform}
+                disabled={isSyncing}
+                className="flex items-center gap-2 px-5 py-3.5 rounded-2xl bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white font-bold text-xs shadow-xl shadow-blue-500/25 transition-all hover:scale-105 active:scale-95 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed border border-white/15"
+                title="سحب وتحديث جميع المهام والدروس الجديدة من منصة tasks.elkheta.org"
+              >
+                <RefreshCw size={15} className={isSyncing ? "animate-spin text-white" : "text-white"} />
+                <span className="font-extrabold">{isSyncing ? "جاري التحديث..." : "🔄 تحديث من المنصة"}</span>
+              </button>
+              {lastSyncTime && (
+                <span className="text-[10px] text-blue-300 font-mono font-bold bg-blue-500/10 border border-blue-500/20 px-2.5 py-0.5 rounded-full shadow-sm">
+                  ⏱️ آخر تحديث: {lastSyncTime}
+                </span>
+              )}
+            </div>
 
             <div className="bg-black/30 border border-white/10 rounded-2xl px-5 py-3 text-center min-w-[100px]">
               <div className="text-2xl font-black text-blue-400 font-mono">{tasks.length}</div>
@@ -911,6 +1043,10 @@ export const Op27View: React.FC<Op27ViewProps> = ({ onNavigateToStage, onExecute
                   const isCopied = copiedId === task.id;
                   const isSelected = selectedTasks.includes(task.id);
                   const stageShort = getStageShort(task.stage);
+                  const isTransferred = transferredKeys.has('yt-op27-' + task.id) || 
+                    transferredKeys.has(task.id) || 
+                    transferredKeys.has(`[يوتيوب] ${task.name || task.fullName}`) || 
+                    transferredKeys.has(`[يوتيوب] ${task.fullName || task.name}`);
 
                   return (
                     <motion.tr
@@ -987,11 +1123,26 @@ export const Op27View: React.FC<Op27ViewProps> = ({ onNavigateToStage, onExecute
                       {/* Publish Youtube Column */}
                       <td className="px-3 py-5 text-center">
                         <button
-                          onClick={() => handleCopy(task.fullName, task.id)}
-                          className="w-11 h-11 rounded-2xl bg-white/5 hover:bg-purple-500/20 border border-white/10 hover:border-purple-500/40 text-muted hover:text-purple-400 flex items-center justify-center mx-auto transition-all hover:scale-105 active:scale-95 cursor-pointer"
-                          title="نشر يوتيوب / نسخ الاسم"
+                          onClick={() => {
+                            if (onExecuteSingleTransfer) {
+                              onExecuteSingleTransfer(task, !isTransferred);
+                            } else {
+                              handleSingleTransfer(task);
+                            }
+                          }}
+                          className={`w-11 h-11 rounded-2xl border flex items-center justify-center mx-auto transition-all hover:scale-110 active:scale-95 cursor-pointer shadow-md group/yt relative ${
+                            isTransferred
+                              ? 'bg-purple-600/30 border-purple-400 text-purple-300 shadow-[0_0_20px_rgba(168,85,247,0.5)] ring-2 ring-purple-400/60'
+                              : 'bg-white/5 border-white/10 hover:bg-purple-600/20 hover:border-purple-500/40 text-muted hover:text-purple-300'
+                          }`}
+                          title={isTransferred ? "تم وضعه فى شيت المرحلة بنجاح ✓ (اضغط للإلغاء والحذف من الشيت)" : "تحويل ونشر الدرس لشيت المرحلة"}
                         >
-                          <MonitorPlay size={20} />
+                          <MonitorPlay size={20} className={isTransferred ? "text-purple-300 animate-pulse" : "group-hover/yt:text-purple-400 transition-transform"} />
+                          {isTransferred && (
+                            <span className="absolute -top-1 -right-1 w-4 h-4 rounded-full bg-emerald-500 text-black text-[9px] font-black flex items-center justify-center shadow-md">
+                              ✓
+                            </span>
+                          )}
                         </button>
                       </td>
 

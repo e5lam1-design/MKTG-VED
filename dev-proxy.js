@@ -2432,11 +2432,37 @@ app.all('/api/sync-op27', async (req, res) => {
     });
 
     console.log(`[Dev Proxy] Successfully fetched and formatted ${formattedTasks.length} tasks!`);
+    const nowIso = new Date().toISOString();
+
+    // Write to local json file
+    try {
+      const outPath = path.resolve(__dirname, 'src/data/op27_tasks.json');
+      fs.writeFileSync(outPath, JSON.stringify(formattedTasks, null, 2), 'utf-8');
+      console.log('[Dev Proxy] Updated src/data/op27_tasks.json successfully.');
+    } catch (fsErr) {
+      console.warn('[Dev Proxy] Failed to write local op27_tasks.json:', fsErr.message);
+    }
+
+    // Upsert to Supabase dashboard_data
+    if (supabaseAdmin) {
+      try {
+        await supabaseAdmin.from('dashboard_data').upsert({
+          key: 'op27_tasks_latest',
+          field: 'tasks',
+          value: JSON.stringify(formattedTasks),
+          updated_at: nowIso
+        }, { onConflict: 'key,field' });
+        console.log('[Dev Proxy] Persisted op27 tasks to Supabase dashboard_data.');
+      } catch (dbErr) {
+        console.warn('[Dev Proxy] Supabase save error:', dbErr.message);
+      }
+    }
+
     res.json({
       success: true,
       count: formattedTasks.length,
       tasks: formattedTasks,
-      syncedAt: new Date().toISOString()
+      syncedAt: nowIso
     });
   } catch (err) {
     console.error('[Proxy /api/sync-op27 error]:', err);

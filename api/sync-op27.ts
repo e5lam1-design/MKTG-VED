@@ -1,4 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
+import { supabaseAdminClient } from './_supabase.js';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -7,6 +8,29 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   if (req.method === 'OPTIONS') {
     return res.status(200).end();
+  }
+
+  // If query action=latest, return cached latest tasks from Supabase
+  if (req.method === 'GET' && req.query.action === 'latest' && supabaseAdminClient) {
+    try {
+      const { data, error } = await supabaseAdminClient
+        .from('dashboard_data')
+        .select('value, updated_at')
+        .eq('key', 'op27_tasks_latest')
+        .maybeSingle();
+
+      if (data && data.value) {
+        const tasks = typeof data.value === 'string' ? JSON.parse(data.value) : data.value;
+        return res.status(200).json({
+          success: true,
+          count: Array.isArray(tasks) ? tasks.length : 0,
+          tasks,
+          syncedAt: data.updated_at
+        });
+      }
+    } catch (e: any) {
+      console.warn('Failed to get latest cached op27 tasks:', e.message);
+    }
   }
 
   try {
@@ -85,11 +109,27 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       };
     });
 
+    const nowIso = new Date().toISOString();
+
+    // 4. Persist to Supabase dashboard_data so it stays permanent across all clients
+    if (supabaseAdminClient) {
+      try {
+        await supabaseAdminClient.from('dashboard_data').upsert({
+          key: 'op27_tasks_latest',
+          field: 'tasks',
+          value: JSON.stringify(formattedTasks),
+          updated_at: nowIso
+        }, { onConflict: 'key,field' });
+      } catch (dbErr: any) {
+        console.warn('Failed to upsert op27 tasks in Supabase dashboard_data:', dbErr.message);
+      }
+    }
+
     return res.status(200).json({
       success: true,
       count: formattedTasks.length,
       tasks: formattedTasks,
-      syncedAt: new Date().toISOString()
+      syncedAt: nowIso
     });
   } catch (error: any) {
     console.error('Error in sync-op27 handler:', error);

@@ -10168,23 +10168,31 @@ const SplashScreen = ({ onComplete }: { onComplete: () => void }) => {
 function RootApp({ isDemoMode = false }: { isDemoMode?: boolean }) {
   const [showSplash, setShowSplash] = useState(true);
 
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setShowSplash(false);
+    }, 1500);
+    return () => clearTimeout(timer);
+  }, []);
+
   return (
     <AuthProvider>
-      <AnimatePresence mode="wait">
-        {showSplash ? (
-          <SplashScreen key="splash" onComplete={() => setShowSplash(false)} />
-        ) : (
-          <motion.div
-            key="app"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ duration: 0.8 }}
-            className="w-full h-full"
-          >
-            <AppWithAuth isDemoMode={isDemoMode} />
-          </motion.div>
-        )}
-      </AnimatePresence>
+      <div className="w-full h-full relative">
+        <AppWithAuth isDemoMode={isDemoMode} />
+        <AnimatePresence>
+          {showSplash && (
+            <motion.div
+              key="splash-overlay"
+              initial={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.5, ease: "easeInOut" }}
+              className="fixed inset-0 z-[9999] pointer-events-none"
+            >
+              <SplashScreen onComplete={() => setShowSplash(false)} />
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
     </AuthProvider>
   );
 }

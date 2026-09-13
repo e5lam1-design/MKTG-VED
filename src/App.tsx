@@ -45,7 +45,8 @@ import {
   Key,
   Lock,
   Eye,
-  EyeOff
+  EyeOff,
+  Home
 } from 'lucide-react';
 import { useGoogleSheets } from './hooks/useGoogleSheets';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
@@ -56,6 +57,8 @@ import DesignersDashboard from './components/DesignersDashboard';
 import { DesignAnalytics } from './components/DesignAnalytics';
 import { DesignersTeamManagement } from './components/DesignersTeamManagement';
 import { Op27View, getTargetStage26 } from './components/Op27View';
+import { PageAnnouncementBar } from './components/PageAnnouncementBar';
+import { HomeView } from './components/HomeView';
 import { FeedbackModal } from './components/FeedbackModal';
 import { SystemGuideModal } from './components/SystemGuideModal';
 import { InteractiveTour } from './components/InteractiveTour';
@@ -3803,6 +3806,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
   }, [profile?.id]); // only run when user changes (login/logout)
   const isUsersPage = activeGid === '__users__';
 
+  const isHome = activeGid === 'home';
   const isOperations = activeGid === '1476192399';
   const isOp27 = activeGid === 'op_27';
   const isTagme3at = activeGid === '1535230545';
@@ -3814,7 +3818,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
   const isDesignersMode = isDesignersPage || isDesignAnalytics || isDesignersTeamPage;
 
   const isReelsStage = ['1436746012', '1939073164', '0', '798246690'].includes(activeGid);
-  const isStage = !isOperations && !isOp27 && !isTagme3at && !isAnalyticsTagme && !isReelsAnalytics && !isDesignersMode;
+  const isStage = !isHome && !isOperations && !isOp27 && !isTagme3at && !isAnalyticsTagme && !isReelsAnalytics && !isDesignersMode;
 
   const isSupabaseLiveTab = !isDemo && (
     activeGid === '1535230545' || 
@@ -3867,6 +3871,21 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
       }
     };
   }, []);
+
+  // Listen for global toast events
+  useEffect(() => {
+    const handleToastEvent = (e: any) => {
+      if (e.detail?.msg) {
+        if (e.detail.type === 'error') {
+          toast.error(e.detail.msg);
+        } else {
+          toast.success(e.detail.msg);
+        }
+      }
+    };
+    window.addEventListener('app-toast', handleToastEvent);
+    return () => window.removeEventListener('app-toast', handleToastEvent);
+  }, [toast]);
 
   // Background polling every 45 seconds to fetch changes silently
   useEffect(() => {
@@ -7248,6 +7267,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
   };
 
   const stages = [
+    { label: 'الرئيسية', gid: 'home', icon: Home, colorHex: '#6366f1' },
     { label: 'OP 25/26', gid: '1476192399', icon: Briefcase, colorHex: '#8b5cf6' },
     { label: 'OP 26/27', gid: 'op_27', icon: Briefcase, colorHex: '#3b82f6' },
     { label: 'تجميعات', gid: '1535230545', icon: Layers, colorHex: '#10b981' },
@@ -7951,7 +7971,8 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
             </button>
           </div>
           {/* Top Static Tabs */}
-          {stages.filter(s => s.gid === '1476192399' || s.gid === 'op_27' || s.gid === '1535230545').filter(stage => {
+          {stages.filter(s => s.gid === 'home' || s.gid === '1476192399' || s.gid === 'op_27' || s.gid === '1535230545').filter(stage => {
+            if (stage.gid === 'home') return true;
             if (!profile) return true;
             return PERMISSIONS.canViewTab(profile.role, stage.label, profile.allowed_tabs ?? []);
           }).map((stage) => (
@@ -8756,7 +8777,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
           )}
 
           {/* Filters Bar */}
-          {!isOp27 && (
+          {!isOp27 && !isHome && (
             <>
               <div className="flex gap-4 items-center flex-wrap">
             <div className="flex-1 min-w-[240px] relative group">
@@ -9134,8 +9155,40 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
           </>
           )}
 
-          {/* Main Content View (Table vs Analytics vs OP 27) */}
-          {isOp27 ? (
+          {/* Page Announcement Bar for All Pages */}
+          <PageAnnouncementBar
+            pageKey={activeGid}
+            pageLabel={activeLabel}
+            userRole={profile?.role}
+            userName={profile?.name || profile?.email}
+          />
+
+          {/* Main Content View (Home vs OP 27 vs Table vs Analytics) */}
+          {isHome ? (
+            <HomeView
+              currentUser={profile}
+              isDemo={isDemo}
+              onNavigateToStage={(gid, label, uniqueKey) => {
+                setActiveGid(gid);
+                setActiveLabel(label);
+                setSearchQuery('');
+                setStatusFilter('All');
+                setTeacherFilter('All');
+                setYearFilter('All');
+                setColFilters({});
+                if (uniqueKey) {
+                  setGlowingKeys([uniqueKey]);
+                  setTimeout(() => {
+                    const el = document.getElementById(uniqueKey);
+                    if (el) {
+                      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    }
+                  }, 400);
+                  setTimeout(() => setGlowingKeys([]), 4500);
+                }
+              }}
+            />
+          ) : isOp27 ? (
             <Op27View
               youtubeItems={youtubeItems}
               onNavigateToStage={(gid, label, uniqueKey) => {

@@ -22,6 +22,7 @@ import {
   ChevronUp
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { sortTasksByChunkAscending } from '../lib/chunkSort';
 import op27Data from '../data/op27_tasks.json';
 
 interface TaskItem {
@@ -237,7 +238,7 @@ export const Op27View: React.FC<Op27ViewProps> = ({
   });
   const [syncFeedback, setSyncFeedback] = useState<string | null>(null);
 
-  // Fetch latest cloud-synced tasks from Supabase on mount
+  // 1. Fetch latest cloud-synced tasks from Supabase on mount
   useEffect(() => {
     const fetchCloudTasks = async () => {
       try {
@@ -267,6 +268,48 @@ export const Op27View: React.FC<Op27ViewProps> = ({
       }
     };
     fetchCloudTasks();
+
+    // 2. Realtime WebSocket subscription: updates all connected clients instantly when tasks sync
+    const realtimeChannel = supabase
+      .channel('op27_tasks_realtime_' + Date.now())
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'dashboard_data' },
+        (payload: any) => {
+          if (payload.new && payload.new.key === 'op27_tasks_latest' && payload.new.value) {
+            try {
+              const cloudTasks = typeof payload.new.value === 'string' ? JSON.parse(payload.new.value) : payload.new.value;
+              if (Array.isArray(cloudTasks) && cloudTasks.length > 0) {
+                setTasks(cloudTasks);
+                try {
+                  localStorage.setItem('op27_tasks_live', JSON.stringify(cloudTasks));
+                  if (payload.new.updated_at) {
+                    const dateObj = new Date(payload.new.updated_at);
+                    const timeStr = dateObj.toLocaleDateString('ar-EG', { month: 'numeric', day: 'numeric' }) + ' ' + dateObj.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' });
+                    setLastSyncTime(timeStr);
+                    localStorage.setItem('op27_last_synced', timeStr);
+                  }
+                } catch {}
+              }
+            } catch (err) {
+              console.warn('Realtime op27 sync parse error:', err);
+            }
+          }
+        }
+      )
+      .subscribe();
+
+    // 3. Periodic background auto-refresh every 5 minutes (300,000 ms)
+    const autoSyncInterval = setInterval(() => {
+      if (document.visibilityState === 'visible' && !isSyncing) {
+        handleSyncPlatform(true); // silent background sync
+      }
+    }, 300000);
+
+    return () => {
+      supabase.removeChannel(realtimeChannel);
+      clearInterval(autoSyncInterval);
+    };
   }, []);
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -307,9 +350,11 @@ export const Op27View: React.FC<Op27ViewProps> = ({
     });
   };
 
-  const handleSyncPlatform = async () => {
-    setIsSyncing(true);
-    setSyncFeedback(null);
+  const handleSyncPlatform = async (isSilent = false) => {
+    if (!isSilent) {
+      setIsSyncing(true);
+      setSyncFeedback(null);
+    }
     try {
       const res = await fetch('/api/sync-op27', { method: 'POST' });
       const text = await res.text();
@@ -317,7 +362,8 @@ export const Op27View: React.FC<Op27ViewProps> = ({
       try {
         data = JSON.parse(text);
       } catch (parseErr) {
-        throw new Error('تعذر قراءة استجابة السيرفر. تأكد من تشغيل سيرفر الـ Proxy المحلي (node dev-proxy.js) أو النشر على Vercel.');
+        if (!isSilent) throw new Error('تعذر قراءة استجابة السيرفر. تأكد من تشغيل سيرفر الـ Proxy المحلي (node dev-proxy.js) أو النشر على Vercel.');
+        return;
       }
 
       if (data.success && Array.isArray(data.tasks)) {
@@ -342,17 +388,21 @@ export const Op27View: React.FC<Op27ViewProps> = ({
           console.warn('Supabase direct sync error:', dbErr);
         }
 
-        setSyncFeedback(`✅ تم تحديث وتثبيت البيانات بنجاح من المنصة (${data.count} مهمة) 🚀`);
-        setTimeout(() => setSyncFeedback(null), 5000);
-      } else {
+        if (!isSilent) {
+          setSyncFeedback(`✅ تم تحديث وتثبيت البيانات بنجاح من المنصة (${data.count} مهمة) 🚀`);
+          setTimeout(() => setSyncFeedback(null), 5000);
+        }
+      } else if (!isSilent) {
         throw new Error(data.error || 'فشل تحديث البيانات من المنصة');
       }
     } catch (err: any) {
-      console.error('Sync error:', err);
-      setSyncFeedback(`⚠️ ${err.message || 'تعذر الاتصال بالمنصة'}`);
-      setTimeout(() => setSyncFeedback(null), 8000);
+      if (!isSilent) {
+        console.error('Sync error:', err);
+        setSyncFeedback(`⚠️ ${err.message || 'تعذر الاتصال بالمنصة'}`);
+        setTimeout(() => setSyncFeedback(null), 8000);
+      }
     } finally {
-      setIsSyncing(false);
+      if (!isSilent) setIsSyncing(false);
     }
   };
 
@@ -464,7 +514,8 @@ export const Op27View: React.FC<Op27ViewProps> = ({
   }, [baseContextTasks, bunnyFilter]);
 
   const selectedTaskObjects = useMemo(() => {
-    return tasks.filter(t => selectedTasks.includes(t.id));
+    const raw = tasks.filter(t => selectedTasks.includes(t.id));
+    return sortTasksByChunkAscending(raw);
   }, [tasks, selectedTasks]);
 
   // Formatted total duration sum
@@ -525,8 +576,8 @@ export const Op27View: React.FC<Op27ViewProps> = ({
       idVal: sample.teacher || '---',
       date: sample.dueDate || sample.startDate || new Date().toISOString().split('T')[0],
       subject: sample.subject || 'عام',
-      extra: 'يوتيوب العمليات (تجميعة)',
-      branch: 'يوتيوب العمليات (تجميعة)',
+      extra: '',
+      branch: '',
       opSheet: 'OP 26/27',
       check1: false,
       check2: false,
@@ -577,8 +628,8 @@ export const Op27View: React.FC<Op27ViewProps> = ({
       idVal: task.teacher || '---',
       date: task.dueDate || task.startDate || new Date().toISOString().split('T')[0],
       subject: task.subject || 'عام',
-      extra: 'يوتيوب العمليات',
-      branch: 'يوتيوب العمليات',
+      extra: '',
+      branch: '',
       opSheet: 'OP 26/27',
       check1: false,
       check2: false,
@@ -653,9 +704,15 @@ export const Op27View: React.FC<Op27ViewProps> = ({
                 <span className="font-extrabold">{isSyncing ? "جاري التحديث..." : "🔄 تحديث من المنصة"}</span>
               </button>
               {lastSyncTime && (
-                <span className="text-[10px] text-blue-300 font-mono font-bold bg-blue-500/10 border border-blue-500/20 px-2.5 py-0.5 rounded-full shadow-sm">
-                  ⏱️ آخر تحديث: {lastSyncTime}
-                </span>
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[10px] text-blue-300 font-mono font-bold bg-blue-500/10 border border-blue-500/20 px-2.5 py-0.5 rounded-full shadow-sm">
+                    ⏱️ آخر تحديث: {lastSyncTime}
+                  </span>
+                  <span className="text-[9px] text-emerald-400 font-bold bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full flex items-center gap-1 shadow-sm" title="يتم جلب وحفظ أحدث المهام ومزامنتها سحابياً لجميع الأجهزة بشكل دوري">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                    مزامنة تلقائية نشطة 🟢
+                  </span>
+                </div>
               )}
             </div>
 

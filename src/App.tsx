@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect, useRef } from 'react';
+import React, { useState, useMemo, useEffect, useRef, useContext, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   LayoutDashboard, 
@@ -46,7 +46,8 @@ import {
   Lock,
   Eye,
   EyeOff,
-  Home
+  Home,
+  Calendar
 } from 'lucide-react';
 import { useGoogleSheets } from './hooks/useGoogleSheets';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
@@ -63,6 +64,7 @@ import { FeedbackModal } from './components/FeedbackModal';
 import { SystemGuideModal } from './components/SystemGuideModal';
 import { InteractiveTour } from './components/InteractiveTour';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { sortTasksByChunkAscending, sortMultiLineLessonName, sortCombinedFilingName } from './lib/chunkSort';
 import { supabase, PERMISSIONS, ROLE_LABELS, ROLE_COLORS, DEFAULT_ROLE_PERMISSIONS, setRuntimeRolePermissions } from './lib/supabase';
 
 
@@ -378,9 +380,10 @@ const HistoryInput = ({ itemKey, fieldKey, value, onChange, placeholder, updated
     const val = e.target.value;
     setLocalValue(val);
     if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
+    // Debounce 3500ms to avoid firing notifications and network requests while user is actively typing
     typingTimerRef.current = setTimeout(() => {
       commitValue(val);
-    }, 1000);
+    }, 3500);
   };
 
   const handleBlur = () => {
@@ -885,6 +888,14 @@ const getChipColor = (val: string) => {
     return CREATOR_COLORS[lower];
   }
 
+  // Filmed Status
+  if (lower === 'اتصور' || lower === 'true') {
+    return { bg: 'bg-emerald-500/15 shadow-[0_0_10px_rgba(16,185,129,0.15)]', text: 'text-emerald-300 font-extrabold', border: 'border-emerald-500/30', dot: '#10b981' };
+  }
+  if (lower === 'لم يتصور' || lower === 'false') {
+    return { bg: 'bg-amber-500/15 shadow-[0_0_10px_rgba(245,158,11,0.15)]', text: 'text-amber-300 font-extrabold', border: 'border-amber-500/30', dot: '#f59e0b' };
+  }
+
   // Type & Format
   if (lower === 'حواري') {
     return { bg: 'bg-sky-500/15 shadow-[0_0_10px_rgba(14,165,233,0.1)]', text: 'text-sky-300 font-extrabold', border: 'border-sky-500/30', dot: '#38bdf8' };
@@ -936,6 +947,30 @@ const getChipColor = (val: string) => {
   return { bg: 'bg-slate-500/10 border border-slate-500/20 shadow-[0_0_10px_rgba(100,116,139,0.05)]', text: 'text-slate-300 font-bold', border: 'border-slate-500/20', dot: '' };
 };
 
+export const toInputDate = (dStr: string) => {
+  if (!dStr || dStr === '---') return '';
+  const parts = dStr.split('/');
+  if (parts.length === 3) {
+    const month = parts[0].padStart(2, '0');
+    const day = parts[1].padStart(2, '0');
+    const year = parts[2];
+    return `${year}-${month}-${day}`;
+  }
+  return '';
+};
+
+export const fromInputDate = (dStr: string) => {
+  if (!dStr) return '';
+  const parts = dStr.split('-');
+  if (parts.length === 3) {
+    const year = parts[0];
+    const month = parseInt(parts[1], 10).toString();
+    const day = parseInt(parts[2], 10).toString();
+    return `${month}/${day}/${year}`;
+  }
+  return '';
+};
+
 // ─── Chip component ───────────────────────────────────────────────────────────
 const Chip = ({ value }: { value: string }) => {
   const colors = getChipColor(value);
@@ -944,6 +979,142 @@ const Chip = ({ value }: { value: string }) => {
       {colors.dot && <span className="w-2 h-2 rounded-full shrink-0 shadow-sm border border-white/20" style={{ backgroundColor: colors.dot }} />}
       <span>{value || '---'}</span>
     </span>
+  );
+};
+
+interface FilterContextType {
+  combinedData: any[];
+  liveData: any[];
+  colFilters: Record<string, string>;
+  teacherFilter?: string;
+  onFilterChange: (colKey: string, val: string) => void;
+}
+
+const FilterContext = React.createContext<FilterContextType>({
+  combinedData: [],
+  liveData: [],
+  colFilters: {},
+  onFilterChange: () => {}
+});
+
+// Standalone memoized column filter component (never unmounts on parent re-renders)
+const ColFilter = React.memo(({ colKey, label }: { colKey: string; label: string }) => {
+  const { combinedData, liveData, colFilters, teacherFilter, onFilterChange } = useContext(FilterContext);
+
+  const options = useMemo(() => {
+    if (colKey === 'filmed') {
+      return ['اتصور', 'لم يتصور'];
+    }
+    const source = Array.isArray(combinedData) && combinedData.length > 0 ? combinedData : liveData;
+    let rawValues = source
+      .map(i => String(i[colKey] || '').trim())
+      .filter(v => v !== '' && v !== 'false' && v !== 'true' && v !== 'undefined' && v !== 'null' && v !== '---');
+
+    // For Tagme3at branches or Arabic branch context, ensure standard branches are included and filter out non-branch text
+    if (colKey === 'branch') {
+      rawValues = rawValues.filter(v => !v.includes('يوتيوب') && !v.includes('تجميعة'));
+      const hasArabic = rawValues.some(v => /[\u0600-\u06FF]/.test(v)) || source.some(i => i.opSheet && (i.notesMarketing !== undefined || i.notesEditors !== undefined));
+      if (hasArabic) {
+        ['القاهرة', 'اسكندرية', 'دسوق'].forEach(b => rawValues.push(b));
+      }
+    }
+
+    // Deduplicate case-insensitively and preserve clean values (e.g. keeping ALEXANDRIA)
+    const uniqueMap = new Map<string, string>();
+    rawValues.forEach(val => {
+      const lower = val.toLowerCase();
+      if (!uniqueMap.has(lower)) {
+        uniqueMap.set(lower, val);
+      } else {
+        if (val === val.toUpperCase()) uniqueMap.set(lower, val);
+      }
+    });
+
+    return Array.from(uniqueMap.values()).sort((a, b) => a.localeCompare(b, 'en', { sensitivity: 'base' }));
+  }, [combinedData, liveData, colKey]);
+
+  const currentValue = colKey === 'teacher' && teacherFilter && teacherFilter !== 'All'
+    ? teacherFilter
+    : (colFilters[colKey] || 'All');
+
+  return (
+    <div className="flex flex-col items-center justify-center my-1 relative min-h-[30px]">
+      <CustomSelect
+        value={currentValue}
+        onChange={(val: string) => onFilterChange(colKey, val)}
+        options={options}
+        placeholder={label}
+        isColumn={true}
+      />
+    </div>
+  );
+});
+
+// Interactive Date Picker component with native showPicker() support on click
+const DatePickerCell = ({
+  value,
+  onChange,
+  disabled = false,
+  placeholder = 'اختر تاريخ 📅'
+}: {
+  value: string;
+  onChange: (val: string) => void;
+  disabled?: boolean;
+  placeholder?: string;
+}) => {
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  const handleTriggerPicker = (e: React.MouseEvent) => {
+    if (disabled) return;
+    e.preventDefault();
+    e.stopPropagation();
+    if (inputRef.current) {
+      try {
+        if (typeof inputRef.current.showPicker === 'function') {
+          inputRef.current.showPicker();
+        } else {
+          inputRef.current.focus();
+        }
+      } catch {
+        inputRef.current.focus();
+      }
+    }
+  };
+
+  return (
+    <div
+      onClick={handleTriggerPicker}
+      className={`relative inline-flex items-center justify-center cursor-pointer group/datepicker select-none ${
+        disabled ? 'cursor-not-allowed opacity-60' : ''
+      }`}
+      title="اضغط لاختيار التاريخ من التقويم 📅"
+    >
+      <input
+        ref={inputRef}
+        type="date"
+        style={{ colorScheme: 'dark' }}
+        value={toInputDate(value)}
+        disabled={disabled}
+        onChange={(e) => {
+          const picked = fromInputDate(e.target.value);
+          if (picked && picked !== value) {
+            onChange(picked);
+          }
+        }}
+        onClick={(e) => {
+          try {
+            if (typeof e.currentTarget.showPicker === 'function') {
+              e.currentTarget.showPicker();
+            }
+          } catch {}
+        }}
+        className="date-picker-fill absolute inset-0 opacity-0 w-full h-full cursor-pointer z-20"
+      />
+      <div className="px-3 py-1.5 rounded-full bg-emerald-950/40 hover:bg-emerald-900/60 border border-emerald-500/50 hover:border-emerald-400 text-emerald-300 text-xs font-mono font-black flex items-center gap-1.5 shadow-md shadow-emerald-500/10 transition-all group-hover/datepicker:scale-105 min-w-[105px] justify-center pointer-events-none">
+        <Calendar size={13} className="text-emerald-400 shrink-0" />
+        <span>{value || placeholder}</span>
+      </div>
+    </div>
   );
 };
 
@@ -1338,21 +1509,22 @@ const TagmeRow = ({
           />
         </td>
       )}
-      {!isSimple && (
-        <td className="px-3 py-6 text-center">
-          <select
-            value={item.branch || ''}
-            onChange={(e) => onUpdateBranch(item.uniqueKey || generateKey(item), e.target.value)}
-            disabled={!(profile?.role && PERMISSIONS.canEditEditors(profile.role))}
-            className={`bg-white/5 border border-white/10 hover:border-emerald-500/50 rounded-xl px-3 py-2 text-xs font-bold text-white outline-none transition-all shadow-lg focus:ring-2 focus:ring-emerald-500/50 min-w-[90px] ${profile?.role && PERMISSIONS.canEditEditors(profile.role) ? 'cursor-pointer hover:bg-white/10' : 'cursor-not-allowed opacity-50'}`}
-          >
-            <option value="" className="bg-[#0b1019] text-muted">غير محدد</option>
-            {branchesList?.map((branch: string) => (
-              <option key={branch} value={branch} className="bg-[#0b1019] text-white font-bold">{branch}</option>
-            ))}
-          </select>
-        </td>
-      )}
+      <td className="px-3 py-6 text-center">
+        <select
+          value={(item.branch && !item.branch.includes('يوتيوب') && !item.branch.includes('تجميعة')) ? item.branch : ''}
+          onChange={(e) => onUpdateBranch(item.uniqueKey || generateKey(item), e.target.value)}
+          disabled={!(profile?.role && PERMISSIONS.canEditEditors(profile.role))}
+          className={`bg-white/5 border border-white/10 hover:border-emerald-500/50 rounded-xl px-3 py-2 text-xs font-bold text-white outline-none transition-all shadow-lg focus:ring-2 focus:ring-emerald-500/50 min-w-[90px] ${profile?.role && PERMISSIONS.canEditEditors(profile.role) ? 'cursor-pointer hover:bg-white/10' : 'cursor-not-allowed opacity-50'}`}
+        >
+          <option value="" className="bg-[#0b1019] text-muted">غير محدد</option>
+          {item.branch && !item.branch.includes('يوتيوب') && !item.branch.includes('تجميعة') && !branchesList?.includes(item.branch) && (
+            <option value={item.branch} className="bg-[#0b1019] text-white font-bold">{item.branch}</option>
+          )}
+          {branchesList?.filter((b: string) => !b.includes('يوتيوب') && !b.includes('تجميعة')).map((branch: string) => (
+            <option key={branch} value={branch} className="bg-[#0b1019] text-white font-bold">{branch}</option>
+          ))}
+        </select>
+      </td>
       <td className="px-3 py-6 text-center">
         <HistoryInput
           itemKey={item.uniqueKey || generateKey(item)}
@@ -1583,26 +1755,26 @@ const StageRow = ({ item, index, tagmeTransfers, onTagmeToggle, activeLabel, isG
         </select>
       </td>
       <td className="px-4 py-5 text-center">
-        <input
-          type="date"
-          value={toInputDate(dateVal)}
-          onChange={(e) => {
-            const newDate = fromInputDate(e.target.value);
+        <DatePickerCell
+          value={dateVal}
+          disabled={!(profile?.role && PERMISSIONS.canEditEditors(profile.role))}
+          onChange={(newDate) => {
             setDateVal(newDate);
             if (onUpdateDate) {
               onUpdateDate(rowKey, newDate);
             }
           }}
-          style={{ colorScheme: 'dark' }}
-          disabled={!(profile?.role && PERMISSIONS.canEditEditors(profile.role))}
-          className={`bg-white/5 border border-white/10 hover:border-emerald-500/50 rounded-xl px-2.5 py-1.5 text-xs font-bold text-blue-400 text-center outline-none focus:bg-[#0b1019] focus:border-emerald-500/50 focus:ring-2 focus:ring-emerald-500/50 transition-all shadow-inner font-mono max-w-[135px] ${profile?.role && PERMISSIONS.canEditEditors(profile.role) ? 'cursor-pointer' : 'cursor-not-allowed opacity-70'}`}
         />
       </td>
       <td className="px-6 py-5" dir="rtl">
         <div className="flex flex-col text-right min-w-[280px] max-w-[480px]">
-          <span className="text-sm font-bold arabic-text mb-1 whitespace-pre-wrap leading-relaxed tracking-wide text-white/95 break-words">{item.name}</span>
+          <span className="text-sm font-bold arabic-text mb-1 whitespace-pre-wrap leading-relaxed tracking-wide text-white/95 break-words">
+            {sortMultiLineLessonName(item.name)}
+          </span>
           {item.filingName && item.filingName !== item.name && (
-            <span className="text-[10px] text-muted font-black opacity-40 uppercase tracking-[0.15em] break-words">{item.filingName}</span>
+            <span className="text-[10px] text-muted font-black opacity-40 uppercase tracking-[0.15em] break-words">
+              {sortCombinedFilingName(item.filingName, item.name)}
+            </span>
           )}
         </div>
       </td>
@@ -2396,11 +2568,10 @@ const ShootingRow = ({ item, index, activeGid, onToggleFilmed, loadingFilmedCode
       {!isSimple && (
         <>
           <td className="px-4 py-5 text-center text-xs">
-            <input
-              type="text"
-              value={item.filmingDate || ''}
-              onChange={(e) => {
-                const newDate = e.target.value;
+            <DatePickerCell
+              value={item.filmingDate || editForm.filmingDate || ''}
+              onChange={(picked) => {
+                setEditForm(prev => ({ ...prev, filmingDate: picked }));
                 const rowCode = item.code || item.id;
                 const rowData = [
                   item.date,
@@ -2413,7 +2584,7 @@ const ShootingRow = ({ item, index, activeGid, onToggleFilmed, loadingFilmedCode
                   editForm.type,
                   editForm.format,
                   item.filmed ? 'TRUE' : 'FALSE',
-                  newDate,
+                  picked,
                   editForm.by,
                   editForm.storage,
                   editForm.notes,
@@ -2426,8 +2597,6 @@ const ShootingRow = ({ item, index, activeGid, onToggleFilmed, loadingFilmedCode
                 ];
                 onUpdateShootingRow && onUpdateShootingRow(rowCode, rowData);
               }}
-              placeholder="M/D/YYYY"
-              className="w-24 bg-white/5 border border-white/10 hover:bg-white/10 rounded-xl px-2 py-1 text-xs font-mono font-bold text-center text-blue-300 outline-none focus:border-emerald-500 transition-all"
             />
           </td>
           <AutofillCell colKey="by" rowIndex={index} value={editForm.by} autofillDrag={autofillDrag} setAutofillDrag={setAutofillDrag} onApply={onApplyAutofill} activeCell={activeCell} setActiveCell={setActiveCell} liveDataLength={liveData?.length}>
@@ -3887,15 +4056,17 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
     return () => window.removeEventListener('app-toast', handleToastEvent);
   }, [toast]);
 
-  // Background polling every 45 seconds to fetch changes silently
+  // Background polling every 45 seconds to fetch changes silently (skip OP 25/26 to load only once)
   useEffect(() => {
     const interval = setInterval(() => {
       if (document.visibilityState === 'visible' && !loading) {
-        refresh(true); // silent refresh
+        if (sheetGidToFetch !== '1476192399' && activeGid !== '1476192399') {
+          refresh(true); // silent refresh
+        }
       }
     }, 45000);
     return () => clearInterval(interval);
-  }, [refresh, loading]);
+  }, [refresh, loading, sheetGidToFetch, activeGid]);
 
   const currentUserName = profile?.name || localStorage.getItem('user_editor_name') || 'ESLAM';
   const [isMyTasksOnly, setIsMyTasksOnly] = useState(false);
@@ -3988,6 +4159,27 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
   const [bypassYearTerm, setBypassYearTerm] = useState(false);
   const [tagmeViewMode, setTagmeViewMode] = useState<'SIMPLE' | 'DETAILED'>('SIMPLE');
   const [colFilters, setColFilters] = useState<Record<string, string>>({});
+
+  const tableScrollRef = useRef<HTMLDivElement>(null);
+  const topScrollRef = useRef<HTMLDivElement>(null);
+
+  const syncScrollFromTop = () => {
+    if (tableScrollRef.current && topScrollRef.current) {
+      tableScrollRef.current.scrollLeft = topScrollRef.current.scrollLeft;
+    }
+  };
+
+  const syncScrollFromTable = () => {
+    if (topScrollRef.current && tableScrollRef.current) {
+      topScrollRef.current.scrollLeft = tableScrollRef.current.scrollLeft;
+    }
+  };
+
+  const handleScrollHorizontal = (delta: number) => {
+    if (tableScrollRef.current) {
+      tableScrollRef.current.scrollBy({ left: delta, behavior: 'smooth' });
+    }
+  };
 
   const handleAdminTermChange = (term: 'T1' | 'T2') => {
     setActiveAcademicTerm(term);
@@ -4089,7 +4281,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
           name: i.name || '',
           filingName: i.filing_name || '',
           opSheet: i.op_sheet || '',
-          branch: i.branch || '',
+          branch: (i.branch && !i.branch.includes('يوتيوب') && !i.branch.includes('تجميعة')) ? i.branch : '',
           date: i.date || '',
           notesMarketing: i.notes_marketing || '',
           notesMarketingUpdatedAt: i.notes_marketing_updated_at || i.updated_at,
@@ -4108,7 +4300,12 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
           isTransfer: i.is_transfer === true,
           updatedAt: i.updated_at
         }));
-        setTagmeDbRows(mapped);
+        setTagmeDbRows(prev => {
+          if (prev.length === mapped.length && prev[0]?.uniqueKey === mapped[0]?.uniqueKey && prev[0]?.updatedAt === mapped[0]?.updatedAt) {
+            return prev;
+          }
+          return mapped;
+        });
       }
     } catch (e) {
       console.error('Error fetching tagme3at_26 from Supabase:', e);
@@ -4122,7 +4319,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
       fetchTagmeDb();
       const intervalId = setInterval(() => {
         fetchTagmeDb(true);
-      }, 3500);
+      }, 15000);
       return () => clearInterval(intervalId);
     }
   }, [activeGid, isTagme3at, isAnalyticsTagme]);
@@ -4143,7 +4340,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
               name: payload.new.name || '',
               filingName: payload.new.filing_name || '',
               opSheet: payload.new.op_sheet || '',
-              branch: payload.new.branch || '',
+              branch: (payload.new.branch && !payload.new.branch.includes('يوتيوب') && !payload.new.branch.includes('تجميعة')) ? payload.new.branch : '',
               date: payload.new.date || '',
               notesMarketing: payload.new.notes_marketing || '',
               notesMarketingUpdatedAt: payload.new.notes_marketing_updated_at || payload.new.updated_at,
@@ -4170,7 +4367,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
               name: payload.new.name || '',
               filingName: payload.new.filing_name || '',
               opSheet: payload.new.op_sheet || '',
-              branch: payload.new.branch || '',
+              branch: (payload.new.branch && !payload.new.branch.includes('يوتيوب') && !payload.new.branch.includes('تجميعة')) ? payload.new.branch : '',
               date: payload.new.date || '',
               notesMarketing: payload.new.notes_marketing || '',
               notesMarketingUpdatedAt: payload.new.notes_marketing_updated_at || payload.new.updated_at,
@@ -4348,7 +4545,12 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
           createdAt: i.created_at,
           updatedAt: i.updated_at
         }));
-        setStageDbRows(mapped);
+        setStageDbRows(prev => {
+          if (prev.length === mapped.length && prev[0]?.uniqueKey === mapped[0]?.uniqueKey && prev[0]?.updatedAt === mapped[0]?.updatedAt) {
+            return prev;
+          }
+          return mapped;
+        });
       }
     } catch (e) {
       console.error(`Error fetching ${tbl} from Supabase:`, e);
@@ -4362,7 +4564,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
       fetchStageDb(activeGid);
       const intervalId = setInterval(() => {
         fetchStageDb(activeGid, true);
-      }, 3500);
+      }, 15000);
       return () => clearInterval(intervalId);
     }
   }, [activeGid, isStageTab]);
@@ -4621,7 +4823,12 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
             updatedAt: i.updated_at
           }));
         }
-        setReelsDbRows(mapped);
+        setReelsDbRows(prev => {
+          if (prev.length === mapped.length && prev[0]?.uniqueKey === mapped[0]?.uniqueKey && prev[0]?.updatedAt === mapped[0]?.updatedAt) {
+            return prev;
+          }
+          return mapped;
+        });
       }
     } catch (e) {
       console.error(`Error fetching ${tbl} from Supabase:`, e);
@@ -4635,7 +4842,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
       fetchReelsDb(activeGid);
       const intervalId = setInterval(() => {
         fetchReelsDb(activeGid, true);
-      }, 3500);
+      }, 15000);
       return () => clearInterval(intervalId);
     }
   }, [activeGid, isReelsTableTab]);
@@ -5417,11 +5624,12 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
     const senderName = profile?.name || 'مستخدم';
     if (!globalChannelRef.current) return;
 
-    // Deduplicate outgoing broadcasts for identical key + message within 2 seconds
-    const broadcastKey = `${opts.itemKey}_${opts.message}`;
+    // Deduplicate outgoing broadcasts: prevent notification spam for rapid edits or typing
+    const broadcastKey = opts.field ? `${opts.itemKey}_${opts.field}` : `${opts.itemKey}_${opts.message}`;
     const now = Date.now();
     const lastTime = lastBroadcastRef.current.get(broadcastKey) || 0;
-    if (now - lastTime < 2000 && !opts.field) {
+    const cooldown = (opts.field === 'notes' || opts.field === 'editorNotes') ? 8000 : 3000;
+    if (now - lastTime < cooldown) {
       return;
     }
     lastBroadcastRef.current.set(broadcastKey, now);
@@ -5630,14 +5838,17 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
 
   const branchesList = useMemo(() => {
     const set = new Set<string>();
-    const sourceData = activeGid === '1535230545' ? liveData : [];
+    const sourceData = activeGid === '1535230545' ? (tagmeDbRows.length > 0 ? tagmeDbRows : liveData) : [];
     sourceData.forEach((i: any) => {
-      if (i.branch && i.branch.trim() !== '') set.add(i.branch.trim());
+      const b = (i.branch || '').trim();
+      if (b && !b.includes('يوتيوب') && !b.includes('تجميعة')) {
+        set.add(b);
+      }
     });
     const defaults = ['القاهرة', 'اسكندرية', 'دسوق'];
     defaults.forEach(d => set.add(d));
     return Array.from(set).sort();
-  }, [liveData, activeGid]);
+  }, [liveData, tagmeDbRows, activeGid]);
 
   const editorsList = useMemo(() => {
     const set = new Set<string>();
@@ -6061,7 +6272,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
         name: addForm.name.trim(),
         filingName: addForm.filingName?.trim() || '---',
         opSheet: addForm.val?.trim() || 'Senior 1',
-        branch: addForm.extra?.trim() || 'يوتيوب العمليات (تجميعة)',
+        branch: (addForm.extra && !addForm.extra.includes('يوتيوب') && !addForm.extra.includes('تجميعة')) ? addForm.extra.trim() : '',
         date: addForm.id?.trim() || new Date().toISOString().split('T')[0],
         notesMarketing: addForm.notesMarketing?.trim() || '',
         editor: addForm.editor?.trim() || 'غير محدد',
@@ -6866,7 +7077,11 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
       name: item.name || '',
       filing_name: item.filingName || '---',
       op_sheet: item.opSheet || sheetLabel,
-      branch: item.extra || item.branch || 'يوتيوب العمليات (تجميعة)',
+      branch: (item.branch && !item.branch.includes('يوتيوب') && !item.branch.includes('تجميعة')) 
+        ? item.branch 
+        : (item.extra && !item.extra.includes('يوتيوب') && !item.extra.includes('تجميعة')) 
+        ? item.extra 
+        : '',
       date: item.date || item.id || new Date().toISOString().split('T')[0],
       notes_marketing: item.notesMarketing || '',
       editor: item.editor || 'غير محدد',
@@ -7014,14 +7229,15 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
 
   const handleExecuteMerge = async () => {
     if (selectedForMerge.length === 0) return;
-    const sample = selectedForMerge[0];
+    const sortedSelected = sortTasksByChunkAscending(selectedForMerge);
+    const sample = sortedSelected[0];
     const stage = getTargetStageGid(sample);
     
-    const combinedCodes = selectedForMerge.map(i => i.filingName || i.name).join('\n');
-    const combinedNames = selectedForMerge.map(i => i.name).join(' | ');
+    const combinedCodes = sortedSelected.map(i => i.filingName || i.name).join('\n');
+    const combinedNames = sortedSelected.map(i => i.name).join(' | ');
     const uniqueKey = 'merge-' + Date.now();
 
-    const totalDurationStr = calculateTotalDuration(selectedForMerge).replace('⏱️ إجمالي الوقت: ', '').trim();
+    const totalDurationStr = calculateTotalDuration(sortedSelected).replace('⏱️ إجمالي الوقت: ', '').trim();
 
     const mergedItem = {
       uniqueKey: uniqueKey,
@@ -7032,8 +7248,8 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
       idVal: sample.date || sample.teacher || '---',
       date: sample.date || new Date().toISOString().split('T')[0],
       subject: getSubjectFromFiling(combinedCodes),
-      extra: 'يوتيوب العمليات (تجميعة)',
-      branch: 'يوتيوب العمليات (تجميعة)',
+      extra: '',
+      branch: '',
       opSheet: '2025/2026',
       check1: false,
       check2: false,
@@ -7118,8 +7334,8 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
       idVal: item.date || item.teacher || '---',
       date: item.date || new Date().toISOString().split('T')[0],
       subject: getSubjectFromFiling(item.filingName),
-      extra: 'يوتيوب العمليات',
-      branch: 'يوتيوب العمليات',
+      extra: '',
+      branch: '',
       opSheet: '2025/2026',
       check1: false,
       check2: false,
@@ -7495,9 +7711,9 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
       }
 
       if (isOperations) {
-        if (teacherFilter !== 'All' && item.teacher !== teacherFilter) return false;
-        if (yearFilter !== 'All' && item.year !== yearFilter) return false;
-        if (termFilter !== 'All' && item.term !== termFilter) return false;
+        if (teacherFilter !== 'All' && String(item.teacher || '').trim().toLowerCase() !== String(teacherFilter).trim().toLowerCase()) return false;
+        if (yearFilter !== 'All' && String(item.year || '').trim().toLowerCase() !== String(yearFilter).trim().toLowerCase()) return false;
+        if (termFilter !== 'All' && String(item.term || '').trim().toLowerCase() !== String(termFilter).trim().toLowerCase()) return false;
       }
       
       if (isTagme3at && statusFilter !== 'All') {
@@ -7519,19 +7735,33 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
       }
 
       if (isStage && stageWeekFilter !== 'All') {
-        if (String(item.week).trim() !== stageWeekFilter) return false;
+        if (String(item.week || '').trim().toLowerCase() !== String(stageWeekFilter).trim().toLowerCase()) return false;
       }
 
       for (const key in colFilters) {
         const val = colFilters[key];
         if (val && val !== 'All') {
-          if (key === 'check1') {
+          if (key === 'filmed') {
+            const isFilmed = item.filmed === true || item.filmed === 'TRUE' || String(item.filmed).toLowerCase() === 'true';
+            if (val === 'اتصور' && !isFilmed) return false;
+            if (val === 'لم يتصور' && isFilmed) return false;
+          } else if (key === 'check1') {
             const itemKey = 'tgm-' + (item.uniqueKey || generateKey(item));
             const isTagmeChecked = item.isTagme3a === true || item.check1 === true || String(item.check1).toLowerCase() === 'true' || (tagmeTransfers || []).some((i: any) => i.uniqueKey === itemKey);
             const filterBool = val === 'TRUE';
             if (isTagmeChecked !== filterBool) return false;
+          } else if (key === 'branch') {
+            const norm = (s: string) => {
+              let t = String(s || '').trim().toLowerCase();
+              t = t.replace(/[إأآا]/g, 'ا').replace(/ة/g, 'ه');
+              if (t.startsWith('ال')) t = t.slice(2);
+              return t;
+            };
+            if (norm(item.branch) !== norm(val)) return false;
           } else {
-            if (String(item[key]) !== val) return false;
+            const itemVal = String(item[key] ?? '').trim().toLowerCase();
+            const filterVal = String(val).trim().toLowerCase();
+            if (itemVal !== filterVal) return false;
           }
         }
       }
@@ -7607,45 +7837,25 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
     return filtered;
   }, [combinedData, searchQuery, statusFilter, teacherFilter, yearFilter, termFilter, bypassYearTerm, colFilters, isOperations, isTagme3at, isStage, stageWeekFilter, sortBy, sortOrder, liveData, isMyTasksOnly, profile, currentUserName]);
 
-  // Column Filter Component
-  const ColFilter = ({ colKey, label }: { colKey: string, label: string }) => {
-    const options = useMemo(() => {
-      const source = Array.isArray(combinedData) && combinedData.length > 0 ? combinedData : liveData;
-      const set = new Set(source.map(i => String(i[colKey] || '').trim()).filter(v => v !== '' && v !== 'false' && v !== 'true' && v !== 'undefined' && v !== 'null'));
-      if (colKey === 'branch' || colKey === 'extra') {
-        set.add('القاهرة');
-        set.add('اسكندرية');
-        set.add('دسوق');
-      }
-      return Array.from(set).sort();
-    }, [combinedData, liveData, colKey]);
+  const handleColFilterChange = useCallback((colKey: string, val: string) => {
+    if (colKey === 'teacher') {
+      setTeacherFilter(val);
+    }
+    setColFilters(p => {
+      const updated = { ...p };
+      if (val === 'All') delete updated[colKey];
+      else updated[colKey] = val;
+      return updated;
+    });
+  }, []);
 
-    const handleSelectChange = (val: string) => {
-      if (colKey === 'teacher') {
-        setTeacherFilter(val);
-      }
-      setColFilters(p => {
-        const updated = { ...p };
-        if (val === 'All') delete updated[colKey];
-        else updated[colKey] = val;
-        return updated;
-      });
-    };
-
-    const currentValue = colKey === 'teacher' && teacherFilter !== 'All' ? teacherFilter : (colFilters[colKey] || 'All');
-
-    return (
-      <div className="flex flex-col items-center justify-center my-1 relative min-h-[30px]">
-        <CustomSelect
-          value={currentValue}
-          onChange={handleSelectChange}
-          options={options}
-          placeholder={label}
-          isColumn={true}
-        />
-      </div>
-    );
-  };
+  const filterContextValue = useMemo(() => ({
+    combinedData,
+    liveData,
+    colFilters,
+    teacherFilter,
+    onFilterChange: handleColFilterChange
+  }), [combinedData, liveData, colFilters, teacherFilter, handleColFilterChange]);
 
   // Table headers per tab type
   const renderHeaders = () => {
@@ -7674,7 +7884,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
           <th className="px-8 py-4 text-right th-style">Task</th>
           <th className="px-3 py-4 text-center th-style"><ColFilter colKey="opSheet" label="Sheet" /></th>
           {!isSimple && <th className="px-3 py-4 text-center th-style"><ColFilter colKey="date" label="التاريخ" /></th>}
-          {!isSimple && <th className="px-3 py-4 text-center th-style"><ColFilter colKey="branch" label="Branch" /></th>}
+          <th className="px-3 py-4 text-center th-style"><ColFilter colKey="branch" label="الفرع" /></th>
           <th className="px-3 py-4 text-center th-style">Marketing Notes</th>
           <th className="px-3 py-4 text-center th-style" id="tour-tagme-editor-col"><ColFilter colKey="editor" label="Editor" /></th>
           <th className="px-3 py-4 text-center th-style">Status</th>
@@ -7711,7 +7921,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
         <th className="px-8 py-4 text-right th-style">السكريبت</th>
         <th className="px-3 py-4 text-center th-style"><ColFilter colKey="type" label="النوع" /></th>
         <th className="px-3 py-4 text-center th-style"><ColFilter colKey="format" label="المقاس" /></th>
-        <th className="px-3 py-4 text-center th-style">اتصور</th>
+        <th className="px-3 py-4 text-center th-style"><ColFilter colKey="filmed" label="اتصور" /></th>
         <th className="px-5 py-4 text-center th-style">NOTES</th>
         <th className="px-5 py-4 text-center th-style">EDITOR NOTES</th>
         <th className="px-4 py-4 text-center th-style">Drive Link (Raw)</th>
@@ -7736,7 +7946,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
         <th className="px-8 py-4 text-right th-style" id="tour-ve-script-col">السكريبت</th>
         <th className="px-3 py-4 text-center th-style"><ColFilter colKey="type" label="النوع" /></th>
         <th className="px-3 py-4 text-center th-style"><ColFilter colKey="format" label="المقاس" /></th>
-        <th className="px-3 py-4 text-center th-style" id="tour-shooting-filmed-col">اتصور</th>
+        <th className="px-3 py-4 text-center th-style" id="tour-shooting-filmed-col"><ColFilter colKey="filmed" label="اتصور" /></th>
         <th className="px-4 py-4 text-center th-style">تاريخ التصوير</th>
         <th className="px-3 py-4 text-center th-style"><ColFilter colKey="by" label="BY" /></th>
         <th className="px-4 py-4 text-center th-style"><ColFilter colKey="storage" label="STORAGE" /></th>
@@ -8584,11 +8794,11 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
                         <div>
                           <label className="block text-xs font-bold text-muted mb-1.5 arabic-text">الفرع (Branch)</label>
                           <select
-                            value={addForm.extra || 'يوتيوب العمليات (تجميعة)'}
+                            value={addForm.extra || ''}
                             onChange={e => setAddForm({...addForm, extra: e.target.value})}
                             className="w-full bg-[#0b1019] border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-emerald-500 transition-colors font-bold text-sm"
                           >
-                            <option value="يوتيوب العمليات (تجميعة)">يوتيوب العمليات (تجميعة)</option>
+                            <option value="">غير محدد</option>
                             {branchesList.map((b: string) => (
                               <option key={b} value={b}>{b}</option>
                             ))}
@@ -9275,8 +9485,8 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
                     idVal: taskItem.teacher || '---',
                     date: taskItem.dueDate || taskItem.startDate || new Date().toISOString().split('T')[0],
                     subject: taskItem.subject || 'عام',
-                    extra: 'يوتيوب العمليات',
-                    branch: 'يوتيوب العمليات',
+                    extra: '',
+                    branch: '',
                     opSheet: 'OP 26/27',
                     check1: false,
                     check2: false,
@@ -9459,11 +9669,43 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
               })}
             </div>
           ) : (
-            <div className="table-container">
-              <div className="overflow-x-auto min-h-[420px] pb-36">
-                <table className="w-full text-right border-collapse">
-                  <thead>
-                    <tr className="bg-white/[0.03] border-b border-white/[0.05]">
+            <FilterContext.Provider value={filterContextValue}>
+              {/* Top Horizontal Scrollbar & Quick Controls for wide tables (especially Shooting & Reels) */}
+              <div className="flex items-center gap-2 mb-2 px-1 bg-white/[0.02] border border-white/10 rounded-2xl p-1.5 shadow-sm">
+                <button
+                  type="button"
+                  onClick={() => handleScrollHorizontal(400)}
+                  className="px-3 py-1 text-xs font-bold rounded-xl bg-white/5 hover:bg-white/15 border border-white/10 text-muted hover:text-white flex items-center gap-1.5 transition-all shrink-0 cursor-pointer active:scale-95 shadow-sm"
+                  title="تمرير لليمين"
+                >
+                  ◀️ لليمين
+                </button>
+                <div 
+                  ref={topScrollRef} 
+                  onScroll={syncScrollFromTop}
+                  className="flex-1 overflow-x-auto scrollbar-thin rounded-xl"
+                  style={{ height: '14px' }}
+                >
+                  <div style={{ width: isReelsTableTab ? '2600px' : isOperations ? '1600px' : '1400px', height: '1px' }} />
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleScrollHorizontal(-400)}
+                  className="px-3 py-1 text-xs font-bold rounded-xl bg-white/5 hover:bg-white/15 border border-white/10 text-muted hover:text-white flex items-center gap-1.5 transition-all shrink-0 cursor-pointer active:scale-95 shadow-sm"
+                  title="تمرير لليسار"
+                >
+                  لليسار ▶️
+                </button>
+              </div>
+
+              <div 
+                ref={tableScrollRef}
+                onScroll={syncScrollFromTable}
+                className="table-container overflow-x-auto rounded-2xl border border-white/10 shadow-2xl bg-[#0a0f1d]/40 backdrop-blur-sm pb-16"
+              >
+                <table className={`text-right border-collapse w-full ${isReelsTableTab ? 'min-w-[2600px]' : isOperations ? 'min-w-[1600px]' : 'min-w-[1400px]'}`}>
+                  <thead className="sticky top-0 z-30 bg-[#0c1222] shadow-[0_4px_20px_rgba(0,0,0,0.5)] border-b border-white/10">
+                    <tr className="bg-[#0c1222]/95 backdrop-blur-md">
                       {renderHeaders()}
                     </tr>
                   </thead>
@@ -9787,7 +10029,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
                 </tbody>
               </table>
             </div>
-          </div>
+          </FilterContext.Provider>
         )}
         </div>
 
@@ -9806,8 +10048,8 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
                 </div>
                 <div className="flex flex-col text-right" dir="rtl">
                   <span className="text-base font-bold text-white arabic-text">تم تحديد عدة دروس لتجميعها معاً في يوتيوب 🔗</span>
-                  <span className="text-xs text-emerald-400 font-bold arabic-text mt-1">{calculateTotalDuration(selectedForMerge)}</span>
-                  <span className="text-[10px] text-purple-300 arabic-text line-clamp-1 mt-0.5">{selectedForMerge.map(i => i.name).join(' + ')}</span>
+                  <span className="text-xs text-emerald-400 font-bold arabic-text mt-1">{calculateTotalDuration(sortTasksByChunkAscending(selectedForMerge))}</span>
+                  <span className="text-[10px] text-purple-300 arabic-text line-clamp-1 mt-0.5">{sortTasksByChunkAscending(selectedForMerge).map(i => i.name).join(' + ')}</span>
                 </div>
               </div>
               <div className="flex items-center gap-3">

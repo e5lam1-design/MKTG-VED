@@ -181,6 +181,11 @@ export function useGoogleSheets(gid: string, customDocId?: string) {
   const activeGidRef = useRef(gid);
 
   const fetchData = async (targetGid: string, isSilent = false, docIdOverride?: string) => {
+    // Operations (OP 25/26): Load once into memory! Skip silent background refetches if already cached
+    if (isSilent && targetGid === OPERATIONS_GID && sheetCache[targetGid] && sheetCache[targetGid].length > 0) {
+      return;
+    }
+
     if (!isSilent) {
       setLoading(true);
     }
@@ -365,7 +370,17 @@ export function useGoogleSheets(gid: string, customDocId?: string) {
         });
 
       sheetCache[targetGid] = parsedData;
-      setData(parsedData);
+      setData(prev => {
+        if (
+          prev &&
+          prev.length === parsedData.length &&
+          prev[0]?.uniqueKey === parsedData[0]?.uniqueKey &&
+          prev[prev.length - 1]?.uniqueKey === parsedData[parsedData.length - 1]?.uniqueKey
+        ) {
+          return prev;
+        }
+        return parsedData;
+      });
     } catch (err: any) {
       if (activeGidRef.current === targetGid) {
         setError(err.message);
@@ -382,7 +397,10 @@ export function useGoogleSheets(gid: string, customDocId?: string) {
     if (sheetCache[gid]) {
       setData(sheetCache[gid]);
       setLoading(false);
-      fetchData(gid, true, customDocId); // Silent background fetch
+      // For Operations (OPERATIONS_GID), load once into memory and skip background re-fetch
+      if (gid !== OPERATIONS_GID) {
+        fetchData(gid, true, customDocId); // Silent background fetch
+      }
     } else {
       setData([]);
       setLoading(true);

@@ -896,6 +896,11 @@ const getChipColor = (val: string) => {
     return { bg: 'bg-amber-500/15 shadow-[0_0_10px_rgba(245,158,11,0.15)]', text: 'text-amber-300 font-extrabold', border: 'border-amber-500/30', dot: '#f59e0b' };
   }
 
+  // Dates
+  if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(raw) || /^\d{4}-\d{2}-\d{2}$/.test(raw)) {
+    return { bg: 'bg-emerald-950/40', text: 'text-emerald-300 font-mono font-bold', border: 'border-emerald-500/30', dot: '#10b981' };
+  }
+
   // Type & Format
   if (lower === 'حواري') {
     return { bg: 'bg-sky-500/15 shadow-[0_0_10px_rgba(14,165,233,0.1)]', text: 'text-sky-300 font-extrabold', border: 'border-sky-500/30', dot: '#38bdf8' };
@@ -1029,6 +1034,14 @@ const ColFilter = React.memo(({ colKey, label }: { colKey: string; label: string
         if (val === val.toUpperCase()) uniqueMap.set(lower, val);
       }
     });
+
+    if (colKey === 'filmingDate' || colKey === 'date') {
+      return Array.from(uniqueMap.values()).sort((a, b) => {
+        const timeA = new Date(a).getTime() || 0;
+        const timeB = new Date(b).getTime() || 0;
+        return timeB - timeA;
+      });
+    }
 
     return Array.from(uniqueMap.values()).sort((a, b) => a.localeCompare(b, 'en', { sensitivity: 'base' }));
   }, [combinedData, liveData, colKey]);
@@ -7758,6 +7771,21 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
               return t;
             };
             if (norm(item.branch) !== norm(val)) return false;
+          } else if (key === 'filmingDate' || key === 'date') {
+            const normDate = (d: string) => {
+              if (!d) return '';
+              const clean = String(d).trim().split('T')[0];
+              const parts = clean.includes('/') ? clean.split('/') : clean.includes('-') ? clean.split('-') : [];
+              if (parts.length === 3) {
+                if (parts[0].length === 4) {
+                  return `${parseInt(parts[1], 10)}/${parseInt(parts[2], 10)}/${parts[0]}`;
+                } else {
+                  return `${parseInt(parts[0], 10)}/${parseInt(parts[1], 10)}/${parts[2]}`;
+                }
+              }
+              return clean.toLowerCase();
+            };
+            if (normDate(item[key]) !== normDate(val)) return false;
           } else {
             const itemVal = String(item[key] ?? '').trim().toLowerCase();
             const filterVal = String(val).trim().toLowerCase();
@@ -7947,7 +7975,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
         <th className="px-3 py-4 text-center th-style"><ColFilter colKey="type" label="النوع" /></th>
         <th className="px-3 py-4 text-center th-style"><ColFilter colKey="format" label="المقاس" /></th>
         <th className="px-3 py-4 text-center th-style" id="tour-shooting-filmed-col"><ColFilter colKey="filmed" label="اتصور" /></th>
-        <th className="px-4 py-4 text-center th-style">تاريخ التصوير</th>
+        <th className="px-4 py-4 text-center th-style"><ColFilter colKey="filmingDate" label="تاريخ التصوير" /></th>
         <th className="px-3 py-4 text-center th-style"><ColFilter colKey="by" label="BY" /></th>
         <th className="px-4 py-4 text-center th-style"><ColFilter colKey="storage" label="STORAGE" /></th>
         <th className="px-5 py-4 text-center th-style">NOTES</th>

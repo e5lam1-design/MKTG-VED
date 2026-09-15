@@ -350,12 +350,29 @@ export const Op27View: React.FC<Op27ViewProps> = ({
     };
   }, []);
 
-  const [searchQuery, setSearchQuery] = useState('');
-  const [stageFilter, setStageFilter] = useState('All');
-  const [teacherFilter, setTeacherFilter] = useState('All');
-  const [subjectFilter, setSubjectFilter] = useState('All');
-  const [statusFilter, setStatusFilter] = useState('All');
-  const [bunnyFilter, setBunnyFilter] = useState<'All' | 'HasLink' | 'NoLink'>('All');
+  // Persistent Filters & UI State
+  const [searchQuery, setSearchQuery] = useState(() => {
+    try { return localStorage.getItem('op27_filter_search') || ''; } catch { return ''; }
+  });
+  const [stageFilter, setStageFilter] = useState(() => {
+    try { return localStorage.getItem('op27_filter_stage') || 'All'; } catch { return 'All'; }
+  });
+  const [teacherFilter, setTeacherFilter] = useState(() => {
+    try { return localStorage.getItem('op27_filter_teacher') || 'All'; } catch { return 'All'; }
+  });
+  const [subjectFilter, setSubjectFilter] = useState(() => {
+    try { return localStorage.getItem('op27_filter_subject') || 'All'; } catch { return 'All'; }
+  });
+  const [statusFilter, setStatusFilter] = useState(() => {
+    try { return localStorage.getItem('op27_filter_status') || 'All'; } catch { return 'All'; }
+  });
+  const [bunnyFilter, setBunnyFilter] = useState<'All' | 'HasLink' | 'NoLink'>(() => {
+    try {
+      const saved = localStorage.getItem('op27_filter_bunny');
+      if (saved === 'HasLink' || saved === 'NoLink' || saved === 'All') return saved;
+    } catch {}
+    return 'All';
+  });
   const [showBunnyDropdown, setShowBunnyDropdown] = useState(false);
   const bunnyDropdownRef = useRef<HTMLDivElement>(null);
 
@@ -369,9 +386,51 @@ export const Op27View: React.FC<Op27ViewProps> = ({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  const [bypassTeacherSelection, setBypassTeacherSelection] = useState(false);
+  const [bypassTeacherSelection, setBypassTeacherSelection] = useState(() => {
+    try { return localStorage.getItem('op27_filter_bypass') === 'true'; } catch { return false; }
+  });
   const [copiedId, setCopiedId] = useState<string | null>(null);
-  const [selectedTasks, setSelectedTasks] = useState<string[]>([]);
+  const [selectedTasks, setSelectedTasks] = useState<string[]>(() => {
+    try {
+      const saved = localStorage.getItem('op27_selected_tasks');
+      return saved ? JSON.parse(saved) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  // Sync filter changes to localStorage
+  useEffect(() => {
+    try { localStorage.setItem('op27_filter_search', searchQuery); } catch {}
+  }, [searchQuery]);
+
+  useEffect(() => {
+    try { localStorage.setItem('op27_filter_stage', stageFilter); } catch {}
+  }, [stageFilter]);
+
+  useEffect(() => {
+    try { localStorage.setItem('op27_filter_teacher', teacherFilter); } catch {}
+  }, [teacherFilter]);
+
+  useEffect(() => {
+    try { localStorage.setItem('op27_filter_subject', subjectFilter); } catch {}
+  }, [subjectFilter]);
+
+  useEffect(() => {
+    try { localStorage.setItem('op27_filter_status', statusFilter); } catch {}
+  }, [statusFilter]);
+
+  useEffect(() => {
+    try { localStorage.setItem('op27_filter_bunny', bunnyFilter); } catch {}
+  }, [bunnyFilter]);
+
+  useEffect(() => {
+    try { localStorage.setItem('op27_filter_bypass', String(bypassTeacherSelection)); } catch {}
+  }, [bypassTeacherSelection]);
+
+  useEffect(() => {
+    try { localStorage.setItem('op27_selected_tasks', JSON.stringify(selectedTasks)); } catch {}
+  }, [selectedTasks]);
   const [showStats, setShowStats] = useState<boolean>(() => {
     try {
       const saved = localStorage.getItem('op27_show_stats');
@@ -965,6 +1024,25 @@ export const Op27View: React.FC<Op27ViewProps> = ({
             <span>بدون لينك 🟡 ({bunnyCounts.noLink})</span>
           </button>
         </div>
+
+        {(searchQuery || stageFilter !== 'All' || teacherFilter !== 'All' || subjectFilter !== 'All' || statusFilter !== 'All' || bunnyFilter !== 'All') && (
+          <button
+            onClick={() => {
+              setSearchQuery('');
+              setStageFilter('All');
+              setTeacherFilter('All');
+              setSubjectFilter('All');
+              setStatusFilter('All');
+              setBunnyFilter('All');
+              setBypassTeacherSelection(false);
+            }}
+            className="px-3 py-1.5 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/30 text-rose-300 text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5"
+            title="إعادة ضبط ومسح جميع الفلاتر"
+          >
+            <Undo2 size={13} />
+            <span>إعادة ضبط الفلاتر</span>
+          </button>
+        )}
 
         <div className="text-xs text-muted font-mono font-bold mr-auto">
           النتائج: <span className="text-blue-400">{filteredTasks.length}</span>

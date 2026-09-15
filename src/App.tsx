@@ -3974,19 +3974,31 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
   const profile = authProfile || (isDemo ? { id: 'demo-admin', name: 'ADMIN (DEMO)', role: 'admin', default_mode: 'operations' } as any : null);
   const [rolePermissions, setRolePermissions] = useState<any>(DEFAULT_ROLE_PERMISSIONS);
 
-  // Determine initial mode from profile.default_mode
+  // Determine initial mode from saved state or profile.default_mode
   const getInitialMode = (): 'OP' | 'REELS' | 'DESIGNERS' => {
+    try {
+      const saved = localStorage.getItem('last_active_app_mode');
+      if (saved === 'OP' || saved === 'REELS' || saved === 'DESIGNERS') return saved;
+    } catch {}
     const m = profile?.default_mode;
     if (m === 'reels') return 'REELS';
     if (m === 'designers') return 'DESIGNERS';
     return 'OP';
   };
   const getInitialGid = (mode: 'OP' | 'REELS' | 'DESIGNERS') => {
+    try {
+      const saved = localStorage.getItem('last_active_tab_gid');
+      if (saved) return saved;
+    } catch {}
     if (mode === 'REELS') return '1436746012';
     if (mode === 'DESIGNERS') return '501319673';
     return '1476192399';
   };
   const getInitialLabel = (mode: 'OP' | 'REELS' | 'DESIGNERS') => {
+    try {
+      const saved = localStorage.getItem('last_active_tab_label');
+      if (saved) return saved;
+    } catch {}
     if (mode === 'REELS') return 'Shooting';
     if (mode === 'DESIGNERS') return 'Designers';
     return 'OP 25/26';
@@ -3998,14 +4010,28 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
   const [appMode, setAppMode] = useState<'OP' | 'REELS' | 'DESIGNERS'>(initialMode);
   const [isCardsView, setIsCardsView] = useState(false);
 
-  // Re-apply default_mode whenever profile loads/changes (handles async profile load)
+  // Persist active tab and mode
+  useEffect(() => {
+    try {
+      if (activeGid) localStorage.setItem('last_active_tab_gid', activeGid);
+      if (activeLabel) localStorage.setItem('last_active_tab_label', activeLabel);
+      if (appMode) localStorage.setItem('last_active_app_mode', appMode);
+    } catch {}
+  }, [activeGid, activeLabel, appMode]);
+
+  // Re-apply default_mode only if no previous tab was saved
   useEffect(() => {
     if (!profile) return;
-    const mode = getInitialMode();
-    setAppMode(mode);
-    setActiveGid(getInitialGid(mode));
-    setActiveLabel(getInitialLabel(mode));
-  }, [profile?.id]); // only run when user changes (login/logout)
+    try {
+      const hasSavedTab = localStorage.getItem('last_active_tab_gid');
+      if (!hasSavedTab) {
+        const mode = getInitialMode();
+        setAppMode(mode);
+        setActiveGid(getInitialGid(mode));
+        setActiveLabel(getInitialLabel(mode));
+      }
+    } catch {}
+  }, [profile?.id]);
   const isUsersPage = activeGid === '__users__';
 
   const isHome = activeGid === 'home';

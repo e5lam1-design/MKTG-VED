@@ -11,6 +11,9 @@ import {
   XCircle,
   AlertCircle,
   ChevronRight,
+  ChevronLeft,
+  ChevronsRight,
+  ChevronsLeft,
   ChevronDown,
   Clock,
   BarChart3,
@@ -59,6 +62,7 @@ import { DesignAnalytics } from './components/DesignAnalytics';
 import { DesignersTeamManagement } from './components/DesignersTeamManagement';
 import { Op27View, getTargetStage26 } from './components/Op27View';
 import { PageAnnouncementBar } from './components/PageAnnouncementBar';
+import { GlobalAnnouncementBar } from './components/GlobalAnnouncementBar';
 import { HomeView } from './components/HomeView';
 import { FeedbackModal } from './components/FeedbackModal';
 import { SystemGuideModal } from './components/SystemGuideModal';
@@ -543,6 +547,7 @@ const InlineCombobox = ({ value, onChange, options, placeholder }: any) => {
   return (
     <div className={`relative w-full min-w-[100px] ${isOpen ? 'z-[500]' : 'z-10'}`} ref={containerRef}>
       <button
+        type="button"
         onClick={toggleOpen}
         className={`w-full flex items-center justify-between gap-2 text-[10px] font-black uppercase tracking-wider focus:outline-none cursor-pointer transition-all rounded-full px-3.5 py-1.5 shadow-md border ${chipColors.bg} ${chipColors.text} ${chipColors.border} hover:brightness-125 hover:scale-[1.02]`}
       >
@@ -562,6 +567,7 @@ const InlineCombobox = ({ value, onChange, options, placeholder }: any) => {
         <div className={`absolute ${openUpward ? 'bottom-full mb-2' : 'top-full mt-2'} w-full min-w-[180px] bg-[#0a0e16]/98 border border-white/15 rounded-2xl shadow-[0_15px_50px_rgba(0,0,0,0.8)] py-2 z-[600] scrollbar-hide backdrop-blur-2xl max-h-64 overflow-y-auto left-1/2 -translate-x-1/2 animate-fadeIn flex flex-col justify-between`}>
           <div className="flex-1 overflow-y-auto">
             <button
+              type="button"
               onClick={() => { onChange(''); setIsOpen(false); }}
               className={`w-full text-right px-4 py-1.5 text-[10px] font-bold block transition-all text-muted hover:bg-white/5 hover:text-white ${!value || value === 'غير محدد' ? 'text-primary bg-primary/5 font-black' : ''}`}
             >
@@ -572,6 +578,7 @@ const InlineCombobox = ({ value, onChange, options, placeholder }: any) => {
               return (
                 <button
                   key={o}
+                  type="button"
                   onClick={() => { onChange(o); setIsOpen(false); }}
                   className={`w-full flex items-center justify-center px-3 py-1.5 transition-all hover:bg-white/5 ${value === o ? 'bg-primary/5 border-r-2 border-primary' : ''}`}
                 >
@@ -596,15 +603,20 @@ const InlineCombobox = ({ value, onChange, options, placeholder }: any) => {
                 value={inputValue}
                 onChange={e => setInputValue(e.target.value)}
                 onKeyDown={e => {
-                  if (e.key === 'Enter' && inputValue.trim()) {
-                    onChange(inputValue.trim());
-                    setIsOpen(false);
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    if (inputValue.trim()) {
+                      onChange(inputValue.trim());
+                      setIsOpen(false);
+                    }
                   }
                 }}
                 className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-[10px] font-bold text-white outline-none focus:border-primary transition-all arabic-text"
              />
              {inputValue.trim() && !filteredOptions.includes(inputValue.trim()) && (
                <button
+                 type="button"
                  onClick={() => { onChange(inputValue.trim()); setIsOpen(false); }}
                  className="w-full text-center py-2 text-[10px] font-black tracking-wider transition-all hover:bg-primary/20 text-primary bg-primary/10 mt-2 rounded-lg border border-primary/20 cursor-pointer"
                >
@@ -658,6 +670,7 @@ const CustomSelect = ({ value, onChange, options, placeholder, isColumn = false 
   return (
     <div className={`relative ${isOpen ? 'z-[500]' : 'z-10'}`} ref={containerRef}>
       <button
+        type="button"
         onClick={toggleOpen}
         className={`flex items-center gap-2 text-[10px] font-black uppercase tracking-wider focus:outline-none cursor-pointer transition-all ${
           isColumn 
@@ -684,6 +697,12 @@ const CustomSelect = ({ value, onChange, options, placeholder, isColumn = false 
                 placeholder="بحث..."
                 value={searchFilter}
                 onChange={e => setSearchFilter(e.target.value)}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    e.stopPropagation();
+                  }
+                }}
                 className="w-full bg-white/5 border border-white/10 rounded-lg px-2.5 py-1 text-[10px] font-bold text-white outline-none focus:border-primary transition-all arabic-text"
                 autoFocus
               />
@@ -691,6 +710,7 @@ const CustomSelect = ({ value, onChange, options, placeholder, isColumn = false 
 
             <div className="overflow-y-auto scrollbar-thin max-h-48 pt-1">
               <button
+                type="button"
                 onClick={() => { onChange('All'); setIsOpen(false); }}
                 className={`w-full text-right px-4 py-1.5 text-[10px] font-bold block transition-all text-muted hover:bg-white/5 hover:text-white ${value === 'All' ? 'text-primary bg-primary/5 font-black border-r-2 border-primary' : ''}`}
               >
@@ -701,6 +721,7 @@ const CustomSelect = ({ value, onChange, options, placeholder, isColumn = false 
                 return (
                   <button
                     key={o}
+                    type="button"
                     onClick={() => { onChange(o); setIsOpen(false); }}
                     className={`w-full flex items-center justify-center px-3 py-1.5 transition-all hover:bg-white/5 ${value === o ? 'bg-primary/5 border-r-2 border-primary' : ''}`}
                   >
@@ -4221,22 +4242,61 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
 
   const tableScrollRef = useRef<HTMLDivElement>(null);
   const topScrollRef = useRef<HTMLDivElement>(null);
+  const topScrollInnerRef = useRef<HTMLDivElement>(null);
+  const isSyncingScroll = useRef(false);
+
+  const updateTopScrollWidth = useCallback(() => {
+    if (topScrollInnerRef.current && tableScrollRef.current) {
+      const scrollWidth = tableScrollRef.current.scrollWidth;
+      if (scrollWidth > 0) {
+        topScrollInnerRef.current.style.width = `${scrollWidth}px`;
+      }
+    }
+  }, []);
 
   const syncScrollFromTop = () => {
+    if (isSyncingScroll.current) return;
     if (tableScrollRef.current && topScrollRef.current) {
+      isSyncingScroll.current = true;
       tableScrollRef.current.scrollLeft = topScrollRef.current.scrollLeft;
+      requestAnimationFrame(() => {
+        isSyncingScroll.current = false;
+      });
     }
   };
 
   const syncScrollFromTable = () => {
+    if (isSyncingScroll.current) return;
     if (topScrollRef.current && tableScrollRef.current) {
+      if (topScrollInnerRef.current) {
+        const sw = tableScrollRef.current.scrollWidth;
+        if (sw > 0 && topScrollInnerRef.current.style.width !== `${sw}px`) {
+          topScrollInnerRef.current.style.width = `${sw}px`;
+        }
+      }
+      isSyncingScroll.current = true;
       topScrollRef.current.scrollLeft = tableScrollRef.current.scrollLeft;
+      requestAnimationFrame(() => {
+        isSyncingScroll.current = false;
+      });
     }
   };
 
   const handleScrollHorizontal = (delta: number) => {
     if (tableScrollRef.current) {
       tableScrollRef.current.scrollBy({ left: delta, behavior: 'smooth' });
+    }
+  };
+
+  const handleScrollToStart = () => {
+    if (tableScrollRef.current) {
+      tableScrollRef.current.scrollTo({ left: 0, behavior: 'smooth' });
+    }
+  };
+
+  const handleScrollToEnd = () => {
+    if (tableScrollRef.current) {
+      tableScrollRef.current.scrollTo({ left: tableScrollRef.current.scrollWidth, behavior: 'smooth' });
     }
   };
 
@@ -5339,6 +5399,29 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
     });
   }, [liveData, youtubeItems, tagmeTransfers, localEntries, activeGid, isOperations, isTagme3at, isStageTab, isReelsTableTab, stageDbRows, tagmeDbRows, reelsDbRows, isDemo, assignedEditors, editorNotes, marketingNotes, assignedOpSheets, assignedBranches, assignedDates, assignedWeeks, assignedBunnyLinks, assignedThumbnailLinks, assignedTimes, assignedYoutubeLinks, uploadedStatuses]);
 
+  // Keep top horizontal scrollbar's inner track width dynamically matched to the table
+  useEffect(() => {
+    const el = tableScrollRef.current;
+    if (!el) return;
+
+    updateTopScrollWidth();
+
+    const ro = new ResizeObserver(() => {
+      updateTopScrollWidth();
+    });
+
+    ro.observe(el);
+
+    const tableEl = el.querySelector('table');
+    if (tableEl) {
+      ro.observe(tableEl);
+    }
+
+    return () => {
+      ro.disconnect();
+    };
+  }, [activeGid, updateTopScrollWidth]);
+
   const handleUpdateWeek = (itemKey: string, val: string) => {
     setAssignedWeeks(prev => {
       const updated = { ...prev, [itemKey]: val };
@@ -6005,7 +6088,8 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
     scriptName: '',
     scriptLink: '',
     type: 'حواري',
-    format: 'REEL'
+    format: 'REEL',
+    driveRaw: ''
   });
 
   const generatedCode = useMemo(() => {
@@ -6203,6 +6287,31 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
 
     // For Shooting / reels / Cuts sheets
     if (['1436746012', '1939073164', '798246690', '0'].includes(activeGid)) {
+      if (activeGid !== '0' && (!shootingAddForm.teacher || !shootingAddForm.teacher.trim())) {
+        toast.error("يرجى اختيار أو تحديد اسم المدرس أولاً");
+        return;
+      }
+
+      if (!shootingAddForm.extraName || !shootingAddForm.extraName.trim()) {
+        toast.error("يرجى اختيار أو كتابة الاسم الإضافي أولاً");
+        return;
+      }
+
+      if (!shootingAddForm.type || !shootingAddForm.type.trim()) {
+        toast.error("يرجى تحديد النوع (Type)");
+        return;
+      }
+
+      if (!shootingAddForm.format || !shootingAddForm.format.trim()) {
+        toast.error("يرجى تحديد المقاس (Format)");
+        return;
+      }
+
+      if (shootingAddForm.branch?.toLowerCase() === 'desouk' && (!shootingAddForm.driveRaw || !shootingAddForm.driveRaw.trim())) {
+        toast.error("يرجى إدخال رابط الدرايف الخام (Drive Link Raw) لفرع Desouk إجبارياً ⚠️");
+        return;
+      }
+
       if (!shootingAddForm.scriptLink || !shootingAddForm.scriptLink.trim()) {
         toast.error("يرجى إدخال رابط السكريبت");
         return;
@@ -6307,7 +6416,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
           by: '',
           storage: '',
           notes: '',
-          driveRaw: '',
+          driveRaw: shootingAddForm.driveRaw?.trim() || '',
           editorCol: '',
           done: false,
           driveFinal: '',
@@ -6333,7 +6442,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
               by: '',
               storage: '',
               notes: '',
-              drive_raw: '',
+              drive_raw: newShooting.driveRaw,
               editor_col: '',
               done: false,
               drive_final: '',
@@ -6383,7 +6492,8 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
       setShootingAddForm(prev => ({
         ...prev,
         scriptName: '',
-        scriptLink: ''
+        scriptLink: '',
+        driveRaw: ''
       }));
       return;
     }
@@ -8758,7 +8868,16 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
                   </button>
                 </div>
 
-                <form onSubmit={handleAddSubmit} className="space-y-4">
+                <form 
+                  onSubmit={handleAddSubmit} 
+                  onKeyDown={e => {
+                    // Prevent accidental premature submit while typing
+                    if (e.key === 'Enter' && (e.target as HTMLElement)?.tagName === 'INPUT') {
+                      e.preventDefault();
+                    }
+                  }}
+                  className="space-y-4"
+                >
                   {['1436746012', '1939073164', '798246690', '0'].includes(activeGid) ? (
                     <>
                       <div className="grid grid-cols-2 gap-4">
@@ -8900,6 +9019,31 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
                           />
                         </div>
                       </div>
+
+                      {/* Drive Link (Raw) - REQUIRED ONLY when branch === 'Desouk' */}
+                      {shootingAddForm.branch?.toLowerCase() === 'desouk' && (
+                        <div className="p-4 bg-sky-500/10 border border-sky-500/30 rounded-2xl space-y-2 animate-fadeIn">
+                          <div className="flex items-center justify-between">
+                            <label className="block text-xs font-black text-sky-300 arabic-text flex items-center gap-2">
+                              <span>📁 رابط الدرايف الخام — Drive Link (Raw)</span>
+                              <span className="text-rose-400 font-black text-[11px] bg-rose-500/10 px-2 py-0.5 rounded-md border border-rose-500/20">* إجباري لفرع Desouk</span>
+                            </label>
+                            <span className="text-[10px] bg-sky-500/20 text-sky-200 px-2.5 py-0.5 rounded-full border border-sky-500/30 font-bold">
+                              Desouk Mandatory
+                            </span>
+                          </div>
+                          <input
+                            type="url"
+                            required
+                            placeholder="https://drive.google.com/drive/folders/..."
+                            value={shootingAddForm.driveRaw || ''}
+                            onChange={e => setShootingAddForm({...shootingAddForm, driveRaw: e.target.value})}
+                            className="w-full bg-[#070b13] border border-sky-500/50 focus:border-sky-400 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-sky-500/30 transition-all font-bold text-sm"
+                            dir="ltr"
+                            autoFocus
+                          />
+                        </div>
+                      )}
 
                       <div className="p-4 bg-primary/10 border border-primary/20 rounded-xl mt-4">
                         <label className="block text-xs font-bold text-primary mb-1.5 arabic-text">الكود المتولد تلقائياً (Code)</label>
@@ -9061,22 +9205,52 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
                     </>
                   )}
 
-                  <div className="pt-4 flex justify-end gap-3">
-                    <button
-                      type="button"
-                      onClick={() => setShowAddModal(false)}
-                      className="px-6 py-3 rounded-xl bg-white/5 hover:bg-white/10 text-muted hover:text-white transition-colors font-bold arabic-text text-xs cursor-pointer"
-                    >
-                      إلغاء
-                    </button>
-                    <button
-                      type="submit"
-                      disabled={loading || (activeGid === '1436746012' && !generatedCode)}
-                      className="px-8 py-3 rounded-xl bg-primary hover:bg-primary/90 text-white font-bold arabic-text text-xs shadow-lg shadow-primary/30 transition-all hover:scale-105 active:scale-95 cursor-pointer flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                    >
-                      <span>حفظ وإضافة 🚀</span>
-                    </button>
-                  </div>
+                  {(() => {
+                    const isShootingModal = ['1436746012', '1939073164', '798246690', '0'].includes(activeGid);
+                    const isDesouk = shootingAddForm.branch?.toLowerCase() === 'desouk';
+                    const isShootingIncomplete = isShootingModal && (
+                      !shootingAddForm.branch ||
+                      !shootingAddForm.year ||
+                      (activeGid !== '0' && !shootingAddForm.teacher?.trim()) ||
+                      !shootingAddForm.extraName?.trim() ||
+                      !shootingAddForm.type?.trim() ||
+                      !shootingAddForm.format?.trim() ||
+                      !shootingAddForm.scriptName?.trim() ||
+                      !shootingAddForm.scriptLink?.trim() ||
+                      (isDesouk && !shootingAddForm.driveRaw?.trim()) ||
+                      !generatedCode
+                    );
+                    const isTagmeIncomplete = isTagme3at && !addForm.name?.trim();
+                    const isDisabled = loading || isShootingIncomplete || isTagmeIncomplete;
+
+                    return (
+                      <div className="w-full space-y-3 pt-2">
+                        {isShootingModal && isShootingIncomplete && (
+                          <div className="text-[11px] font-bold text-amber-300 bg-amber-500/10 border border-amber-500/20 rounded-xl py-2 px-3 arabic-text flex items-center justify-between gap-2">
+                            <span>⚠️ يرجى استكمال كافة البيانات (اسم ورابط السكريبت، المدرس، الاسم الإضافي{isDesouk ? '، ورابط الدرايف' : ''})</span>
+                            <span className="text-[10px] text-muted hidden sm:inline">لن يتم الحفظ تلقائياً أثناء كتابتك</span>
+                          </div>
+                        )}
+
+                        <div className="flex justify-end gap-3">
+                          <button
+                            type="button"
+                            onClick={() => setShowAddModal(false)}
+                            className="px-6 py-3 rounded-xl bg-white/5 hover:bg-white/10 text-muted hover:text-white transition-colors font-bold arabic-text text-xs cursor-pointer"
+                          >
+                            إلغاء
+                          </button>
+                          <button
+                            type="submit"
+                            disabled={isDisabled}
+                            className="px-8 py-3 rounded-xl bg-primary hover:bg-primary/90 text-white font-bold arabic-text text-xs shadow-lg shadow-primary/30 transition-all hover:scale-105 active:scale-95 cursor-pointer flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
+                          >
+                            <span>حفظ وإضافة 🚀</span>
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </form>
               </motion.div>
             </div>
@@ -9133,6 +9307,12 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
               })}
             </div>
           )}
+
+          {/* Universal / Global Announcement Bar for All Pages & Views */}
+          <GlobalAnnouncementBar
+            userRole={profile?.role}
+            userName={profile?.name || profile?.email}
+          />
 
           {/* Filters Bar */}
           {!isOp27 && !isHome && (
@@ -9818,32 +9998,64 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
             </div>
           ) : (
             <FilterContext.Provider value={filterContextValue}>
-              {/* Top Horizontal Scrollbar & Quick Controls for wide tables (especially Shooting & Reels) */}
-              <div className="flex items-center gap-2 mb-2 px-1 bg-white/[0.02] border border-white/10 rounded-2xl p-1.5 shadow-sm">
-                <button
-                  type="button"
-                  onClick={() => handleScrollHorizontal(400)}
-                  className="px-3 py-1 text-xs font-bold rounded-xl bg-white/5 hover:bg-white/15 border border-white/10 text-muted hover:text-white flex items-center gap-1.5 transition-all shrink-0 cursor-pointer active:scale-95 shadow-sm"
-                  title="تمرير لليمين"
-                >
-                  ◀️ لليمين
-                </button>
+              {/* Top Horizontal Scrollbar & Quick Controls - STICKY when scrolling vertically */}
+              <div className="sticky top-2 z-40 flex items-center gap-2 mb-3 px-3 py-2 bg-[#070b14]/95 backdrop-blur-2xl border border-white/15 rounded-2xl shadow-[0_10px_35px_rgba(0,0,0,0.85)] ring-1 ring-white/5 select-none transition-all">
+                {/* Left controls: Scroll Left / Jump to Start */}
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <button
+                    type="button"
+                    onClick={handleScrollToStart}
+                    className="px-2.5 py-1.5 text-[11px] font-bold rounded-xl bg-white/5 hover:bg-white/15 border border-white/10 text-muted hover:text-white flex items-center gap-1 transition-all cursor-pointer active:scale-95 shadow-sm group"
+                    title="الانتقال لأول الجدول (أقصى اليسار)"
+                  >
+                    <ChevronsLeft size={13} className="text-muted group-hover:text-white transition-colors" />
+                    <span>البداية</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleScrollHorizontal(-350)}
+                    className="px-3 py-1.5 text-xs font-bold rounded-xl bg-white/5 hover:bg-white/15 border border-white/10 text-muted hover:text-white flex items-center gap-1.5 transition-all cursor-pointer active:scale-95 shadow-sm group"
+                    title="تمرير خطوة لليسار"
+                  >
+                    <ChevronLeft size={14} className="text-muted group-hover:text-white transition-colors" />
+                    <span>لليسار</span>
+                  </button>
+                </div>
+
+                {/* Scrollbar Track */}
                 <div 
                   ref={topScrollRef} 
                   onScroll={syncScrollFromTop}
-                  className="flex-1 overflow-x-auto scrollbar-thin rounded-xl"
+                  className="flex-1 overflow-x-auto scrollbar-thin rounded-xl scroll-smooth"
                   style={{ height: '14px' }}
                 >
-                  <div style={{ width: isReelsTableTab ? '2600px' : isOperations ? '1600px' : '1400px', height: '1px' }} />
+                  <div 
+                    ref={topScrollInnerRef} 
+                    style={{ width: isReelsTableTab ? '3200px' : isOperations ? '1800px' : '1500px', height: '1px' }} 
+                  />
                 </div>
-                <button
-                  type="button"
-                  onClick={() => handleScrollHorizontal(-400)}
-                  className="px-3 py-1 text-xs font-bold rounded-xl bg-white/5 hover:bg-white/15 border border-white/10 text-muted hover:text-white flex items-center gap-1.5 transition-all shrink-0 cursor-pointer active:scale-95 shadow-sm"
-                  title="تمرير لليسار"
-                >
-                  لليسار ▶️
-                </button>
+
+                {/* Right controls: Scroll Right / Jump to End */}
+                <div className="flex items-center gap-1.5 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => handleScrollHorizontal(350)}
+                    className="px-3 py-1.5 text-xs font-bold rounded-xl bg-white/5 hover:bg-white/15 border border-white/10 text-muted hover:text-white flex items-center gap-1.5 transition-all cursor-pointer active:scale-95 shadow-sm group"
+                    title="تمرير خطوة لليمين"
+                  >
+                    <span>لليمين</span>
+                    <ChevronRight size={14} className="text-muted group-hover:text-white transition-colors" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleScrollToEnd}
+                    className="px-2.5 py-1.5 text-[11px] font-bold rounded-xl bg-white/5 hover:bg-white/15 border border-white/10 text-muted hover:text-white flex items-center gap-1 transition-all cursor-pointer active:scale-95 shadow-sm group"
+                    title="الانتقال لآخر الجدول (أقصى اليمين)"
+                  >
+                    <span>النهاية</span>
+                    <ChevronsRight size={13} className="text-muted group-hover:text-white transition-colors" />
+                  </button>
+                </div>
               </div>
 
               <div 

@@ -4,7 +4,7 @@
   "crons": [
     {
       "path": "/api/sync-op27",
-      "schedule": "*/15 * * * *"
+      "schedule": "0 5 * * *"
     }
   ],
   "rewrites": [

@@ -721,8 +721,21 @@ const CustomSelect = ({ value, onChange, options, placeholder, isColumn = false 
   );
 };
 
+// ─── Direct Supabase Database for Stage Sheets (stage_j4_26 -> stage_s3_26) ─────
+const STAGE_TABLE_MAP: Record<string, string> = {
+  '497207661': 'stage_j4_26',
+  '96752860': 'stage_j5_26',
+  '346788121': 'stage_j6_26',
+  '458352282': 'stage_m1_26',
+  '2113852114': 'stage_m2_26',
+  '2089699920': 'stage_m3_26',
+  '1640460225': 'stage_s1_26',
+  '595027661': 'stage_s2_26',
+  '286303232': 'stage_s3_26',
+};
+
 // ─── Sidebar Item ─────────────────────────────────────────────────────────────
-const SidebarItem = ({ icon: Icon, label, active, onClick, colorHex, colorful, isPinned, onTogglePin }: any) => {
+const SidebarItem = ({ icon: Icon, label, active, onClick, colorHex, colorful, isPinned, onTogglePin, badgeCount }: any) => {
   const cHex = colorHex || '#3b82f6';
 
   const bgStyle = colorful
@@ -755,6 +768,11 @@ const SidebarItem = ({ icon: Icon, label, active, onClick, colorHex, colorful, i
         <Icon size={20} />
       </div>
       <span className="font-bold text-sm tracking-tight truncate text-left text-white flex-1">{label}</span>
+      {typeof badgeCount === 'number' && badgeCount > 0 && (
+        <span className="px-2 py-0.5 min-w-[22px] h-[22px] rounded-full bg-rose-500 text-white text-[11px] font-mono font-black flex items-center justify-center shadow-md shadow-rose-500/40 shrink-0">
+          {badgeCount}
+        </span>
+      )}
       {onTogglePin && (
         <span
           onClick={(e) => {
@@ -777,7 +795,7 @@ const SidebarItem = ({ icon: Icon, label, active, onClick, colorHex, colorful, i
 };
 
 // ─── Collapsible Sidebar Group ────────────────────────────────────────────────
-const SidebarGroup = ({ title, iconEmoji, colorHex, stagesList, activeGid, onSelectStage, pinnedTabs, togglePinTab, colorful, profile }: any) => {
+const SidebarGroup = ({ title, iconEmoji, colorHex, stagesList, activeGid, onSelectStage, pinnedTabs, togglePinTab, colorful, profile, stageUncompletedCounts }: any) => {
   const visibleStages = stagesList.filter((stage: any) =>
     !profile?.role || PERMISSIONS.canViewTab(profile.role, stage.label, profile.allowed_tabs || [])
   );
@@ -828,6 +846,7 @@ const SidebarGroup = ({ title, iconEmoji, colorHex, stagesList, activeGid, onSel
                 colorHex={stage.colorHex}
                 colorful={colorful}
                 active={activeGid === stage.gid}
+                badgeCount={STAGE_TABLE_MAP[stage.gid] ? stageUncompletedCounts?.[stage.gid] : undefined}
                 isPinned={pinnedTabs.includes(stage.gid)}
                 onTogglePin={() => togglePinTab(stage.gid)}
                 onClick={() => onSelectStage(stage.gid, stage.label)}
@@ -1820,6 +1839,7 @@ const StageRow = ({ item, index, tagmeTransfers, onTagmeToggle, activeLabel, isG
             if (onToggleDelivered) onToggleDelivered(rowKey, nextVal);
           }}
           disabled={!(profile?.role && PERMISSIONS.canAddEntry(profile.role))}
+          title={received ? "Uploaded ✓" : "Upload"}
           className={`w-10 h-10 rounded-xl flex items-center justify-center mx-auto transition-all duration-300 ${received ? 'bg-blue-500 text-white shadow-lg shadow-blue-500/20' : 'bg-white/5 text-muted hover:bg-blue-500/10 hover:text-blue-400'} ${!(profile?.role && PERMISSIONS.canAddEntry(profile.role)) && 'opacity-50 cursor-not-allowed'}`}
         >
           <CheckCircle2 size={18} />
@@ -4509,20 +4529,9 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
   };
 
   // ─── Direct Supabase Database for Stage Sheets (stage_j4_26 -> stage_s3_26) ─────
-  const STAGE_TABLE_MAP: Record<string, string> = {
-    '497207661': 'stage_j4_26',
-    '96752860': 'stage_j5_26',
-    '346788121': 'stage_j6_26',
-    '458352282': 'stage_m1_26',
-    '2113852114': 'stage_m2_26',
-    '2089699920': 'stage_m3_26',
-    '1640460225': 'stage_s1_26',
-    '595027661': 'stage_s2_26',
-    '286303232': 'stage_s3_26',
-  };
-
   const [stageDbRows, setStageDbRows] = useState<any[]>([]);
   const [isStageDbLoading, setIsStageDbLoading] = useState(false);
+  const [stageUncompletedCounts, setStageUncompletedCounts] = useState<Record<string, number>>({});
 
   const stageTable = STAGE_TABLE_MAP[activeGid];
   const isStageTab = !!stageTable;
@@ -4571,6 +4580,73 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
       if (!isSilent) setIsStageDbLoading(false);
     }
   };
+
+  const fetchStageUncompletedCounts = useCallback(async () => {
+    if (isDemo) return;
+    try {
+      const entries = Object.entries(STAGE_TABLE_MAP);
+      const results = await Promise.all(
+        entries.map(async ([gid, tbl]) => {
+          try {
+            const { data, error } = await supabase
+              .from(tbl)
+              .select('unique_key, is_tagme3a, delivered');
+            if (error || !data) return [gid, 0] as const;
+            const count = data.filter((r: any) => r.is_tagme3a !== true && r.delivered !== true).length;
+            return [gid, count] as const;
+          } catch {
+            return [gid, 0] as const;
+          }
+        })
+      );
+      const map: Record<string, number> = {};
+      results.forEach(([gid, count]) => {
+        map[gid] = count;
+      });
+      setStageUncompletedCounts(prev => ({ ...prev, ...map }));
+    } catch (err) {
+      console.error('Error fetching stage uncompleted counts:', err);
+    }
+  }, [isDemo]);
+
+  // Keep uncompleted count for active stage in sync with stageDbRows immediately
+  useEffect(() => {
+    if (isStageTab && activeGid && STAGE_TABLE_MAP[activeGid]) {
+      const count = stageDbRows.filter(r => !r.isTagme3a && !r.delivered).length;
+      setStageUncompletedCounts(prev => {
+        if (prev[activeGid] === count) return prev;
+        return { ...prev, [activeGid]: count };
+      });
+    }
+  }, [stageDbRows, isStageTab, activeGid]);
+
+  // Periodic polling & Realtime subscription across all stage tables for badge counts
+  useEffect(() => {
+    if (isDemo) return;
+    fetchStageUncompletedCounts();
+
+    const interval = setInterval(() => {
+      fetchStageUncompletedCounts();
+    }, 25000);
+
+    const tables = Object.values(STAGE_TABLE_MAP);
+    let channel = supabase.channel('stages_uncompleted_realtime');
+    tables.forEach(tbl => {
+      channel = channel.on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: tbl },
+        () => {
+          fetchStageUncompletedCounts();
+        }
+      );
+    });
+    channel.subscribe();
+
+    return () => {
+      clearInterval(interval);
+      supabase.removeChannel(channel);
+    };
+  }, [isDemo, fetchStageUncompletedCounts]);
 
   useEffect(() => {
     if (isStageTab) {
@@ -8007,7 +8083,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
         <th className="px-3 py-4 text-center th-style"><ColFilter colKey="branch" label="الفرع" /></th>
         <th className="px-3 py-4 text-center th-style"><ColFilter colKey="opSheet" label="OP Sheet" /></th>
         <th className="px-6 py-4 text-center th-style">تجميعه ✓</th>
-        <th className="px-6 py-4 text-center th-style">اتسلمت ✓</th>
+        <th className="px-6 py-4 text-center th-style">Uploaded ✓</th>
         <th className="px-4 py-4 text-center th-style text-purple-400 font-bold">thumbnail LINK</th>
         <th className="px-4 py-4 text-center th-style text-purple-400 font-bold">time</th>
         <th className="px-4 py-4 text-center th-style text-purple-400 font-bold">لينك اليوتيوب</th>
@@ -8317,6 +8393,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
                 colorHex={stage.colorHex}
                 colorful={colorfulTabs}
                 active={activeGid === stage.gid}
+                badgeCount={STAGE_TABLE_MAP[stage.gid] ? stageUncompletedCounts[stage.gid] : undefined}
                 isPinned={pinnedTabs.includes(stage.gid)}
                 onTogglePin={() => togglePinTab(stage.gid)}
                 onClick={() => {
@@ -8983,6 +9060,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
                 const stage = allStagesList.find(s => s.gid === gid);
                 if (!stage) return null;
                 const isActive = activeGid === gid;
+                const pinBadge = STAGE_TABLE_MAP[gid] ? stageUncompletedCounts[gid] : undefined;
                 return (
                   <button
                     key={gid}
@@ -8998,6 +9076,11 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
                   >
                     <span className="w-2 h-2 rounded-full" style={{ backgroundColor: stage.colorHex || '#8b5cf6' }} />
                     <span>{stage.label}</span>
+                    {typeof pinBadge === 'number' && pinBadge > 0 && (
+                      <span className="px-1.5 py-0.2 min-w-[18px] h-4 rounded-full bg-rose-500 text-white text-[10px] font-mono font-black flex items-center justify-center shadow-sm">
+                        {pinBadge}
+                      </span>
+                    )}
                     <span
                       onClick={(e) => {
                         e.stopPropagation();

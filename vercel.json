@@ -1,6 +1,12 @@
 {
   "name": "marketing-dashboard-v1",
   "framework": "vite",
+  "crons": [
+    {
+      "path": "/api/sync-op27",
+      "schedule": "*/15 * * * *"
+    }
+  ],
   "rewrites": [
     { "source": "/api/reels/update", "destination": "/api/reels-update" },
     { "source": "/api/tagme3at/:key", "destination": "/api/tagme3at?key=:key" },

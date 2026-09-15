@@ -4648,6 +4648,17 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
     };
   }, [isDemo, fetchStageUncompletedCounts]);
 
+  // Background periodic auto-refresh for OP 26/27 tasks every 15 minutes
+  useEffect(() => {
+    if (isDemo) return;
+    const FIFTEEN_MINS = 15 * 60 * 1000;
+    const op27Interval = setInterval(() => {
+      fetch('/api/sync-op27', { method: 'POST' }).catch(() => {});
+    }, FIFTEEN_MINS);
+
+    return () => clearInterval(op27Interval);
+  }, [isDemo]);
+
   useEffect(() => {
     if (isStageTab) {
       fetchStageDb(activeGid);

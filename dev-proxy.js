@@ -2451,7 +2451,7 @@ app.all('/api/sync-op27', async (req, res) => {
           field: 'tasks',
           value: JSON.stringify(formattedTasks),
           updated_at: nowIso
-        }, { onConflict: 'key,field' });
+        }, { onConflict: 'key' });
         console.log('[Dev Proxy] Persisted op27 tasks to Supabase dashboard_data.');
       } catch (dbErr) {
         console.warn('[Dev Proxy] Supabase save error:', dbErr.message);

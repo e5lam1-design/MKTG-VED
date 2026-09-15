@@ -238,11 +238,34 @@ export const Op27View: React.FC<Op27ViewProps> = ({
   });
   const [syncFeedback, setSyncFeedback] = useState<string | null>(null);
 
-  // 1. Fetch latest cloud-synced tasks from Supabase on mount
+  // 1. Fetch latest cloud-synced tasks on mount
   useEffect(() => {
+    const FIFTEEN_MINS = 15 * 60 * 1000;
+
     const fetchCloudTasks = async () => {
       try {
-        const { data, error } = await supabase
+        // Fast endpoint using service role to bypass RLS
+        const res = await fetch('/api/sync-op27?action=latest');
+        if (res.ok) {
+          const data = await res.json();
+          if (data && data.success && Array.isArray(data.tasks) && data.tasks.length > 0) {
+            setTasks(prev => (data.tasks.length >= prev.length ? data.tasks : prev));
+            if (data.syncedAt) {
+              const dateObj = new Date(data.syncedAt);
+              const timeStr = dateObj.toLocaleDateString('ar-EG', { month: 'numeric', day: 'numeric' }) + ' ' + dateObj.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' });
+              setLastSyncTime(timeStr);
+              try { localStorage.setItem('op27_last_synced', timeStr); } catch {}
+            }
+            return;
+          }
+        }
+      } catch (e) {
+        console.warn('Failed to load latest cached op27 tasks:', e);
+      }
+
+      // Fallback to direct supabase if needed
+      try {
+        const { data } = await supabase
           .from('dashboard_data')
           .select('value, updated_at')
           .eq('key', 'op27_tasks_latest')
@@ -251,23 +274,26 @@ export const Op27View: React.FC<Op27ViewProps> = ({
         if (data && data.value) {
           const cloudTasks = typeof data.value === 'string' ? JSON.parse(data.value) : data.value;
           if (Array.isArray(cloudTasks) && cloudTasks.length > 0) {
-            setTasks(cloudTasks);
-            try {
-              localStorage.setItem('op27_tasks_live', JSON.stringify(cloudTasks));
-              if (data.updated_at) {
-                const dateObj = new Date(data.updated_at);
-                const timeStr = dateObj.toLocaleDateString('ar-EG', { month: 'numeric', day: 'numeric' }) + ' ' + dateObj.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' });
-                setLastSyncTime(timeStr);
-                localStorage.setItem('op27_last_synced', timeStr);
-              }
-            } catch {}
+            setTasks(prev => (cloudTasks.length >= prev.length ? cloudTasks : prev));
+            if (data.updated_at) {
+              const dateObj = new Date(data.updated_at);
+              const timeStr = dateObj.toLocaleDateString('ar-EG', { month: 'numeric', day: 'numeric' }) + ' ' + dateObj.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' });
+              setLastSyncTime(timeStr);
+              try { localStorage.setItem('op27_last_synced', timeStr); } catch {}
+            }
           }
         }
       } catch (e) {
-        console.warn('Failed to load cloud op27 tasks:', e);
+        console.warn('Failed to load cloud op27 tasks fallback:', e);
       }
     };
     fetchCloudTasks();
+
+    // Check if last sync was >= 15 minutes ago, if so sync immediately in background
+    const lastSyncMs = parseInt(localStorage.getItem('op27_last_sync_timestamp') || '0', 10);
+    if (!lastSyncMs || Date.now() - lastSyncMs >= FIFTEEN_MINS) {
+      handleSyncPlatform(true);
+    }
 
     // 2. Realtime WebSocket subscription: updates all connected clients instantly when tasks sync
     const realtimeChannel = supabase
@@ -280,7 +306,7 @@ export const Op27View: React.FC<Op27ViewProps> = ({
             try {
               const cloudTasks = typeof payload.new.value === 'string' ? JSON.parse(payload.new.value) : payload.new.value;
               if (Array.isArray(cloudTasks) && cloudTasks.length > 0) {
-                setTasks(cloudTasks);
+                setTasks(prev => (cloudTasks.length >= prev.length ? cloudTasks : prev));
                 try {
                   localStorage.setItem('op27_tasks_live', JSON.stringify(cloudTasks));
                   if (payload.new.updated_at) {
@@ -299,16 +325,28 @@ export const Op27View: React.FC<Op27ViewProps> = ({
       )
       .subscribe();
 
-    // 3. Periodic background auto-refresh every 5 minutes (300,000 ms)
+    // 3. Periodic background auto-refresh every 15 minutes (900,000 ms)
     const autoSyncInterval = setInterval(() => {
-      if (document.visibilityState === 'visible' && !isSyncing) {
-        handleSyncPlatform(true); // silent background sync
+      handleSyncPlatform(true); // silent background sync
+    }, FIFTEEN_MINS);
+
+    // 4. Auto-check when switching back to tab/window: if 15 minutes elapsed, refresh!
+    const handleVisibilityOrFocus = () => {
+      if (document.visibilityState === 'visible') {
+        const lastMs = parseInt(localStorage.getItem('op27_last_sync_timestamp') || '0', 10);
+        if (!lastMs || Date.now() - lastMs >= FIFTEEN_MINS) {
+          handleSyncPlatform(true);
+        }
       }
-    }, 300000);
+    };
+    document.addEventListener('visibilitychange', handleVisibilityOrFocus);
+    window.addEventListener('focus', handleVisibilityOrFocus);
 
     return () => {
       supabase.removeChannel(realtimeChannel);
       clearInterval(autoSyncInterval);
+      document.removeEventListener('visibilitychange', handleVisibilityOrFocus);
+      window.removeEventListener('focus', handleVisibilityOrFocus);
     };
   }, []);
 
@@ -367,13 +405,14 @@ export const Op27View: React.FC<Op27ViewProps> = ({
       }
 
       if (data.success && Array.isArray(data.tasks)) {
-        setTasks(data.tasks);
+        setTasks(prev => (data.tasks.length >= prev.length ? data.tasks : prev));
         const now = new Date();
         const nowStr = now.toLocaleDateString('ar-EG', { month: 'numeric', day: 'numeric' }) + ' ' + now.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' });
         setLastSyncTime(nowStr);
         try {
           localStorage.setItem('op27_tasks_live', JSON.stringify(data.tasks));
           localStorage.setItem('op27_last_synced', nowStr);
+          localStorage.setItem('op27_last_sync_timestamp', String(Date.now()));
         } catch {}
 
         // Guarantee direct Supabase persistence from client as well
@@ -383,7 +422,7 @@ export const Op27View: React.FC<Op27ViewProps> = ({
             field: 'tasks',
             value: JSON.stringify(data.tasks),
             updated_at: new Date().toISOString()
-          }, { onConflict: 'key,field' });
+          }, { onConflict: 'key' });
         } catch (dbErr) {
           console.warn('Supabase direct sync error:', dbErr);
         }
@@ -708,9 +747,9 @@ export const Op27View: React.FC<Op27ViewProps> = ({
                   <span className="text-[10px] text-blue-300 font-mono font-bold bg-blue-500/10 border border-blue-500/20 px-2.5 py-0.5 rounded-full shadow-sm">
                     ⏱️ آخر تحديث: {lastSyncTime}
                   </span>
-                  <span className="text-[9px] text-emerald-400 font-bold bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full flex items-center gap-1 shadow-sm" title="يتم جلب وحفظ أحدث المهام ومزامنتها سحابياً لجميع الأجهزة بشكل دوري">
+                  <span className="text-[9px] text-emerald-400 font-bold bg-emerald-500/10 border border-emerald-500/20 px-2 py-0.5 rounded-full flex items-center gap-1 shadow-sm" title="يتم جلب وحفظ أحدث المهام ومزامنتها تلقائياً كل 15 دقيقة">
                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
-                    مزامنة تلقائية نشطة 🟢
+                    تحديث تلقائي كل 15 دقيقة 🟢
                   </span>
                 </div>
               )}

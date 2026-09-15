@@ -119,7 +119,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           field: 'tasks',
           value: JSON.stringify(formattedTasks),
           updated_at: nowIso
-        }, { onConflict: 'key,field' });
+        }, { onConflict: 'key' });
       } catch (dbErr: any) {
         console.warn('Failed to upsert op27 tasks in Supabase dashboard_data:', dbErr.message);
       }

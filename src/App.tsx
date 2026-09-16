@@ -10,6 +10,7 @@ import {
   CheckCircle2,
   XCircle,
   AlertCircle,
+  X,
   ChevronRight,
   ChevronLeft,
   ChevronsRight,
@@ -545,7 +546,7 @@ const InlineCombobox = ({ value, onChange, options, placeholder }: any) => {
   const chipColors = getChipColor(value);
 
   return (
-    <div className={`relative w-full min-w-[100px] ${isOpen ? 'z-[500]' : 'z-10'}`} ref={containerRef}>
+    <div className={`relative w-full min-w-[100px] ${isOpen ? 'z-[999]' : 'z-10'}`} ref={containerRef}>
       <button
         type="button"
         onClick={toggleOpen}
@@ -564,7 +565,10 @@ const InlineCombobox = ({ value, onChange, options, placeholder }: any) => {
       </button>
       
       {isOpen && (
-        <div className={`absolute ${openUpward ? 'bottom-full mb-2' : 'top-full mt-2'} w-full min-w-[180px] bg-[#0a0e16]/98 border border-white/15 rounded-2xl shadow-[0_15px_50px_rgba(0,0,0,0.8)] py-2 z-[600] scrollbar-hide backdrop-blur-2xl max-h-64 overflow-y-auto left-1/2 -translate-x-1/2 animate-fadeIn flex flex-col justify-between`}>
+        <div 
+          style={{ backgroundColor: '#0c1222' }}
+          className={`absolute ${openUpward ? 'bottom-full mb-2' : 'top-full mt-2'} w-full min-w-[190px] bg-[#0c1222] border border-white/20 rounded-2xl shadow-[0_20px_60px_rgba(0,0,0,0.95)] py-2 z-[1000] scrollbar-hide max-h-64 overflow-y-auto left-1/2 -translate-x-1/2 animate-fadeIn flex flex-col justify-between`}
+        >
           <div className="flex-1 overflow-y-auto">
             <button
               type="button"
@@ -596,7 +600,10 @@ const InlineCombobox = ({ value, onChange, options, placeholder }: any) => {
             })}
           </div>
           
-          <div className="px-2 pt-2 mt-2 border-t border-white/10 sticky bottom-0 bg-[#0a0e16]/98 z-10 pb-1">
+          <div 
+            style={{ backgroundColor: '#0c1222' }}
+            className="px-2 pt-2 mt-2 border-t border-white/10 sticky bottom-0 bg-[#0c1222] z-10 pb-1"
+          >
              <input 
                 type="text" 
                 placeholder="+ ابحث أو ضف جديد..."
@@ -638,9 +645,13 @@ const CustomSelect = ({ value, onChange, options, placeholder, isColumn = false 
 
   const toggleOpen = () => {
     if (!isOpen && containerRef.current) {
-      const rect = containerRef.current.getBoundingClientRect();
-      const spaceBelow = window.innerHeight - rect.bottom;
-      setOpenUpward(spaceBelow < 280);
+      if (isColumn) {
+        setOpenUpward(false);
+      } else {
+        const rect = containerRef.current.getBoundingClientRect();
+        const spaceBelow = window.innerHeight - rect.bottom;
+        setOpenUpward(spaceBelow < 280);
+      }
     }
     setIsOpen(!isOpen);
   };
@@ -668,18 +679,32 @@ const CustomSelect = ({ value, onChange, options, placeholder, isColumn = false 
   const chipColors = getChipColor(value === 'All' ? '' : value);
 
   return (
-    <div className={`relative ${isOpen ? 'z-[500]' : 'z-10'}`} ref={containerRef}>
+    <div className={`relative ${isOpen ? 'z-[999]' : 'z-10'}`} ref={containerRef}>
       <button
         type="button"
         onClick={toggleOpen}
         className={`flex items-center gap-2 text-[10px] font-black uppercase tracking-wider focus:outline-none cursor-pointer transition-all ${
           isColumn 
-            ? `rounded-full px-3.5 py-1.5 min-w-[100px] justify-between shadow-md border ${chipColors.bg} ${chipColors.text} ${chipColors.border} hover:brightness-125 hover:scale-[1.02]` 
+            ? `rounded-full px-3 py-1.5 min-w-[90px] justify-between shadow-md border ${chipColors.bg} ${chipColors.text} ${chipColors.border} hover:brightness-125 hover:scale-[1.02]` 
             : 'bg-transparent border-none text-muted hover:text-white px-1'
         }`}
       >
-        <span className="truncate max-w-[100px]">{displayVal}</span>
-        <ChevronDown size={10} className={`transition-transform duration-300 shrink-0 ${isOpen ? 'rotate-180 opacity-100' : 'opacity-60'}`} />
+        <span className="truncate max-w-[90px]">{displayVal}</span>
+        {isColumn && value && value !== 'All' ? (
+          <span
+            onClick={(e) => {
+              e.stopPropagation();
+              onChange('All');
+              setIsOpen(false);
+            }}
+            className="w-4 h-4 rounded-full bg-white/20 hover:bg-rose-500 hover:text-white flex items-center justify-center transition-all cursor-pointer shrink-0 ml-1"
+            title="إلغاء الفلتر"
+          >
+            <X size={10} className="stroke-[3]" />
+          </span>
+        ) : (
+          <ChevronDown size={10} className={`transition-transform duration-300 shrink-0 ${isOpen ? 'rotate-180 opacity-100' : 'opacity-60'}`} />
+        )}
       </button>
       <AnimatePresence>
         {isOpen && (
@@ -688,10 +713,14 @@ const CustomSelect = ({ value, onChange, options, placeholder, isColumn = false 
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: openUpward ? 5 : -5, scale: 0.95 }}
             transition={{ duration: 0.15 }}
-            className={`absolute ${openUpward ? 'bottom-full mb-2' : 'top-full mt-2'} bg-[#0a0e16]/98 border border-white/15 rounded-2xl shadow-[0_15px_50px_rgba(0,0,0,0.8)] py-2 z-[600] backdrop-blur-2xl w-max min-w-[160px] max-w-[220px] max-h-64 flex flex-col left-1/2 -translate-x-1/2`}
+            style={{ backgroundColor: '#0c1222' }}
+            className={`absolute ${openUpward ? 'bottom-full mb-2' : 'top-full mt-2'} bg-[#0c1222] border border-white/20 rounded-2xl shadow-[0_20px_60px_rgba(0,0,0,0.95)] py-2 z-[999] backdrop-blur-2xl w-max min-w-[160px] max-w-[220px] max-h-64 flex flex-col left-1/2 -translate-x-1/2`}
           >
             {/* Search Input Box */}
-            <div className="px-2 pb-2 border-b border-white/10 sticky top-0 bg-[#0a0e16]/98 z-10">
+            <div 
+              style={{ backgroundColor: '#0c1222' }}
+              className="px-2 pb-2 border-b border-white/10 sticky top-0 bg-[#0c1222] z-10"
+            >
               <input
                 type="text"
                 placeholder="بحث..."
@@ -714,7 +743,7 @@ const CustomSelect = ({ value, onChange, options, placeholder, isColumn = false 
                 onClick={() => { onChange('All'); setIsOpen(false); }}
                 className={`w-full text-right px-4 py-1.5 text-[10px] font-bold block transition-all text-muted hover:bg-white/5 hover:text-white ${value === 'All' ? 'text-primary bg-primary/5 font-black border-r-2 border-primary' : ''}`}
               >
-                الكل
+                الكل (All)
               </button>
               {filteredOptions.map((o: string) => {
                 const optColors = getChipColor(o);
@@ -2137,7 +2166,7 @@ const AutofillCell = ({
   return (
     <td 
       onClick={handleCellClick}
-      className={`relative autofill-cell-td transition-all ${className} ${isSelected ? 'bg-primary/5 ring-1 ring-primary/30 z-10' : ''}`}
+      className={`relative autofill-cell-td transition-all ${className} ${isActive ? 'z-40' : isSelected ? 'bg-primary/5 ring-1 ring-primary/30 z-10' : ''}`}
       onMouseEnter={() => { setIsHovered(true); handleMouseEnter(); }}
       onMouseLeave={() => setIsHovered(false)}
     >
@@ -2441,6 +2470,7 @@ const ShootingRow = ({ item, index, activeGid, onToggleFilmed, loadingFilmedCode
   const isMissing = item.missingDetails === true || item.missingDetails === 'TRUE';
   const isDone = optimisticDone !== null ? optimisticDone : (item.done === true || item.done === 'TRUE');
   const isFilmed = item.filmed === true || item.filmed === 'TRUE';
+  const isRowActive = activeCell?.rowIndex === index;
 
   return (
     <motion.tr
@@ -2470,7 +2500,7 @@ const ShootingRow = ({ item, index, activeGid, onToggleFilmed, loadingFilmedCode
           : isCanceled ? 'border-white/[0.03] text-rose-100/90' 
           : isMissing ? 'border-white/[0.03] text-amber-100/90' 
           : 'border-white/[0.03]'
-      } row-hover ${isGlowing ? 'bg-emerald-500/20 shadow-[inset_0_0_25px_rgba(16,185,129,0.4)] ring-2 ring-emerald-500/50 border-emerald-500/50 animate-pulse relative z-10' : ''}`}
+      } row-hover ${isGlowing ? 'bg-emerald-500/20 shadow-[inset_0_0_25px_rgba(16,185,129,0.4)] ring-2 ring-emerald-500/50 border-emerald-500/50 animate-pulse relative z-10' : isRowActive ? 'relative z-20' : ''}`}
     >
       {!isSimple && (
         <>
@@ -3403,6 +3433,7 @@ const CutsRow = ({
   const isProblem = getOverrideVal('problem', item.problem === true || item.problem === 'TRUE');
   const isMissing = getOverrideVal('missingDetails', item.missingDetails === true || item.missingDetails === 'TRUE');
   const isDone = getOverrideVal('done', item.done === true || item.done === 'TRUE');
+  const isRowActive = activeCell?.rowIndex === index;
 
   return (
     <motion.tr
@@ -3417,7 +3448,7 @@ const CutsRow = ({
             : isDone 
             ? 'bg-emerald-500/[0.22] hover:bg-emerald-500/[0.28] border-emerald-500/40 text-emerald-100 shadow-[inset_0_0_25px_rgba(16,185,129,0.15)]' 
             : ''
-      }`}
+      } ${isRowActive ? 'relative z-20' : ''}`}
     >
       <td className="px-4 py-5 text-center"><span className="px-3 py-1.5 rounded-xl bg-white/5 border border-white/10 text-xs font-mono font-bold text-blue-400 shrink-0">{item.date || '---'}</span></td>
       

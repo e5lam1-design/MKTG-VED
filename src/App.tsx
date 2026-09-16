@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef, useContext, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   LayoutDashboard, 
@@ -521,17 +522,44 @@ const HistoryInput = ({ itemKey, fieldKey, value, onChange, placeholder, updated
 
 const InlineCombobox = ({ value, onChange, options, placeholder }: any) => {
   const [isOpen, setIsOpen] = useState(false);
-  const [openUpward, setOpenUpward] = useState(false);
   const [inputValue, setInputValue] = useState('');
+  const [dropdownPos, setDropdownPos] = useState<{ top?: number; bottom?: number; left: number; width: number } | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  const updatePosition = useCallback(() => {
+    if (!containerRef.current) return;
+    const rect = containerRef.current.getBoundingClientRect();
+    if (rect.bottom < 0 || rect.top > window.innerHeight) {
+      setIsOpen(false);
+      return;
+    }
+
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const isUp = spaceBelow < 280 && rect.top > 280;
+    
+    const menuWidth = Math.max(200, rect.width);
+    let left = rect.left + rect.width / 2 - menuWidth / 2;
+    if (left < 10) left = 10;
+    if (left + menuWidth > window.innerWidth - 10) {
+      left = window.innerWidth - menuWidth - 10;
+    }
+
+    setDropdownPos({
+      top: isUp ? undefined : rect.bottom + 6,
+      bottom: isUp ? window.innerHeight - rect.top + 6 : undefined,
+      left,
+      width: menuWidth,
+    });
+  }, []);
 
   const toggleOpen = () => {
-    if (!isOpen && containerRef.current) {
-      const rect = containerRef.current.getBoundingClientRect();
-      const spaceBelow = window.innerHeight - rect.bottom;
-      setOpenUpward(spaceBelow < 280);
+    if (!isOpen) {
+      updatePosition();
+      setIsOpen(true);
+    } else {
+      setIsOpen(false);
     }
-    setIsOpen(!isOpen);
   };
 
   useEffect(() => {
@@ -539,19 +567,38 @@ const InlineCombobox = ({ value, onChange, options, placeholder }: any) => {
       setInputValue('');
       return;
     }
-    const handleClickOutside = (event: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(event.target as Node)) setIsOpen(false);
+    updatePosition();
+
+    const handleScrollOrResize = () => {
+      updatePosition();
     };
+
+    const handleClickOutside = (event: MouseEvent) => {
+      const target = event.target as Node;
+      if (
+        containerRef.current && !containerRef.current.contains(target) &&
+        dropdownRef.current && !dropdownRef.current.contains(target)
+      ) {
+        setIsOpen(false);
+      }
+    };
+
+    window.addEventListener('scroll', handleScrollOrResize, true);
+    window.addEventListener('resize', handleScrollOrResize);
     document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [isOpen]);
+    return () => {
+      window.removeEventListener('scroll', handleScrollOrResize, true);
+      window.removeEventListener('resize', handleScrollOrResize);
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isOpen, updatePosition]);
 
   const filteredOptions = options ? options.filter((o: string) => String(o).toLowerCase().includes(String(inputValue).toLowerCase())) : [];
 
   const chipColors = getChipColor(value);
 
   return (
-    <div className={`relative w-full min-w-[100px] ${isOpen ? 'z-[999]' : 'z-10'}`} ref={containerRef}>
+    <div className="relative w-full min-w-[100px]" ref={containerRef}>
       <button
         type="button"
         onClick={toggleOpen}
@@ -569,12 +616,22 @@ const InlineCombobox = ({ value, onChange, options, placeholder }: any) => {
         <ChevronDown size={10} className={`transition-transform duration-300 shrink-0 ${isOpen ? 'rotate-180 opacity-100' : 'opacity-60'}`} />
       </button>
       
-      {isOpen && (
+      {isOpen && dropdownPos && createPortal(
         <div 
-          style={{ backgroundColor: '#0c1222' }}
-          className={`absolute ${openUpward ? 'bottom-full mb-2' : 'top-full mt-2'} w-full min-w-[190px] bg-[#0c1222] border border-white/20 rounded-2xl shadow-[0_20px_60px_rgba(0,0,0,0.95)] py-2 z-[1000] scrollbar-hide max-h-64 overflow-y-auto left-1/2 -translate-x-1/2 animate-fadeIn flex flex-col justify-between`}
+          ref={dropdownRef}
+          style={{ 
+            position: 'fixed',
+            top: dropdownPos.top !== undefined ? `${dropdownPos.top}px` : 'auto',
+            bottom: dropdownPos.bottom !== undefined ? `${dropdownPos.bottom}px` : 'auto',
+            left: `${dropdownPos.left}px`,
+            width: `${dropdownPos.width}px`,
+            backgroundColor: '#0c1222',
+            zIndex: 999999
+          }}
+          className="border border-white/25 rounded-2xl shadow-[0_25px_70px_rgba(0,0,0,0.98)] py-2 flex flex-col justify-between max-h-64 overflow-hidden animate-fadeIn"
+          onClick={(e) => e.stopPropagation()}
         >
-          <div className="flex-1 overflow-y-auto">
+          <div className="flex-1 overflow-y-auto scrollbar-hide">
             <button
               type="button"
               onClick={() => { onChange(''); setIsOpen(false); }}
@@ -607,7 +664,7 @@ const InlineCombobox = ({ value, onChange, options, placeholder }: any) => {
           
           <div 
             style={{ backgroundColor: '#0c1222' }}
-            className="px-2 pt-2 mt-2 border-t border-white/10 sticky bottom-0 bg-[#0c1222] z-10 pb-1"
+            className="px-2 pt-2 mt-2 border-t border-white/10 shrink-0 z-10 pb-1"
           >
              <input 
                 type="text" 
@@ -624,7 +681,8 @@ const InlineCombobox = ({ value, onChange, options, placeholder }: any) => {
                     }
                   }
                 }}
-                className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-[10px] font-bold text-white outline-none focus:border-primary transition-all arabic-text"
+                className="w-full bg-white/5 border border-white/15 rounded-lg px-3 py-2 text-[10px] font-bold text-white outline-none focus:border-primary transition-all arabic-text"
+                autoFocus
              />
              {inputValue.trim() && !filteredOptions.includes(inputValue.trim()) && (
                <button
@@ -636,7 +694,8 @@ const InlineCombobox = ({ value, onChange, options, placeholder }: any) => {
                </button>
              )}
           </div>
-        </div>
+        </div>,
+        document.body
       )}
     </div>
   );
@@ -644,21 +703,44 @@ const InlineCombobox = ({ value, onChange, options, placeholder }: any) => {
 
 const CustomSelect = ({ value, onChange, options, placeholder, isColumn = false }: any) => {
   const [isOpen, setIsOpen] = useState(false);
-  const [openUpward, setOpenUpward] = useState(false);
   const [searchFilter, setSearchFilter] = useState('');
+  const [dropdownPos, setDropdownPos] = useState<{ top?: number; bottom?: number; left: number; width: number } | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+
+  const updatePosition = useCallback(() => {
+    if (!containerRef.current) return;
+    const rect = containerRef.current.getBoundingClientRect();
+    if (rect.bottom < 0 || rect.top > window.innerHeight) {
+      setIsOpen(false);
+      return;
+    }
+
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const isUp = !isColumn && spaceBelow < 280 && rect.top > 280;
+    
+    const menuWidth = Math.max(180, Math.min(240, rect.width + 40));
+    let left = rect.left + rect.width / 2 - menuWidth / 2;
+    if (left < 10) left = 10;
+    if (left + menuWidth > window.innerWidth - 10) {
+      left = window.innerWidth - menuWidth - 10;
+    }
+
+    setDropdownPos({
+      top: isUp ? undefined : rect.bottom + 6,
+      bottom: isUp ? window.innerHeight - rect.top + 6 : undefined,
+      left,
+      width: menuWidth,
+    });
+  }, [isColumn]);
 
   const toggleOpen = () => {
-    if (!isOpen && containerRef.current) {
-      if (isColumn) {
-        setOpenUpward(false);
-      } else {
-        const rect = containerRef.current.getBoundingClientRect();
-        const spaceBelow = window.innerHeight - rect.bottom;
-        setOpenUpward(spaceBelow < 280);
-      }
+    if (!isOpen) {
+      updatePosition();
+      setIsOpen(true);
+    } else {
+      setIsOpen(false);
     }
-    setIsOpen(!isOpen);
   };
 
   useEffect(() => {
@@ -666,14 +748,31 @@ const CustomSelect = ({ value, onChange, options, placeholder, isColumn = false 
       setSearchFilter('');
       return;
     }
+    updatePosition();
+
+    const handleScrollOrResize = () => {
+      updatePosition();
+    };
+
     const handleClickOutside = (event: MouseEvent) => {
-      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+      const target = event.target as Node;
+      if (
+        containerRef.current && !containerRef.current.contains(target) &&
+        dropdownRef.current && !dropdownRef.current.contains(target)
+      ) {
         setIsOpen(false);
       }
     };
+
+    window.addEventListener('scroll', handleScrollOrResize, true);
+    window.addEventListener('resize', handleScrollOrResize);
     document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [isOpen]);
+    return () => {
+      window.removeEventListener('scroll', handleScrollOrResize, true);
+      window.removeEventListener('resize', handleScrollOrResize);
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isOpen, updatePosition]);
 
   const filteredOptions = useMemo(() => {
     if (!searchFilter.trim()) return options;
@@ -684,7 +783,7 @@ const CustomSelect = ({ value, onChange, options, placeholder, isColumn = false 
   const chipColors = getChipColor(value === 'All' ? '' : value);
 
   return (
-    <div className={`relative ${isOpen ? 'z-[999]' : 'z-10'}`} ref={containerRef}>
+    <div className="relative" ref={containerRef}>
       <button
         type="button"
         onClick={toggleOpen}
@@ -711,67 +810,73 @@ const CustomSelect = ({ value, onChange, options, placeholder, isColumn = false 
           <ChevronDown size={10} className={`transition-transform duration-300 shrink-0 ${isOpen ? 'rotate-180 opacity-100' : 'opacity-60'}`} />
         )}
       </button>
-      <AnimatePresence>
-        {isOpen && (
-          <motion.div
-            initial={{ opacity: 0, y: openUpward ? 5 : -5, scale: 0.95 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: openUpward ? 5 : -5, scale: 0.95 }}
-            transition={{ duration: 0.15 }}
-            style={{ backgroundColor: '#0c1222' }}
-            className={`absolute ${openUpward ? 'bottom-full mb-2' : 'top-full mt-2'} bg-[#0c1222] border border-white/20 rounded-2xl shadow-[0_20px_60px_rgba(0,0,0,0.95)] py-2 z-[999] backdrop-blur-2xl w-max min-w-[160px] max-w-[220px] max-h-64 flex flex-col left-1/2 -translate-x-1/2`}
-          >
-            {/* Search Input Box */}
-            <div 
-              style={{ backgroundColor: '#0c1222' }}
-              className="px-2 pb-2 border-b border-white/10 sticky top-0 bg-[#0c1222] z-10"
-            >
-              <input
-                type="text"
-                placeholder="بحث..."
-                value={searchFilter}
-                onChange={e => setSearchFilter(e.target.value)}
-                onKeyDown={e => {
-                  if (e.key === 'Enter') {
-                    e.preventDefault();
-                    e.stopPropagation();
-                  }
-                }}
-                className="w-full bg-white/5 border border-white/10 rounded-lg px-2.5 py-1 text-[10px] font-bold text-white outline-none focus:border-primary transition-all arabic-text"
-                autoFocus
-              />
-            </div>
 
-            <div className="overflow-y-auto scrollbar-thin max-h-48 pt-1">
-              <button
-                type="button"
-                onClick={() => { onChange('All'); setIsOpen(false); }}
-                className={`w-full text-right px-4 py-1.5 text-[10px] font-bold block transition-all text-muted hover:bg-white/5 hover:text-white ${value === 'All' ? 'text-primary bg-primary/5 font-black border-r-2 border-primary' : ''}`}
-              >
-                الكل (All)
-              </button>
-              {filteredOptions.map((o: string) => {
-                const optColors = getChipColor(o);
-                return (
-                  <button
-                    key={o}
-                    type="button"
-                    onClick={() => { onChange(o); setIsOpen(false); }}
-                    className={`w-full flex items-center justify-center px-3 py-1.5 transition-all hover:bg-white/5 ${value === o ? 'bg-primary/5 border-r-2 border-primary' : ''}`}
-                  >
-                    <span className={`px-3 py-1 rounded-full text-[10px] border font-black text-center inline-block max-w-[90%] truncate shadow-sm transition-all ${optColors.bg} ${optColors.text} ${optColors.border} hover:brightness-110`}>
-                      {o}
-                    </span>
-                  </button>
-                );
-              })}
-              {filteredOptions.length === 0 && (
-                <div className="px-3 py-2 text-center text-[10px] text-white/40 font-bold">لا يوجد نتائج</div>
-              )}
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {isOpen && dropdownPos && createPortal(
+        <div
+          ref={dropdownRef}
+          style={{ 
+            position: 'fixed',
+            top: dropdownPos.top !== undefined ? `${dropdownPos.top}px` : 'auto',
+            bottom: dropdownPos.bottom !== undefined ? `${dropdownPos.bottom}px` : 'auto',
+            left: `${dropdownPos.left}px`,
+            width: `${dropdownPos.width}px`,
+            backgroundColor: '#0c1222',
+            zIndex: 999999
+          }}
+          className="border border-white/25 rounded-2xl shadow-[0_25px_70px_rgba(0,0,0,0.98)] py-2 flex flex-col max-h-64 overflow-hidden animate-fadeIn"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {/* Search Input Box */}
+          <div 
+            style={{ backgroundColor: '#0c1222' }}
+            className="px-2 pb-2 border-b border-white/10 shrink-0"
+          >
+            <input
+              type="text"
+              placeholder="بحث..."
+              value={searchFilter}
+              onChange={e => setSearchFilter(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  e.stopPropagation();
+                }
+              }}
+              className="w-full bg-white/5 border border-white/15 rounded-lg px-2.5 py-1 text-[10px] font-bold text-white outline-none focus:border-primary transition-all arabic-text"
+              autoFocus
+            />
+          </div>
+
+          <div className="overflow-y-auto scrollbar-thin max-h-48 pt-1">
+            <button
+              type="button"
+              onClick={() => { onChange('All'); setIsOpen(false); }}
+              className={`w-full text-right px-4 py-1.5 text-[10px] font-bold block transition-all text-muted hover:bg-white/5 hover:text-white ${value === 'All' ? 'text-primary bg-primary/5 font-black border-r-2 border-primary' : ''}`}
+            >
+              الكل (All)
+            </button>
+            {filteredOptions.map((o: string) => {
+              const optColors = getChipColor(o);
+              return (
+                <button
+                  key={o}
+                  type="button"
+                  onClick={() => { onChange(o); setIsOpen(false); }}
+                  className={`w-full flex items-center justify-center px-3 py-1.5 transition-all hover:bg-white/5 ${value === o ? 'bg-primary/5 border-r-2 border-primary' : ''}`}
+                >
+                  <span className={`px-3 py-1 rounded-full text-[10px] border font-black text-center inline-block max-w-[90%] truncate shadow-sm transition-all ${optColors.bg} ${optColors.text} ${optColors.border} hover:brightness-110`}>
+                    {o}
+                  </span>
+                </button>
+              );
+            })}
+            {filteredOptions.length === 0 && (
+              <div className="px-3 py-2 text-center text-[10px] text-white/40 font-bold">لا يوجد نتائج</div>
+            )}
+          </div>
+        </div>,
+        document.body
+      )}
     </div>
   );
 };

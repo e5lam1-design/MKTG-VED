@@ -4416,35 +4416,14 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
   const scrollSourceRef = useRef<'top' | 'table' | 'button' | null>(null);
   const scrollTimeoutRef = useRef<any>(null);
 
-  // Keep top scrollbar width strictly synced with table's scrollWidth using ResizeObserver
-  useEffect(() => {
-    const updateWidth = () => {
-      if (tableScrollRef.current && topScrollInnerRef.current) {
-        const sw = tableScrollRef.current.scrollWidth;
-        if (sw > 0) {
-          topScrollInnerRef.current.style.width = `${sw}px`;
-        }
+  const updateTopScrollWidth = useCallback(() => {
+    if (topScrollInnerRef.current && tableScrollRef.current) {
+      const sw = tableScrollRef.current.scrollWidth;
+      if (sw > 0) {
+        topScrollInnerRef.current.style.width = `${sw}px`;
       }
-    };
-
-    updateWidth();
-    const t = setTimeout(updateWidth, 120);
-
-    let ro: ResizeObserver | null = null;
-    if (typeof ResizeObserver !== 'undefined' && tableScrollRef.current) {
-      ro = new ResizeObserver(() => {
-        updateWidth();
-      });
-      ro.observe(tableScrollRef.current);
-      const tableEl = tableScrollRef.current.querySelector('table');
-      if (tableEl) ro.observe(tableEl);
     }
-
-    return () => {
-      clearTimeout(t);
-      if (ro) ro.disconnect();
-    };
-  }, [activeGid, liveData, combinedData]);
+  }, []);
 
   const syncScrollFromTop = () => {
     if (scrollSourceRef.current === 'table' || scrollSourceRef.current === 'button') return;

@@ -6307,11 +6307,6 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
         return;
       }
 
-      if (shootingAddForm.branch?.toLowerCase() === 'desouk' && (!shootingAddForm.driveRaw || !shootingAddForm.driveRaw.trim())) {
-        toast.error("يرجى إدخال رابط الدرايف الخام (Drive Link Raw) لفرع Desouk إجبارياً ⚠️");
-        return;
-      }
-
       if (!shootingAddForm.scriptLink || !shootingAddForm.scriptLink.trim()) {
         toast.error("يرجى إدخال رابط السكريبت");
         return;
@@ -9020,31 +9015,6 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
                         </div>
                       </div>
 
-                      {/* Drive Link (Raw) - REQUIRED ONLY when branch === 'Desouk' */}
-                      {shootingAddForm.branch?.toLowerCase() === 'desouk' && (
-                        <div className="p-4 bg-sky-500/10 border border-sky-500/30 rounded-2xl space-y-2 animate-fadeIn">
-                          <div className="flex items-center justify-between">
-                            <label className="block text-xs font-black text-sky-300 arabic-text flex items-center gap-2">
-                              <span>📁 رابط الدرايف الخام — Drive Link (Raw)</span>
-                              <span className="text-rose-400 font-black text-[11px] bg-rose-500/10 px-2 py-0.5 rounded-md border border-rose-500/20">* إجباري لفرع Desouk</span>
-                            </label>
-                            <span className="text-[10px] bg-sky-500/20 text-sky-200 px-2.5 py-0.5 rounded-full border border-sky-500/30 font-bold">
-                              Desouk Mandatory
-                            </span>
-                          </div>
-                          <input
-                            type="url"
-                            required
-                            placeholder="https://drive.google.com/drive/folders/..."
-                            value={shootingAddForm.driveRaw || ''}
-                            onChange={e => setShootingAddForm({...shootingAddForm, driveRaw: e.target.value})}
-                            className="w-full bg-[#070b13] border border-sky-500/50 focus:border-sky-400 rounded-xl px-4 py-3 text-white focus:outline-none focus:ring-2 focus:ring-sky-500/30 transition-all font-bold text-sm"
-                            dir="ltr"
-                            autoFocus
-                          />
-                        </div>
-                      )}
-
                       <div className="p-4 bg-primary/10 border border-primary/20 rounded-xl mt-4">
                         <label className="block text-xs font-bold text-primary mb-1.5 arabic-text">الكود المتولد تلقائياً (Code)</label>
                         <div className="font-mono text-lg text-white" dir="ltr">{generatedCode || 'جاري الحساب...'}</div>
@@ -9207,7 +9177,6 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
 
                   {(() => {
                     const isShootingModal = ['1436746012', '1939073164', '798246690', '0'].includes(activeGid);
-                    const isDesouk = shootingAddForm.branch?.toLowerCase() === 'desouk';
                     const isShootingIncomplete = isShootingModal && (
                       !shootingAddForm.branch ||
                       !shootingAddForm.year ||
@@ -9217,7 +9186,6 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
                       !shootingAddForm.format?.trim() ||
                       !shootingAddForm.scriptName?.trim() ||
                       !shootingAddForm.scriptLink?.trim() ||
-                      (isDesouk && !shootingAddForm.driveRaw?.trim()) ||
                       !generatedCode
                     );
                     const isTagmeIncomplete = isTagme3at && !addForm.name?.trim();
@@ -9227,7 +9195,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
                       <div className="w-full space-y-3 pt-2">
                         {isShootingModal && isShootingIncomplete && (
                           <div className="text-[11px] font-bold text-amber-300 bg-amber-500/10 border border-amber-500/20 rounded-xl py-2 px-3 arabic-text flex items-center justify-between gap-2">
-                            <span>⚠️ يرجى استكمال كافة البيانات (اسم ورابط السكريبت، المدرس، الاسم الإضافي{isDesouk ? '، ورابط الدرايف' : ''})</span>
+                            <span>⚠️ يرجى استكمال كافة البيانات (اسم ورابط السكريبت، المدرس، الاسم الإضافي)</span>
                             <span className="text-[10px] text-muted hidden sm:inline">لن يتم الحفظ تلقائياً أثناء كتابتك</span>
                           </div>
                         )}

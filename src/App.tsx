@@ -344,11 +344,11 @@ const HistoryInput = ({ itemKey, fieldKey, value, onChange, placeholder, updated
     }
   }, [value]);
 
-  // Auto-grow textarea height
+  // Auto-grow textarea height with buffer so text is never clipped
   useEffect(() => {
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
-      textareaRef.current.style.height = `${textareaRef.current.scrollHeight}px`;
+      textareaRef.current.style.height = `${Math.max(38, textareaRef.current.scrollHeight + 4)}px`;
     }
   }, [localValue]);
 
@@ -384,6 +384,10 @@ const HistoryInput = ({ itemKey, fieldKey, value, onChange, placeholder, updated
   const handleChange = (e: any) => {
     const val = e.target.value;
     setLocalValue(val);
+    if (e.target) {
+      e.target.style.height = 'auto';
+      e.target.style.height = `${Math.max(38, e.target.scrollHeight + 4)}px`;
+    }
     if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
     // Debounce 3500ms to avoid firing notifications and network requests while user is actively typing
     typingTimerRef.current = setTimeout(() => {
@@ -450,7 +454,7 @@ const HistoryInput = ({ itemKey, fieldKey, value, onChange, placeholder, updated
   const timeLabel = formatArabicTimestamp(lastEditedAt);
 
   return (
-    <div className="relative flex items-center justify-center group/history mx-auto w-full min-w-[130px] max-w-[160px]">
+    <div className="relative flex items-center justify-center group/history mx-auto w-full min-w-[190px] max-w-[280px]">
       {/* Floating Hover Tooltip */}
       {hasValue && timeLabel && (
         <div className="absolute bottom-full mb-2 hidden group-hover/history:flex flex-col items-center z-[300] pointer-events-none animate-fadeIn left-1/2 -translate-x-1/2">
@@ -483,17 +487,18 @@ const HistoryInput = ({ itemKey, fieldKey, value, onChange, placeholder, updated
       <textarea
         ref={textareaRef}
         rows={1}
+        dir="auto"
         value={localValue}
         onChange={handleChange}
         onBlur={handleBlur}
         onKeyDown={handleKeyDown}
         placeholder={placeholder}
-        className={`w-full min-w-[130px] resize-none overflow-hidden rounded-xl px-3 py-2 text-xs font-bold text-white text-center outline-none transition-all shadow-inner text-[11px] placeholder:text-[10px] placeholder:text-muted/60 ${
+        className={`w-full min-w-[190px] resize-none overflow-y-auto max-h-48 scrollbar-thin rounded-xl px-3.5 py-2 text-xs font-bold text-white text-center outline-none transition-all shadow-inner leading-relaxed arabic-text placeholder:text-[11px] placeholder:text-muted/60 ${
           hasValue 
-            ? 'bg-emerald-500/5 border border-emerald-500/40 shadow-[0_0_15px_rgba(16,185,129,0.1)] text-emerald-300' 
+            ? 'bg-emerald-500/5 border border-emerald-500/40 shadow-[0_0_15px_rgba(16,185,129,0.1)] text-emerald-200' 
             : 'bg-white/5 border border-white/10 hover:border-white/20'
-        } focus:bg-[#0b1019] focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/30`}
-        style={{ minHeight: '34px', lineHeight: '1.3' }}
+        } focus:bg-[#0b1019] focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/40`}
+        style={{ minHeight: '38px', lineHeight: '1.5' }}
       />
 
       <button 

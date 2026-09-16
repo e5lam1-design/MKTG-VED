@@ -20,10 +20,31 @@ const LOCAL_LOGIN_KEY = 'local_profile_login';
 
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);
-  const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [profile, setProfile] = useState<UserProfile | null>(() => {
+    try {
+      const raw = localStorage.getItem(LOCAL_LOGIN_KEY);
+      if (raw) {
+        const stored = JSON.parse(raw) as UserProfile;
+        return { ...stored, allowed_tabs: parseAllowedTabs(stored.allowed_tabs) };
+      }
+    } catch {}
+    return null;
+  });
   const [session, setSession] = useState<Session | null>(null);
-  const [loading, setLoading] = useState(true);
-  const localProfileIdRef = useRef<string | null>(null);
+  const [loading, setLoading] = useState<boolean>(() => {
+    try {
+      const raw = localStorage.getItem(LOCAL_LOGIN_KEY);
+      if (raw) return false;
+    } catch {}
+    return true;
+  });
+  const localProfileIdRef = useRef<string | null>(() => {
+    try {
+      const raw = localStorage.getItem(LOCAL_LOGIN_KEY);
+      if (raw) return (JSON.parse(raw) as UserProfile).id || null;
+    } catch {}
+    return null;
+  });
 
   // ─── Helper: parse allowed_tabs safely (handles both array & JSON string) ───
   const parseAllowedTabs = (val: any): string[] => {
@@ -36,50 +57,55 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
   // ─── Fetch profile from Supabase — single source of truth ──────────────────
   const fetchProfileFromDB = async (userId: string, email?: string | null): Promise<UserProfile | null> => {
-    const normalizedEmail = (email || '').toLowerCase().trim();
+    try {
+      const normalizedEmail = (email || '').toLowerCase().trim();
 
-    // 1. Try by Supabase Auth ID / User ID
-    if (userId) {
-      const { data: byId } = await supabase
-        .from('user_profiles')
-        .select('*')
-        .eq('id', userId)
-        .maybeSingle();
-      if (byId) return { ...byId, allowed_tabs: parseAllowedTabs(byId.allowed_tabs) } as UserProfile;
-    }
-
-    // 2. Try by email
-    if (normalizedEmail) {
-      const { data: byEmail } = await supabase
-        .from('user_profiles')
-        .select('*')
-        .ilike('email', normalizedEmail)
-        .maybeSingle();
-      if (byEmail) return { ...byEmail, allowed_tabs: parseAllowedTabs(byEmail.allowed_tabs) } as UserProfile;
-
-      // 3. Try by name (username-style login)
-      const { data: byName } = await supabase
-        .from('user_profiles')
-        .select('*')
-        .ilike('name', normalizedEmail)
-        .maybeSingle();
-      if (byName) return { ...byName, allowed_tabs: parseAllowedTabs(byName.allowed_tabs) } as UserProfile;
-
-      // 4. Super admin bootstrap
-      if (SUPER_ADMIN_EMAILS.has(normalizedEmail)) {
-        return {
-          id: userId,
-          email: normalizedEmail,
-          name: normalizedEmail.split('@')[0],
-          role: 'admin',
-          allowed_tabs: [],
-          is_active: true,
-          created_at: new Date().toISOString(),
-        } as UserProfile;
+      // 1. Try by Supabase Auth ID / User ID
+      if (userId) {
+        const { data: byId } = await supabase
+          .from('user_profiles')
+          .select('*')
+          .eq('id', userId)
+          .maybeSingle();
+        if (byId) return { ...byId, allowed_tabs: parseAllowedTabs(byId.allowed_tabs) } as UserProfile;
       }
-    }
 
-    return null;
+      // 2. Try by email
+      if (normalizedEmail) {
+        const { data: byEmail } = await supabase
+          .from('user_profiles')
+          .select('*')
+          .ilike('email', normalizedEmail)
+          .maybeSingle();
+        if (byEmail) return { ...byEmail, allowed_tabs: parseAllowedTabs(byEmail.allowed_tabs) } as UserProfile;
+
+        // 3. Try by name (username-style login)
+        const { data: byName } = await supabase
+          .from('user_profiles')
+          .select('*')
+          .ilike('name', normalizedEmail)
+          .maybeSingle();
+        if (byName) return { ...byName, allowed_tabs: parseAllowedTabs(byName.allowed_tabs) } as UserProfile;
+
+        // 4. Super admin bootstrap
+        if (SUPER_ADMIN_EMAILS.has(normalizedEmail)) {
+          return {
+            id: userId,
+            email: normalizedEmail,
+            name: normalizedEmail.split('@')[0],
+            role: 'admin',
+            allowed_tabs: [],
+            is_active: true,
+            created_at: new Date().toISOString(),
+          } as UserProfile;
+        }
+      }
+
+      return null;
+    } catch (e) {
+      console.warn('[fetchProfileFromDB] error:', e);
+      return null;
+    }
   };
 
   const applyProfile = (p: UserProfile) => {
@@ -154,41 +180,58 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       realtimeChannel = subscribeToProfileChanges(p.id);
     };
 
+    // Hard fallback timeout: NEVER let the app be stuck on loading for more than 1.5 seconds!
+    const fallbackTimer = setTimeout(() => {
+      setLoading(false);
+    }, 1500);
+
     // Bootstrap from localStorage immediately for fast load
     try {
       const raw = localStorage.getItem(LOCAL_LOGIN_KEY);
       if (raw) {
         const stored = JSON.parse(raw) as UserProfile;
-        setProfile({ ...stored, allowed_tabs: parseAllowedTabs(stored.allowed_tabs) });
+        const norm = { ...stored, allowed_tabs: parseAllowedTabs(stored.allowed_tabs) };
+        setProfile(norm);
         localProfileIdRef.current = stored.id;
+        setLoading(false);
         // Re-fetch latest from DB in background
         fetchProfileFromDB(stored.id, stored.email).then(fresh => {
           if (fresh) setupProfile(fresh);
-        });
+        }).catch(() => {});
       }
     } catch {
       localStorage.removeItem(LOCAL_LOGIN_KEY);
     }
 
-    // Supabase auth session
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      setSession(session);
-      setUser(session?.user ?? null);
-      if (session?.user) {
-        fetchProfileFromDB(session.user.id, session.user.email)
-          .then(p => { if (p) setupProfile(p); })
-          .finally(() => setLoading(false));
-      } else {
+    // Supabase auth session with safety timeout and error handling
+    supabase.auth.getSession()
+      .then(({ data: { session } }) => {
+        setSession(session);
+        setUser(session?.user ?? null);
+        if (session?.user) {
+          fetchProfileFromDB(session.user.id, session.user.email)
+            .then(p => { if (p) setupProfile(p); })
+            .catch(err => console.warn('[Auth] fetchProfile error:', err))
+            .finally(() => setLoading(false));
+        } else {
+          setLoading(false);
+        }
+      })
+      .catch((err) => {
+        console.warn('[Auth] getSession error:', err);
         setLoading(false);
-      }
-    });
+      })
+      .finally(() => {
+        clearTimeout(fallbackTimer);
+      });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
       setSession(session);
       setUser(session?.user ?? null);
       if (session?.user) {
         fetchProfileFromDB(session.user.id, session.user.email)
-          .then(p => { if (p) setupProfile(p); });
+          .then(p => { if (p) setupProfile(p); })
+          .catch(() => {});
       } else if (!localProfileIdRef.current) {
         setProfile(null);
       }
@@ -199,6 +242,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     window.addEventListener('profile-updated', handleProfileUpdated);
 
     return () => {
+      clearTimeout(fallbackTimer);
       subscription.unsubscribe();
       window.removeEventListener('profile-updated', handleProfileUpdated);
       if (realtimeChannel) supabase.removeChannel(realtimeChannel);

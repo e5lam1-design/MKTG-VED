@@ -10876,7 +10876,7 @@ function AppWithAuth({ isDemoMode = false }: { isDemoMode?: boolean }) {
   const isDemo = isDemoMode || (typeof window !== 'undefined' && (window.location.search.includes('demo=true') || window.location.pathname.includes('demo')));
   const { user, profile, loading } = useAuth();
 
-  if (loading) {
+  if (loading && !profile) {
     return (
       <div className="min-h-screen bg-[#060a12] flex items-center justify-center">
         <div className="flex flex-col items-center gap-4">

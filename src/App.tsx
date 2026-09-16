@@ -936,6 +936,14 @@ const getChipColor = (val: string) => {
     return { bg: 'bg-amber-500/15 shadow-[0_0_10px_rgba(245,158,11,0.15)]', text: 'text-amber-300 font-extrabold', border: 'border-amber-500/30', dot: '#f59e0b' };
   }
 
+  // Done Status
+  if (lower === 'done' || lower === 'تم') {
+    return { bg: 'bg-emerald-500/20 shadow-[0_0_12px_rgba(16,185,129,0.35)]', text: 'text-emerald-300 font-black', border: 'border-emerald-500/60', dot: '#10b981' };
+  }
+  if (lower === 'not done' || lower === 'لم يتم' || lower === 'غير مكتمل') {
+    return { bg: 'bg-amber-500/15 shadow-[0_0_10px_rgba(245,158,11,0.15)]', text: 'text-amber-300 font-extrabold', border: 'border-amber-500/30', dot: '#f59e0b' };
+  }
+
   // Dates
   if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(raw) || /^\d{4}-\d{2}-\d{2}$/.test(raw)) {
     return { bg: 'bg-emerald-950/40', text: 'text-emerald-300 font-mono font-bold', border: 'border-emerald-500/30', dot: '#10b981' };
@@ -1049,6 +1057,9 @@ const ColFilter = React.memo(({ colKey, label }: { colKey: string; label: string
   const options = useMemo(() => {
     if (colKey === 'filmed') {
       return ['اتصور', 'لم يتصور'];
+    }
+    if (colKey === 'done') {
+      return ['Done', 'Not Done'];
     }
     const source = Array.isArray(combinedData) && combinedData.length > 0 ? combinedData : liveData;
     let rawValues = source
@@ -2293,7 +2304,12 @@ const ShootingRow = ({ item, index, activeGid, onToggleFilmed, loadingFilmedCode
   const [isEditingRaw, setIsEditingRaw] = useState(false);
   const [isEditingFinal, setIsEditingFinal] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [optimisticDone, setOptimisticDone] = useState<boolean | null>(null);
   const { profile } = useAuth();
+
+  useEffect(() => {
+    setOptimisticDone(null);
+  }, [item.done]);
 
   // Sync editForm if item changes from outside (e.g. after save or realtime sync)
   useEffect(() => {
@@ -2423,9 +2439,8 @@ const ShootingRow = ({ item, index, activeGid, onToggleFilmed, loadingFilmedCode
 
   const isCanceled = item.canceled === true || item.canceled === 'TRUE';
   const isMissing = item.missingDetails === true || item.missingDetails === 'TRUE';
-  const isDone = item.done === true || item.done === 'TRUE';
+  const isDone = optimisticDone !== null ? optimisticDone : (item.done === true || item.done === 'TRUE');
   const isFilmed = item.filmed === true || item.filmed === 'TRUE';
-  const isGreenRow = isFilmed || isDone;
 
   return (
     <motion.tr
@@ -2435,19 +2450,27 @@ const ShootingRow = ({ item, index, activeGid, onToggleFilmed, loadingFilmedCode
       style={
         isGlowing
           ? {}
-          : isGreenRow
-            ? { background: 'rgba(16, 185, 129, 0.10)', borderLeft: '3px solid rgba(16,185,129,0.35)' }
-            : isCanceled
-              ? { background: 'rgba(239, 68, 68, 0.08)' }
-              : isMissing
-                ? { background: 'rgba(245, 158, 11, 0.08)' }
-                : {}
+          : isDone
+            ? { 
+                background: 'linear-gradient(90deg, rgba(16, 185, 129, 0.28) 0%, rgba(5, 150, 105, 0.16) 50%, rgba(16, 185, 129, 0.22) 100%)', 
+                borderLeft: '5px solid #10b981',
+                boxShadow: 'inset 0 0 35px rgba(16, 185, 129, 0.20)'
+              }
+            : isFilmed
+              ? { background: 'rgba(16, 185, 129, 0.09)', borderLeft: '3px solid rgba(16,185,129,0.35)' }
+              : isCanceled
+                ? { background: 'rgba(239, 68, 68, 0.08)' }
+                : isMissing
+                  ? { background: 'rgba(245, 158, 11, 0.08)' }
+                  : {}
       }
-      className={`transition-all duration-300 border-b border-white/[0.03] row-hover ${
-        isCanceled ? 'text-rose-100/90' 
-        : isMissing ? 'text-amber-100/90' 
-        : ''
-      } ${isGlowing ? 'bg-emerald-500/20 shadow-[inset_0_0_25px_rgba(16,185,129,0.4)] ring-2 ring-emerald-500/50 border-emerald-500/50 animate-pulse relative z-10' : ''}`}
+      className={`transition-all duration-300 border-b ${
+        isDone 
+          ? 'border-emerald-500/30 text-emerald-50 hover:bg-emerald-950/40' 
+          : isCanceled ? 'border-white/[0.03] text-rose-100/90' 
+          : isMissing ? 'border-white/[0.03] text-amber-100/90' 
+          : 'border-white/[0.03]'
+      } row-hover ${isGlowing ? 'bg-emerald-500/20 shadow-[inset_0_0_25px_rgba(16,185,129,0.4)] ring-2 ring-emerald-500/50 border-emerald-500/50 animate-pulse relative z-10' : ''}`}
     >
       {!isSimple && (
         <>
@@ -2834,20 +2857,24 @@ const ShootingRow = ({ item, index, activeGid, onToggleFilmed, loadingFilmedCode
                   item.canceled ? 'TRUE' : 'FALSE',
                   item.missingDetails ? 'TRUE' : 'FALSE'
                 ];
+                setOptimisticDone(nextDone);
                 try {
                   await onUpdateShootingRow(rowCode, rowData);
                 } catch(e) {
+                  setOptimisticDone(null);
                   console.error(e);
                 } finally {
                   setIsSaving(false);
                 }
               }}
-              className={`w-6 h-6 rounded-md flex items-center justify-center mx-auto transition-all duration-300 cursor-pointer ${
-                isDone ? 'bg-emerald-500 text-white shadow-[0_0_10px_rgba(16,185,129,0.5)]' : 'bg-white/10 text-muted hover:bg-emerald-500/30 hover:text-emerald-300'
+              className={`w-7 h-7 rounded-lg flex items-center justify-center mx-auto transition-all duration-300 cursor-pointer ${
+                isDone 
+                  ? 'bg-emerald-500 text-white shadow-[0_0_20px_rgba(16,185,129,0.95)] ring-2 ring-emerald-300 scale-110' 
+                  : 'bg-white/10 text-muted hover:bg-emerald-500/30 hover:text-emerald-300'
               }`}
               title="تم الإنجاز"
             >
-              {isDone && <CheckCircle2 size={14} />}
+              {isDone && <CheckCircle2 size={16} className="stroke-[2.5]" />}
             </button>
           </td>
           {/* Cancel Checkmark */}
@@ -3388,8 +3415,8 @@ const CutsRow = ({
           : isMissing 
             ? 'bg-amber-500/[0.06] hover:bg-amber-500/[0.12] border-amber-500/20 text-amber-100/90' 
             : isDone 
-              ? 'bg-emerald-500/[0.06] hover:bg-emerald-500/[0.12] border-emerald-500/20 text-emerald-100/90' 
-              : ''
+            ? 'bg-emerald-500/[0.22] hover:bg-emerald-500/[0.28] border-emerald-500/40 text-emerald-100 shadow-[inset_0_0_25px_rgba(16,185,129,0.15)]' 
+            : ''
       }`}
     >
       <td className="px-4 py-5 text-center"><span className="px-3 py-1.5 rounded-xl bg-white/5 border border-white/10 text-xs font-mono font-bold text-blue-400 shrink-0">{item.date || '---'}</span></td>
@@ -3618,12 +3645,14 @@ const CutsRow = ({
       <td className="px-3 py-5 text-center">
         <button
           onClick={() => toggleStatus('done', isDone)}
-          className={`w-6 h-6 rounded-md flex items-center justify-center mx-auto transition-all duration-300 cursor-pointer ${
-            isDone ? 'bg-emerald-500 text-white shadow-[0_0_10px_rgba(16,185,129,0.5)]' : 'bg-white/10 text-muted hover:bg-emerald-500/30 hover:text-emerald-300'
+          className={`w-7 h-7 rounded-lg flex items-center justify-center mx-auto transition-all duration-300 cursor-pointer ${
+            isDone 
+              ? 'bg-emerald-500 text-white shadow-[0_0_20px_rgba(16,185,129,0.95)] ring-2 ring-emerald-300 scale-110' 
+              : 'bg-white/10 text-muted hover:bg-emerald-500/30 hover:text-emerald-300'
           }`}
           title="تم الإنجاز"
         >
-          {isDone && <CheckCircle2 size={14} />}
+          {isDone && <CheckCircle2 size={16} className="stroke-[2.5]" />}
         </button>
       </td>
 
@@ -7976,6 +8005,10 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
             const isFilmed = item.filmed === true || item.filmed === 'TRUE' || String(item.filmed).toLowerCase() === 'true';
             if (val === 'اتصور' && !isFilmed) return false;
             if (val === 'لم يتصور' && isFilmed) return false;
+          } else if (key === 'done') {
+            const isItemDone = item.done === true || item.done === 'TRUE' || String(item.done).toLowerCase() === 'true';
+            if ((val === 'Done' || val === 'TRUE' || val === 'تم') && !isItemDone) return false;
+            if ((val === 'Not Done' || val === 'FALSE' || val === 'Pending' || val === 'غير مكتمل') && isItemDone) return false;
           } else if (key === 'check1') {
             const itemKey = 'tgm-' + (item.uniqueKey || generateKey(item));
             const isTagmeChecked = item.isTagme3a === true || item.check1 === true || String(item.check1).toLowerCase() === 'true' || (tagmeTransfers || []).some((i: any) => i.uniqueKey === itemKey);
@@ -8155,7 +8188,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
         <th className="px-5 py-4 text-center th-style">Editor's Notes</th>
         <th className="px-3 py-4 text-center th-style">تفاصيل ناقصة</th>
         <th className="px-3 py-4 text-center th-style">مشكلة</th>
-        <th className="px-3 py-4 text-center th-style">DONE</th>
+        <th className="px-3 py-4 text-center th-style"><ColFilter colKey="done" label="DONE" /></th>
         <th className="px-4 py-4 text-center th-style"><ColFilter colKey="editor" label="Editor" /></th>
         <th className="px-4 py-4 text-center th-style">Drive Link (Final)</th>
         <th className="px-3 py-4 text-center th-style">CANCELO</th>
@@ -8173,7 +8206,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
         <th className="px-4 py-4 text-center th-style">Drive Link (Raw)</th>
         <th className="px-4 py-4 text-center th-style"><ColFilter colKey="editorCol" label="EDITOR" /></th>
         <th className="px-3 py-4 text-center th-style">تفاصيل ناقصة</th>
-        <th className="px-3 py-4 text-center th-style">DONE?</th>
+        <th className="px-3 py-4 text-center th-style"><ColFilter colKey="done" label="DONE?" /></th>
         <th className="px-3 py-4 text-center th-style">Cancel</th>
         <th className="px-3 py-4 text-center th-style">EDIT</th>
         <th className="px-4 py-4 text-center th-style">Drive Link (Final)</th>
@@ -8205,7 +8238,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
           <>
             <th className="px-4 py-4 text-center th-style"><ColFilter colKey="editorCol" label="EDITOR" /></th>
             <th className="px-3 py-4 text-center th-style">تفاصيل ناقصة</th>
-            <th className="px-3 py-4 text-center th-style" id="tour-ve-done-col">DONE?</th>
+            <th className="px-3 py-4 text-center th-style" id="tour-ve-done-col"><ColFilter colKey="done" label="DONE?" /></th>
             <th className="px-3 py-4 text-center th-style">Cancel</th>
             <th className="px-3 py-4 text-center th-style" id="tour-ve-edit-col">EDIT</th>
           </>

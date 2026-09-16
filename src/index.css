@@ -92,6 +92,28 @@ body {
   @apply bg-white/20 rounded-full hover:bg-white/40;
 }
 
+/* Custom Top Scrollbar Track */
+.top-scroll-track::-webkit-scrollbar {
+  height: 9px;
+}
+.top-scroll-track::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 9999px;
+}
+.top-scroll-track::-webkit-scrollbar-thumb {
+  background: linear-gradient(90deg, #6366f1, #a855f7);
+  border-radius: 9999px;
+  cursor: grab;
+  box-shadow: 0 0 10px rgba(168, 85, 247, 0.4);
+}
+.top-scroll-track::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(90deg, #818cf8, #c084fc);
+  box-shadow: 0 0 16px rgba(168, 85, 247, 0.7);
+}
+.top-scroll-track::-webkit-scrollbar-thumb:active {
+  cursor: grabbing;
+}
+
 /* Full clickable native date picker indicator */
 .date-picker-fill::-webkit-calendar-picker-indicator {
   position: absolute;

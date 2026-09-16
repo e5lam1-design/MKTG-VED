@@ -4413,60 +4413,103 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
   const tableScrollRef = useRef<HTMLDivElement>(null);
   const topScrollRef = useRef<HTMLDivElement>(null);
   const topScrollInnerRef = useRef<HTMLDivElement>(null);
-  const isSyncingScroll = useRef(false);
+  const scrollSourceRef = useRef<'top' | 'table' | 'button' | null>(null);
+  const scrollTimeoutRef = useRef<any>(null);
 
-  const updateTopScrollWidth = useCallback(() => {
-    if (topScrollInnerRef.current && tableScrollRef.current) {
-      const scrollWidth = tableScrollRef.current.scrollWidth;
-      if (scrollWidth > 0) {
-        topScrollInnerRef.current.style.width = `${scrollWidth}px`;
-      }
-    }
-  }, []);
-
-  const syncScrollFromTop = () => {
-    if (isSyncingScroll.current) return;
-    if (tableScrollRef.current && topScrollRef.current) {
-      isSyncingScroll.current = true;
-      tableScrollRef.current.scrollLeft = topScrollRef.current.scrollLeft;
-      requestAnimationFrame(() => {
-        isSyncingScroll.current = false;
-      });
-    }
-  };
-
-  const syncScrollFromTable = () => {
-    if (isSyncingScroll.current) return;
-    if (topScrollRef.current && tableScrollRef.current) {
-      if (topScrollInnerRef.current) {
+  // Keep top scrollbar width strictly synced with table's scrollWidth using ResizeObserver
+  useEffect(() => {
+    const updateWidth = () => {
+      if (tableScrollRef.current && topScrollInnerRef.current) {
         const sw = tableScrollRef.current.scrollWidth;
-        if (sw > 0 && topScrollInnerRef.current.style.width !== `${sw}px`) {
+        if (sw > 0) {
           topScrollInnerRef.current.style.width = `${sw}px`;
         }
       }
-      isSyncingScroll.current = true;
-      topScrollRef.current.scrollLeft = tableScrollRef.current.scrollLeft;
-      requestAnimationFrame(() => {
-        isSyncingScroll.current = false;
+    };
+
+    updateWidth();
+    const t = setTimeout(updateWidth, 120);
+
+    let ro: ResizeObserver | null = null;
+    if (typeof ResizeObserver !== 'undefined' && tableScrollRef.current) {
+      ro = new ResizeObserver(() => {
+        updateWidth();
       });
+      ro.observe(tableScrollRef.current);
+      const tableEl = tableScrollRef.current.querySelector('table');
+      if (tableEl) ro.observe(tableEl);
     }
+
+    return () => {
+      clearTimeout(t);
+      if (ro) ro.disconnect();
+    };
+  }, [activeGid, liveData, combinedData]);
+
+  const syncScrollFromTop = () => {
+    if (scrollSourceRef.current === 'table' || scrollSourceRef.current === 'button') return;
+    scrollSourceRef.current = 'top';
+    if (tableScrollRef.current && topScrollRef.current) {
+      tableScrollRef.current.scrollLeft = topScrollRef.current.scrollLeft;
+    }
+    clearTimeout(scrollTimeoutRef.current);
+    scrollTimeoutRef.current = setTimeout(() => {
+      scrollSourceRef.current = null;
+    }, 80);
+  };
+
+  const syncScrollFromTable = () => {
+    if (scrollSourceRef.current === 'top' || scrollSourceRef.current === 'button') return;
+    scrollSourceRef.current = 'table';
+    if (topScrollRef.current && tableScrollRef.current) {
+      topScrollRef.current.scrollLeft = tableScrollRef.current.scrollLeft;
+    }
+    clearTimeout(scrollTimeoutRef.current);
+    scrollTimeoutRef.current = setTimeout(() => {
+      scrollSourceRef.current = null;
+    }, 80);
   };
 
   const handleScrollHorizontal = (delta: number) => {
     if (tableScrollRef.current) {
+      scrollSourceRef.current = 'button';
       tableScrollRef.current.scrollBy({ left: delta, behavior: 'smooth' });
+      if (topScrollRef.current) {
+        topScrollRef.current.scrollBy({ left: delta, behavior: 'smooth' });
+      }
+      clearTimeout(scrollTimeoutRef.current);
+      scrollTimeoutRef.current = setTimeout(() => {
+        scrollSourceRef.current = null;
+      }, 400);
     }
   };
 
   const handleScrollToStart = () => {
     if (tableScrollRef.current) {
+      scrollSourceRef.current = 'button';
       tableScrollRef.current.scrollTo({ left: 0, behavior: 'smooth' });
+      if (topScrollRef.current) {
+        topScrollRef.current.scrollTo({ left: 0, behavior: 'smooth' });
+      }
+      clearTimeout(scrollTimeoutRef.current);
+      scrollTimeoutRef.current = setTimeout(() => {
+        scrollSourceRef.current = null;
+      }, 400);
     }
   };
 
   const handleScrollToEnd = () => {
     if (tableScrollRef.current) {
-      tableScrollRef.current.scrollTo({ left: tableScrollRef.current.scrollWidth, behavior: 'smooth' });
+      scrollSourceRef.current = 'button';
+      const maxScroll = tableScrollRef.current.scrollWidth;
+      tableScrollRef.current.scrollTo({ left: maxScroll, behavior: 'smooth' });
+      if (topScrollRef.current) {
+        topScrollRef.current.scrollTo({ left: maxScroll, behavior: 'smooth' });
+      }
+      clearTimeout(scrollTimeoutRef.current);
+      scrollTimeoutRef.current = setTimeout(() => {
+        scrollSourceRef.current = null;
+      }, 400);
     }
   };
 
@@ -10155,7 +10198,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
                   </button>
                   <button
                     type="button"
-                    onClick={() => handleScrollHorizontal(-350)}
+                    onClick={() => handleScrollHorizontal(-400)}
                     className="px-3 py-1.5 text-xs font-bold rounded-xl bg-white/5 hover:bg-white/15 border border-white/10 text-muted hover:text-white flex items-center gap-1.5 transition-all cursor-pointer active:scale-95 shadow-sm group"
                     title="تمرير خطوة لليسار"
                   >
@@ -10168,12 +10211,12 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
                 <div 
                   ref={topScrollRef} 
                   onScroll={syncScrollFromTop}
-                  className="flex-1 overflow-x-auto scrollbar-thin rounded-xl scroll-smooth"
+                  className="flex-1 overflow-x-auto top-scroll-track rounded-xl select-none"
                   style={{ height: '14px' }}
                 >
                   <div 
                     ref={topScrollInnerRef} 
-                    style={{ width: isReelsTableTab ? '3200px' : isOperations ? '1800px' : '1500px', height: '1px' }} 
+                    style={{ width: '2400px', height: '1px' }} 
                   />
                 </div>
 
@@ -10181,7 +10224,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
                 <div className="flex items-center gap-1.5 shrink-0">
                   <button
                     type="button"
-                    onClick={() => handleScrollHorizontal(350)}
+                    onClick={() => handleScrollHorizontal(400)}
                     className="px-3 py-1.5 text-xs font-bold rounded-xl bg-white/5 hover:bg-white/15 border border-white/10 text-muted hover:text-white flex items-center gap-1.5 transition-all cursor-pointer active:scale-95 shadow-sm group"
                     title="تمرير خطوة لليمين"
                   >

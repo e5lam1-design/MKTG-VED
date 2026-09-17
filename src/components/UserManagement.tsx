@@ -48,14 +48,15 @@ const AvatarInitials = ({ name, role, team }: { name: string; role: Role; team?:
   );
 };
 
-interface ChangePasswordModalProps {
+export interface ChangePasswordModalProps {
   user: UserProfile;
   onClose: () => void;
   onSuccess: (msg: string) => void;
 }
 
-const ChangePasswordModal = ({ user, onClose, onSuccess }: ChangePasswordModalProps) => {
+export const ChangePasswordModal = ({ user, onClose, onSuccess }: ChangePasswordModalProps) => {
   const { session, profile } = useAuth();
+  const [oldPassword, setOldPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -70,13 +71,23 @@ const ChangePasswordModal = ({ user, onClose, onSuccess }: ChangePasswordModalPr
     e.preventDefault();
     setError('');
 
+    if (!oldPassword || oldPassword.trim().length === 0) {
+      setError('يرجى إدخال كلمة المرور القديمة / الحالية لتأكيد التغيير');
+      return;
+    }
+
     if (!newPassword || newPassword.length < 6) {
-      setError('كلمة المرور يجب أن تكون 6 أحرف أو أرقام على الأقل');
+      setError('كلمة المرور الجديدة يجب أن تكون 6 أحرف أو أرقام على الأقل');
+      return;
+    }
+
+    if (oldPassword.trim() === newPassword.trim()) {
+      setError('كلمة المرور الجديدة يجب أن تكون مختلفة عن كلمة المرور الحالية');
       return;
     }
 
     if (confirmPassword && newPassword !== confirmPassword) {
-      setError('كلمتا المرور غير متطابقتين');
+      setError('كلمتا المرور الجديدتان غير متطابقتين');
       return;
     }
 
@@ -91,6 +102,7 @@ const ChangePasswordModal = ({ user, onClose, onSuccess }: ChangePasswordModalPr
         },
         body: JSON.stringify({
           userId: user.id,
+          oldPassword: oldPassword.trim(),
           newPassword: newPassword.trim(),
         }),
       });
@@ -131,7 +143,7 @@ const ChangePasswordModal = ({ user, onClose, onSuccess }: ChangePasswordModalPr
             </div>
             <div>
               <h3 className="text-base font-black text-white arabic-text">تغيير كلمة المرور</h3>
-              <p className="text-xs text-white/40 arabic-text">تحديث كلمة المرور في Supabase Auth</p>
+              <p className="text-xs text-white/40 arabic-text">إدخال كلمة المرور الحالية والجديدة</p>
             </div>
           </div>
           <button onClick={onClose} className="w-8 h-8 rounded-xl bg-white/5 hover:bg-white/10 flex items-center justify-center text-white/50 hover:text-white transition-all cursor-pointer">
@@ -151,6 +163,31 @@ const ChangePasswordModal = ({ user, onClose, onSuccess }: ChangePasswordModalPr
         </div>
 
         <form onSubmit={handleSave} className="space-y-4">
+          {/* Old Password */}
+          <div className="space-y-1.5">
+            <label className="text-[11px] font-black text-white/60 uppercase tracking-wider block">
+              كلمة المرور الحالية (القديمة) 🔑
+            </label>
+            <div className="relative">
+              <input
+                type={showPassword ? 'text' : 'password'}
+                value={oldPassword}
+                onChange={e => setOldPassword(e.target.value)}
+                required
+                placeholder="اكتب كلمة المرور الحالية للتأكيد..."
+                className="w-full px-4 py-3 rounded-xl bg-white/[0.05] border border-white/[0.1] text-white placeholder-white/25 text-sm font-medium focus:outline-none focus:border-purple-500/60 focus:bg-white/[0.08] transition-all pr-4 pl-11"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(v => !v)}
+                className="absolute left-3.5 top-1/2 -translate-y-1/2 text-white/40 hover:text-white transition-colors cursor-pointer"
+              >
+                {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+              </button>
+            </div>
+          </div>
+
+          {/* New Password */}
           <div className="space-y-1.5">
             <label className="text-[11px] font-black text-white/60 uppercase tracking-wider block">
               كلمة المرور الجديدة 🔒
@@ -165,25 +202,18 @@ const ChangePasswordModal = ({ user, onClose, onSuccess }: ChangePasswordModalPr
                 placeholder="اكتب كلمة مرور جديدة (6 خانات على الأقل)..."
                 className="w-full px-4 py-3 rounded-xl bg-white/[0.05] border border-white/[0.1] text-white placeholder-white/25 text-sm font-medium focus:outline-none focus:border-purple-500/60 focus:bg-white/[0.08] transition-all pr-4 pl-11"
               />
-              <button
-                type="button"
-                onClick={() => setShowPassword(v => !v)}
-                className="absolute left-3.5 top-1/2 -translate-y-1/2 text-white/40 hover:text-white transition-colors cursor-pointer"
-              >
-                {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
-              </button>
             </div>
           </div>
 
           <div className="space-y-1.5">
             <label className="text-[11px] font-black text-white/60 uppercase tracking-wider block">
-              تأكيد كلمة المرور 🔐
+              تأكيد كلمة المرور الجديدة 🔐
             </label>
             <input
               type={showPassword ? 'text' : 'password'}
               value={confirmPassword}
               onChange={e => setConfirmPassword(e.target.value)}
-              placeholder="أعد كتابة كلمة المرور للتأكيد..."
+              placeholder="أعد كتابة كلمة المرور الجديدة للتأكيد..."
               className="w-full px-4 py-3 rounded-xl bg-white/[0.05] border border-white/[0.1] text-white placeholder-white/25 text-sm font-medium focus:outline-none focus:border-purple-500/60 focus:bg-white/[0.08] transition-all"
             />
           </div>
@@ -205,11 +235,11 @@ const ChangePasswordModal = ({ user, onClose, onSuccess }: ChangePasswordModalPr
             </button>
             <button
               type="submit"
-              disabled={saving || !newPassword || newPassword.length < 6}
+              disabled={saving || !oldPassword || !newPassword || newPassword.length < 6}
               className="flex-1 py-3 rounded-xl bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-500 hover:to-indigo-500 text-white font-black text-xs transition-all shadow-[0_0_20px_rgba(147,51,234,0.4)] cursor-pointer disabled:opacity-50 flex items-center justify-center gap-2"
             >
               {saving ? <Loader2 size={14} className="animate-spin" /> : <Check size={14} />}
-              <span>حفظ في Supabase</span>
+              <span>تحديث كلمة المرور</span>
             </button>
           </div>
         </form>
@@ -226,13 +256,17 @@ interface EditUserModalProps {
 }
 
 const EditUserModal = ({ user, initialTeam, onClose, onSave }: EditUserModalProps) => {
+  const { session, profile } = useAuth();
   const [role, setRole] = useState<Role>(user.role);
   const [allowedTabs, setAllowedTabs] = useState<string[]>(user.allowed_tabs || []);
   const [selectedTeam, setSelectedTeam] = useState<'marketing' | 'video' | ''>(initialTeam);
   const [saving, setSaving] = useState(false);
   const [defaultMode, setDefaultMode] = useState<'operations' | 'reels' | 'designers'>(user.default_mode || 'operations');
+  const [oldPassword, setOldPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const [passwordError, setPasswordError] = useState('');
 
   const toggleTab = (tab: string) => {
     setAllowedTabs(prev =>
@@ -240,20 +274,74 @@ const EditUserModal = ({ user, initialTeam, onClose, onSave }: EditUserModalProp
     );
   };
 
-  const handleSave = () => {
-    onSave(
-      user.id, 
-      { 
-        role, 
-        allowed_tabs: allowedTabs, 
-        default_mode: defaultMode,
-        ...(newPassword.trim().length >= 6 ? { password: newPassword.trim() } : {})
-      }, 
-      selectedTeam
-    ).catch(err => {
+  const handleSave = async () => {
+    setPasswordError('');
+
+    // If user attempted to change password:
+    if (newPassword.trim().length > 0 || oldPassword.trim().length > 0) {
+      if (!oldPassword.trim()) {
+        setPasswordError('يرجى إدخال كلمة المرور القديمة / الحالية لتأكيد التغيير ⚠️');
+        return;
+      }
+      if (newPassword.trim().length < 6) {
+        setPasswordError('يجب ألا تقل كلمة المرور الجديدة عن 6 أحرف أو أرقام ⚠️');
+        return;
+      }
+      if (confirmPassword.trim() && newPassword.trim() !== confirmPassword.trim()) {
+        setPasswordError('كلمتا المرور الجديدتان غير متطابقتين ⚠️');
+        return;
+      }
+      if (oldPassword.trim() === newPassword.trim()) {
+        setPasswordError('كلمة المرور الجديدة يجب أن تكون مختلفة عن كلمة المرور الحالية ⚠️');
+        return;
+      }
+
+      setSaving(true);
+      try {
+        const token = session?.access_token || profile?.id || session?.user?.id || 'admin';
+        const res = await fetch('/api/change-password', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            userId: user.id,
+            oldPassword: oldPassword.trim(),
+            newPassword: newPassword.trim(),
+          }),
+        });
+
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          setPasswordError(data?.error || data?.message || 'كلمة المرور القديمة غير صحيحة أو فشل التغيير');
+          setSaving(false);
+          return;
+        }
+      } catch (err: any) {
+        setPasswordError(err.message || 'حدث خطأ أثناء تغيير كلمة المرور');
+        setSaving(false);
+        return;
+      }
+    }
+
+    setSaving(true);
+    try {
+      await onSave(
+        user.id, 
+        { 
+          role, 
+          allowed_tabs: allowedTabs, 
+          default_mode: defaultMode,
+        }, 
+        selectedTeam
+      );
+      onClose();
+    } catch (err: any) {
       console.error('[handleSave]', err);
-    });
-    onClose();
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -443,28 +531,73 @@ const EditUserModal = ({ user, initialTeam, onClose, onSave }: EditUserModalProp
           </div>
         </div>
 
-        {/* Change Password field (Optional) */}
-        <div className="mb-6 p-4 rounded-2xl bg-white/[0.02] border border-white/[0.06]">
-          <label className="text-[11px] font-black text-white/60 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+        {/* Change Password field (Requires Old Password) */}
+        <div className="mb-6 p-4 rounded-2xl bg-white/[0.02] border border-white/[0.06] space-y-3">
+          <label className="text-[11px] font-black text-white/70 uppercase tracking-wider flex items-center gap-1.5">
             <Lock size={13} className="text-purple-400" />
-            <span>تغيير كلمة المرور في Supabase (اختياري)</span>
+            <span>تغيير كلمة المرور (يلزم إدخال كلمة المرور القديمة أولاً) 🔒</span>
           </label>
-          <div className="relative">
+
+          {passwordError && (
+            <div className="p-2.5 rounded-xl bg-rose-500/10 border border-rose-500/30 text-rose-400 text-xs font-bold arabic-text flex items-center gap-2">
+              <AlertCircle size={14} className="shrink-0" />
+              <span>{passwordError}</span>
+            </div>
+          )}
+
+          <div>
+            <label className="block text-[10px] text-white/50 mb-1 font-bold arabic-text">كلمة المرور القديمة / الحالية *</label>
+            <div className="relative">
+              <input
+                type={showPassword ? 'text' : 'password'}
+                value={oldPassword}
+                onChange={e => {
+                  setOldPassword(e.target.value);
+                  setPasswordError('');
+                }}
+                placeholder="أدخل كلمة المرور الحالية لتأكيد التغيير..."
+                className="w-full px-4 py-2 rounded-xl bg-white/5 border border-white/10 text-white placeholder-white/20 text-xs font-medium focus:outline-none focus:border-purple-500/60 transition-all pr-4 pl-10"
+              />
+              <button
+                type="button"
+                onClick={() => setShowPassword(v => !v)}
+                className="absolute left-3 top-1/2 -translate-y-1/2 text-white/30 hover:text-white transition-colors cursor-pointer"
+              >
+                {showPassword ? <EyeOff size={14} /> : <Eye size={14} />}
+              </button>
+            </div>
+          </div>
+
+          <div>
+            <label className="block text-[10px] text-white/50 mb-1 font-bold arabic-text">كلمة المرور الجديدة</label>
             <input
               type={showPassword ? 'text' : 'password'}
               value={newPassword}
-              onChange={e => setNewPassword(e.target.value)}
-              placeholder="اكتب كلمة مرور جديدة (اتركه فارغاً إذا لم ترغب في التغيير)..."
-              className="w-full px-4 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white placeholder-white/20 text-xs font-medium focus:outline-none focus:border-purple-500/60 transition-all pr-4 pl-10"
+              onChange={e => {
+                setNewPassword(e.target.value);
+                setPasswordError('');
+              }}
+              placeholder="اكتب كلمة مرور جديدة (6 أحرف أو أرقام على الأقل)..."
+              className="w-full px-4 py-2 rounded-xl bg-white/5 border border-white/10 text-white placeholder-white/20 text-xs font-medium focus:outline-none focus:border-purple-500/60 transition-all"
             />
-            <button
-              type="button"
-              onClick={() => setShowPassword(v => !v)}
-              className="absolute left-3 top-1/2 -translate-y-1/2 text-white/30 hover:text-white transition-colors cursor-pointer"
-            >
-              {showPassword ? <EyeOff size={14} /> : <Eye size={14} />}
-            </button>
           </div>
+
+          {(newPassword || oldPassword) && (
+            <div>
+              <label className="block text-[10px] text-white/50 mb-1 font-bold arabic-text">تأكيد كلمة المرور الجديدة</label>
+              <input
+                type={showPassword ? 'text' : 'password'}
+                value={confirmPassword}
+                onChange={e => {
+                  setConfirmPassword(e.target.value);
+                  setPasswordError('');
+                }}
+                placeholder="أعد كتابة كلمة المرور الجديدة..."
+                className="w-full px-4 py-2 rounded-xl bg-white/5 border border-white/10 text-white placeholder-white/20 text-xs font-medium focus:outline-none focus:border-purple-500/60 transition-all"
+              />
+            </div>
+          )}
+
           {newPassword && newPassword.length < 6 && (
             <p className="text-[10px] text-rose-400 mt-1 font-bold">⚠️ يجب ألا تقل كلمة المرور عن 6 أحرف أو أرقام</p>
           )}

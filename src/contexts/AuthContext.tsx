@@ -250,69 +250,86 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   }, []);
 
   const signIn = async (identifier: string, password?: string) => {
-    const normalizedIdentifier = identifier.toLowerCase().trim();
+    const cleanEmail = (identifier || '').toLowerCase().trim();
+    const cleanPassword = (password || '').trim();
 
-    if (password && password.trim().length > 0) {
-      let email = normalizedIdentifier;
-      if (!normalizedIdentifier.includes('@')) {
-        const resolveRes = await fetch('/api/resolve-login', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ identifier: normalizedIdentifier }),
-        });
-        const resolveData = await resolveRes.json().catch(() => ({}));
-        email = String(resolveData?.email || '').toLowerCase().trim();
-      }
-      if (!email) return { error: 'اسم المستخدم غير موجود' };
-      const { data: authData, error } = await supabase.auth.signInWithPassword({ email, password });
-      if (error) return { error: error.message };
+    // 1. Strict Validation: Email is mandatory and must contain @ and a domain
+    if (!cleanEmail || !cleanEmail.includes('@') || !cleanEmail.includes('.')) {
+      return { error: 'يرجى إدخال بريد إلكتروني صحيح (name@company.com). الدخول بالاسم ملغي تماماً.' };
+    }
 
-      const nowIso = new Date().toISOString();
-      if (authData?.user?.id) {
-        await supabase.from('user_profiles').update({ last_login_at: nowIso }).eq('id', authData.user.id);
-        fetch('/api/log-activity', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ user_id: authData.user.id, event_type: 'login', email }),
-        }).catch(() => {});
+    // 2. Strict Validation: Password is mandatory
+    if (!cleanPassword || cleanPassword.length === 0) {
+      return { error: 'كلمة المرور مطلوبة لتسجيل الدخول ولا يمكن تركها فارغة.' };
+    }
+
+    // 3. Authenticate with Supabase Auth using email and password
+    const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+      email: cleanEmail,
+      password: cleanPassword,
+    });
+
+    const nowIso = new Date().toISOString();
+
+    if (!authError && authData?.user) {
+      // Successfully authenticated via Supabase Auth
+      const p = await fetchProfileFromDB(authData.user.id, cleanEmail);
+      if (p) {
+        if (p.is_active === false) {
+          await supabase.auth.signOut().catch(() => {});
+          return { error: 'هذا الحساب غير مفعل. يرجى التواصل مع الإدارة.' };
+        }
+        applyProfile(p);
+        subscribeToProfileChanges(p.id);
       }
+
+      await supabase.from('user_profiles').update({ last_login_at: nowIso }).eq('id', authData.user.id).catch(() => {});
+      fetch('/api/log-activity', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ user_id: authData.user.id, event_type: 'login', email: cleanEmail }),
+      }).catch(() => {});
 
       localStorage.removeItem(LOCAL_LOGIN_KEY);
       localProfileIdRef.current = null;
       return { error: null };
     }
 
-    // Without password → look up in user_profiles
-    let query = supabase.from('user_profiles').select('*').limit(1);
-    if (normalizedIdentifier.includes('@')) {
-      query = query.eq('email', normalizedIdentifier);
-    } else {
-      query = query.ilike('name', normalizedIdentifier);
+    // 4. Fallback check for users with password stored in user_profiles
+    const { data: dbUser, error: dbError } = await supabase
+      .from('user_profiles')
+      .select('*')
+      .eq('email', cleanEmail)
+      .maybeSingle();
+
+    if (!dbError && dbUser) {
+      if (dbUser.is_active === false) {
+        return { error: 'هذا الحساب غير مفعل. يرجى التواصل مع الإدارة.' };
+      }
+
+      // Check if stored password in user_profiles matches
+      if (dbUser.password && dbUser.password === cleanPassword) {
+        try {
+          await supabase.from('user_profiles').update({ last_login_at: nowIso }).eq('id', dbUser.id);
+        } catch {}
+
+        fetch('/api/log-activity', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ user_id: dbUser.id, event_type: 'login', name: dbUser.name, email: dbUser.email }),
+        }).catch(() => {});
+
+        const p = { ...dbUser, last_login_at: nowIso, allowed_tabs: parseAllowedTabs(dbUser.allowed_tabs) } as UserProfile;
+        localProfileIdRef.current = p.id;
+        setUser(null);
+        setSession(null);
+        applyProfile(p);
+        subscribeToProfileChanges(p.id);
+        return { error: null };
+      }
     }
-    const { data, error } = await query.maybeSingle();
-    if (error || !data) return { error: 'الاسم أو الإيميل غير موجود' };
-    if (data.is_active === false) return { error: 'الحساب غير مفعل' };
 
-    const nowIso = new Date().toISOString();
-    try {
-      await supabase.from('user_profiles').update({ last_login_at: nowIso }).eq('id', data.id);
-    } catch {}
-    
-    // Always trigger log-activity API endpoint for user_logs table insertion
-    fetch('/api/log-activity', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ user_id: data.id, event_type: 'login', name: data.name, email: data.email }),
-    }).catch(() => {});
-
-    const p = { ...data, last_login_at: nowIso, allowed_tabs: parseAllowedTabs(data.allowed_tabs) } as UserProfile;
-    localProfileIdRef.current = p.id;
-    setUser(null);
-    setSession(null);
-    applyProfile(p);
-    // Subscribe to realtime for this user
-    subscribeToProfileChanges(p.id);
-    return { error: null };
+    return { error: 'البريد الإلكتروني أو كلمة المرور غير صحيحة' };
   };
 
   const signOut = async () => {

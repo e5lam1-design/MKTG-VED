@@ -58,7 +58,7 @@ import {
 import { useGoogleSheets } from './hooks/useGoogleSheets';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { LoginPage } from './pages/LoginPage';
-import { UserManagement } from './components/UserManagement';
+import { UserManagement, ChangePasswordModal } from './components/UserManagement';
 import { ReelsAnalytics } from './components/ReelsAnalytics';
 import DesignersDashboard from './components/DesignersDashboard';
 import { DesignAnalytics } from './components/DesignAnalytics';
@@ -4825,6 +4825,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
   const [showMyNotifs, setShowMyNotifs] = useState(false);
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
   const [showGuideModal, setShowGuideModal] = useState(false);
+  const [showChangePasswordModal, setShowChangePasswordModal] = useState(false);
   const [showTour, setShowTour] = useState(false);
   const unreadCount = myNotifs.filter(n => !n.read).length;
 
@@ -5111,27 +5112,50 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
 
       if (error) throw error;
       if (data) {
-        const mapped = data.map((i: any) => ({
-          uniqueKey: i.unique_key,
-          id: i.unique_key,
-          week: i.week || '',
-          date: i.date || '',
-          name: i.name || '',
-          filingName: i.filing_name || '',
-          subject: i.subject || '',
-          branch: i.branch || '',
-          opSheet: i.op_sheet || '',
-          isTagme3a: i.is_tagme3a === true,
-          delivered: i.delivered === true,
-          thumbnailLink: i.thumbnail_link || '',
-          time: i.time || '',
-          youtubeLink: i.youtube_link || '',
-          uploaded: i.uploaded === true,
-          createdAt: i.created_at,
-          updatedAt: i.updated_at
-        }));
+        const mapped = data.map((i: any) => {
+          const uKey = i.unique_key || (i.id ? String(i.id) : '');
+          return {
+            uniqueKey: uKey,
+            id: uKey,
+            dbId: i.id,
+            week: i.week || '',
+            date: i.date || '',
+            name: i.name || '',
+            filingName: i.filing_name || '',
+            subject: i.subject || '',
+            branch: i.branch || '',
+            opSheet: i.op_sheet || '',
+            isTagme3a: i.is_tagme3a === true,
+            delivered: i.delivered === true,
+            thumbnailLink: i.thumbnail_link || '',
+            time: i.time || '',
+            youtubeLink: i.youtube_link || '',
+            uploaded: i.uploaded === true,
+            createdAt: i.created_at,
+            updatedAt: i.updated_at
+          };
+        });
         setStageDbRows(prev => {
-          if (prev.length === mapped.length && prev[0]?.uniqueKey === mapped[0]?.uniqueKey && prev[0]?.updatedAt === mapped[0]?.updatedAt) {
+          if (
+            prev.length === mapped.length &&
+            prev.every((p, idx) => {
+              const m = mapped[idx];
+              return (
+                m &&
+                p.uniqueKey === m.uniqueKey &&
+                p.updatedAt === m.updatedAt &&
+                p.delivered === m.delivered &&
+                p.uploaded === m.uploaded &&
+                p.time === m.time &&
+                p.thumbnailLink === m.thumbnailLink &&
+                p.youtubeLink === m.youtubeLink &&
+                p.week === m.week &&
+                p.date === m.date &&
+                p.filingName === m.filingName &&
+                p.subject === m.subject
+              );
+            })
+          ) {
             return prev;
           }
           return mapped;
@@ -5322,26 +5346,50 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
     };
 
     const col = dbFieldMap[field] || field;
+    const nowIso = new Date().toISOString();
 
     // Optimistic UI update
     setStageDbRows(prev => prev.map(item => {
-      if (item.uniqueKey === itemKey) {
-        return { ...item, [field]: value };
+      if (item.uniqueKey === itemKey || item.id === itemKey || (item.dbId && String(item.dbId) === String(itemKey))) {
+        return { ...item, [field]: value, updatedAt: nowIso };
       }
       return item;
     }));
 
     try {
-      const { error } = await supabase
-        .from(tbl)
-        .update({
-          [col]: value,
-          updated_at: new Date().toISOString()
-        })
-        .eq('unique_key', itemKey);
+      const foundItem = stageDbRows.find(item => item.uniqueKey === itemKey || item.id === itemKey || (item.dbId && String(item.dbId) === String(itemKey)));
+      const dbKey = foundItem?.uniqueKey || itemKey;
 
+      let query = supabase.from(tbl).update({
+        [col]: value,
+        updated_at: nowIso
+      });
+
+      if (foundItem?.uniqueKey) {
+        query = query.or(`unique_key.eq.${foundItem.uniqueKey},unique_key.eq.${itemKey}`);
+      } else {
+        query = query.or(`unique_key.eq.${itemKey},id.eq.${Number(itemKey) || -1}`);
+      }
+
+      const { error } = await query;
       if (error) {
         console.error(`Error updating ${tbl} in Supabase:`, error);
+      } else {
+        if (globalChannelRef.current && profile?.name) {
+          globalChannelRef.current.send({
+            type: 'broadcast',
+            event: 'update',
+            payload: {
+              itemKey,
+              taskName: foundItem?.name || itemKey,
+              message: `تم تحديث ${field}`,
+              type: 'stage_update',
+              from: profile.name,
+              field,
+              updatedItem: { uniqueKey: dbKey, [field]: value, updatedAt: nowIso }
+            }
+          });
+        }
       }
     } catch (err) {
       console.error(`Exception updating ${tbl} in Supabase:`, err);
@@ -5818,8 +5866,18 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
       const key = item.uniqueKey || generateKey(item);
       const updated = { ...item };
 
-      // For Tagme3at, Stage, and Reels tables, Supabase is the authoritative single source of truth
-      if (isTagme3at || isAnalyticsTagme || isStageTab || isReelsTableTab) {
+      if (isStageTab) {
+        if (assignedWeeks[key] !== undefined) updated.week = assignedWeeks[key];
+        if (assignedDates[key] !== undefined) updated.date = assignedDates[key];
+        if (assignedThumbnailLinks[key] !== undefined) updated.thumbnailLink = assignedThumbnailLinks[key];
+        if (assignedTimes[key] !== undefined) updated.time = assignedTimes[key];
+        if (assignedYoutubeLinks[key] !== undefined) updated.youtubeLink = assignedYoutubeLinks[key];
+        if (uploadedStatuses[key] !== undefined) updated.uploaded = uploadedStatuses[key];
+        return updated;
+      }
+
+      // For Tagme3at and Reels tables, Supabase is the authoritative single source of truth
+      if (isTagme3at || isAnalyticsTagme || isReelsTableTab) {
         return updated;
       }
 
@@ -9107,6 +9165,13 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
               </span>
             </div>
             <button
+              onClick={() => setShowChangePasswordModal(true)}
+              className="p-2 rounded-xl bg-white/5 hover:bg-amber-500/20 border border-white/10 hover:border-amber-500/30 text-muted hover:text-amber-400 transition-all cursor-pointer shadow-sm hover:scale-105 active:scale-95 shrink-0"
+              title="تغيير كلمة المرور"
+            >
+              <Key size={14} />
+            </button>
+            <button
               onClick={() => signOut()}
               className="px-3 py-2 rounded-xl bg-rose-500/15 hover:bg-rose-500/30 border border-rose-500/30 text-rose-300 font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer shadow-sm hover:scale-105 active:scale-95 shrink-0 arabic-text"
               title="تسجيل الخروج"
@@ -10229,6 +10294,10 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
                       created_at: new Date().toISOString(),
                       updated_at: new Date().toISOString()
                     }]);
+
+                    if (activeGid === targetStageGid) {
+                      setStageDbRows(prev => [mergedItem, ...prev.filter(x => x.uniqueKey !== mergedItem.uniqueKey)]);
+                    }
                   } catch (err) {
                     console.error('Error inserting merged item to stage:', err);
                   }
@@ -11183,6 +11252,18 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
           currentGid={activeGid}
           currentLabel={activeLabel}
         />
+
+        {/* Change Password Modal */}
+        {showChangePasswordModal && profile && (
+          <ChangePasswordModal
+            user={profile}
+            onClose={() => setShowChangePasswordModal(false)}
+            onSuccess={(msg) => {
+              toast.success(msg || 'تم تغيير كلمة المرور بنجاح');
+              setShowChangePasswordModal(false);
+            }}
+          />
+        )}
 
         {/* Interactive Step-by-Step Walkthrough Tour */}
       </main>

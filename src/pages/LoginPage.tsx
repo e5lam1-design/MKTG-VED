@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../contexts/AuthContext';
-import { Eye, EyeOff, LogIn, AlertCircle, Loader2 } from 'lucide-react';
+import { Eye, EyeOff, LogIn, AlertCircle, Loader2, Mail, Lock } from 'lucide-react';
 
 export const LoginPage = () => {
   const { signIn } = useAuth();
-  const [identifier, setIdentifier] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -14,14 +14,32 @@ export const LoginPage = () => {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
+
+    const cleanEmail = email.trim().toLowerCase();
+    const cleanPassword = password.trim();
+
+    // Strict validation: Email is required and must contain @ and a domain
+    if (!cleanEmail || !cleanEmail.includes('@') || !cleanEmail.includes('.')) {
+      setError('يرجى إدخال بريد إلكتروني صحيح (name@company.com). الدخول بالاسم ملغي تماماً.');
+      return;
+    }
+
+    // Strict validation: Password is required
+    if (!cleanPassword) {
+      setError('كلمة المرور مطلوبة ولا يمكن تركها فارغة.');
+      return;
+    }
+
     setLoading(true);
-    const { error } = await signIn(identifier, password);
-    if (error) setError('الاسم/الإيميل أو كلمة المرور غير صحيحة');
+    const { error: loginError } = await signIn(cleanEmail, cleanPassword);
+    if (loginError) {
+      setError(loginError);
+    }
     setLoading(false);
   };
 
   return (
-    <div className="min-h-screen bg-[#060a12] flex items-center justify-center p-4 relative overflow-hidden">
+    <div className="min-h-screen bg-[#060a12] flex items-center justify-center p-4 relative overflow-hidden" dir="rtl">
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         <div className="absolute top-1/4 left-1/2 -translate-x-1/2 w-[600px] h-[600px] bg-purple-600/8 rounded-full blur-[120px]" />
         <div className="absolute bottom-0 right-1/4 w-[400px] h-[400px] bg-blue-600/6 rounded-full blur-[100px]" />
@@ -58,32 +76,37 @@ export const LoginPage = () => {
 
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-1.5">
-              <label className="text-[11px] font-black text-white/50 uppercase tracking-widest">
-                الاسم أو البريد الإلكتروني
+              <label className="text-[11px] font-black text-white/60 uppercase tracking-wider flex items-center gap-1.5">
+                <Mail size={13} className="text-purple-400" />
+                <span>البريد الإلكتروني الرسمي (مطلوب)</span>
               </label>
               <input
-                type="text"
-                value={identifier}
-                onChange={e => setIdentifier(e.target.value)}
+                type="email"
+                value={email}
+                onChange={e => setEmail(e.target.value)}
                 required
-                autoComplete="username"
-                placeholder="eslam أو name@company.com"
-                className="w-full px-4 py-3 rounded-xl bg-white/[0.05] border border-white/[0.1] text-white placeholder-white/25 text-sm font-medium focus:outline-none focus:border-purple-500/60 focus:bg-white/[0.08] focus:shadow-[0_0_20px_rgba(147,51,234,0.15)] transition-all"
+                autoComplete="email"
+                dir="ltr"
+                placeholder="name@company.com"
+                className="w-full px-4 py-3 rounded-xl bg-white/[0.05] border border-white/[0.1] text-white placeholder-white/25 text-sm font-medium focus:outline-none focus:border-purple-500/60 focus:bg-white/[0.08] focus:shadow-[0_0_20px_rgba(147,51,234,0.15)] transition-all text-left"
               />
             </div>
 
             <div className="space-y-1.5">
-              <label className="text-[11px] font-black text-white/50 uppercase tracking-widest">
-                كلمة المرور (اختياري)
+              <label className="text-[11px] font-black text-white/60 uppercase tracking-wider flex items-center gap-1.5">
+                <Lock size={13} className="text-purple-400" />
+                <span>كلمة المرور (مطلوبة)</span>
               </label>
               <div className="relative">
                 <input
                   type={showPassword ? 'text' : 'password'}
                   value={password}
                   onChange={e => setPassword(e.target.value)}
+                  required
                   autoComplete="current-password"
-                  placeholder="اتركها فاضية للدخول بالاسم فقط"
-                  className="w-full px-4 py-3 rounded-xl bg-white/[0.05] border border-white/[0.1] text-white placeholder-white/25 text-sm font-medium focus:outline-none focus:border-purple-500/60 focus:bg-white/[0.08] focus:shadow-[0_0_20px_rgba(147,51,234,0.15)] transition-all pr-4 pl-12"
+                  dir="ltr"
+                  placeholder="••••••••"
+                  className="w-full px-4 py-3 rounded-xl bg-white/[0.05] border border-white/[0.1] text-white placeholder-white/25 text-sm font-medium focus:outline-none focus:border-purple-500/60 focus:bg-white/[0.08] focus:shadow-[0_0_20px_rgba(147,51,234,0.15)] transition-all pr-4 pl-12 text-left"
                 />
                 <button
                   type="button"
@@ -127,8 +150,8 @@ export const LoginPage = () => {
             </motion.button>
           </form>
 
-          <p className="text-center text-[11px] text-white/20 mt-6 font-medium">
-            يمكنك الدخول بالاسم فقط أو بالاسم مع كلمة مرور
+          <p className="text-center text-[11px] text-white/30 mt-6 font-medium">
+            🔒 الدخول مخصص حصرياً عبر البريد الإلكتروني الرسمي وكلمة المرور
           </p>
         </div>
       </motion.div>

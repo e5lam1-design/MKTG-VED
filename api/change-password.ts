@@ -1,6 +1,6 @@
 // api/change-password.ts – Serverless Function for changing user password in Supabase Auth
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { getRequesterProfile, handleApiError, supabaseAdminClient } from './_supabase.js';
+import { getRequesterProfile, handleApiError, supabaseAdminClient, supabaseAuthClient } from './_supabase.js';
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   // CORS
@@ -22,14 +22,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     }
 
     const requester = await getRequesterProfile(req);
-    const { userId, newPassword } = req.body || {};
+    const { userId, newPassword, oldPassword } = req.body || {};
 
-    if (!newPassword || typeof newPassword !== 'string' || newPassword.trim().length < 6) {
-      const err: any = new Error('كلمة المرور يجب أن تكون 6 أحرف/أرقام على الأقل');
+    if (!oldPassword || typeof oldPassword !== 'string' || oldPassword.trim().length === 0) {
+      const err: any = new Error('يرجى إدخال كلمة المرور القديمة / الحالية لتأكيد التغيير');
       err.status = 400;
       throw err;
     }
 
+    if (!newPassword || typeof newPassword !== 'string' || newPassword.trim().length < 6) {
+      const err: any = new Error('كلمة المرور الجديدة يجب أن تكون 6 أحرف/أرقام على الأقل');
+      err.status = 400;
+      throw err;
+    }
+
+    const cleanOldPassword = oldPassword.trim();
     const cleanPassword = newPassword.trim();
     const targetId = userId || requester.id;
 
@@ -57,6 +64,33 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     if (requester.role === 'manager' && targetProfile.role === 'admin' && targetId !== requester.id) {
       const err: any = new Error('لا يمكن للمدير تعديل كلمة مرور الأدمن');
       err.status = 403;
+      throw err;
+    }
+
+    // Verify old password
+    let isOldPasswordValid = false;
+
+    // 1. Check against user_profiles stored password
+    if (targetProfile.password && targetProfile.password === cleanOldPassword) {
+      isOldPasswordValid = true;
+    }
+
+    // 2. Check against Supabase Auth
+    if (!isOldPasswordValid && supabaseAuthClient && targetProfile.email) {
+      try {
+        const { data: authTest, error: authTestErr } = await supabaseAuthClient.auth.signInWithPassword({
+          email: targetProfile.email,
+          password: cleanOldPassword,
+        });
+        if (!authTestErr && authTest?.user) {
+          isOldPasswordValid = true;
+        }
+      } catch {}
+    }
+
+    if (!isOldPasswordValid) {
+      const err: any = new Error('كلمة المرور القديمة غير صحيحة');
+      err.status = 400;
       throw err;
     }
 

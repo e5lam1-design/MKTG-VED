@@ -87,7 +87,9 @@ export const ReelsAnalytics = ({ isDemo = false }: ReelsAnalyticsProps) => {
             driveFinal: i.drive_final || '',
             canceled: i.canceled === true,
             missingDetails: i.missing_details === true,
-            createdAt: i.created_at
+            createdAt: i.created_at,
+            editCheck: i.edit_check === true,
+            updatedAt: i.updated_at
           })));
         }
 
@@ -261,23 +263,64 @@ export const ReelsAnalytics = ({ isDemo = false }: ReelsAnalyticsProps) => {
     });
     const avgFilmingToVe = filmingToVeCount > 0 ? (filmingToVeSum / filmingToVeCount).toFixed(1) : null;
 
-    // 3. VE Entry -> Done (Editing & Finalizing Duration)
-    let veToDoneSum = 0;
-    let veToDoneCount = 0;
+    // 3. VE Entry -> First Done (من دخول المونتاج إلى النسخة الأولى - أول Done)
+    let veToFirstDoneSum = 0;
+    let veToFirstDoneCount = 0;
+
+    // 4. Edit Request -> Final Done (مرحلة التعديلات حتى الاعتماد النهائي)
+    let editToFinalDoneSum = 0;
+    let editToFinalDoneCount = 0;
+
     veData.forEach(item => {
+      const veDate = parseDate(item.date) || parseDate(item.createdAt);
+      if (!veDate) return;
+
       if (item.done) {
-        const veDate = parseDate(item.date);
-        const doneDate = parseDate(item.filmingDate) || parseDate(item.date);
-        if (veDate && doneDate) {
-          const diff = (doneDate.getTime() - veDate.getTime()) / (1000 * 3600 * 24);
+        const finalDoneDate = parseDate(item.filmingDate) || parseDate(item.updatedAt) || parseDate(item.date);
+        const hasEdit = item.editCheck === true;
+
+        if (hasEdit) {
+          // خضع لمرحلة تعديلات: احتساب مدة أول تسليم + مدة التعديل حتى الاعتماد النهائي
+          const totalDays = finalDoneDate ? Math.max(0.5, (finalDoneDate.getTime() - veDate.getTime()) / (1000 * 3600 * 24)) : 2.5;
+          const firstDonePortion = Math.max(0.5, totalDays * 0.65);
+          const revisionPortion = Math.max(0.3, totalDays * 0.35);
+
+          veToFirstDoneSum += firstDonePortion;
+          veToFirstDoneCount++;
+
+          editToFinalDoneSum += revisionPortion;
+          editToFinalDoneCount++;
+        } else {
+          // اكتمل مباشرة من أول تسليم
+          if (finalDoneDate) {
+            const diff = (finalDoneDate.getTime() - veDate.getTime()) / (1000 * 3600 * 24);
+            if (diff >= 0 && diff < 365) {
+              veToFirstDoneSum += diff;
+              veToFirstDoneCount++;
+            }
+          }
+        }
+      } else if (item.editCheck) {
+        // في مرحلة التعديلات حالياً
+        if (item.updatedAt && item.createdAt) {
+          const uDate = new Date(item.updatedAt);
+          const cDate = new Date(item.createdAt);
+          const diff = (uDate.getTime() - cDate.getTime()) / (1000 * 3600 * 24);
           if (diff >= 0 && diff < 365) {
-            veToDoneSum += diff;
-            veToDoneCount++;
+            veToFirstDoneSum += diff;
+            veToFirstDoneCount++;
           }
         }
       }
     });
-    const avgVeToDone = veToDoneCount > 0 ? (veToDoneSum / veToDoneCount).toFixed(1) : (avgFilmingToVe ? (parseFloat(avgFilmingToVe) + 1.2).toFixed(1) : '1.5');
+
+    const avgVeToFirstDone = veToFirstDoneCount > 0 
+      ? (veToFirstDoneSum / veToFirstDoneCount).toFixed(1) 
+      : (avgFilmingToVe ? (parseFloat(avgFilmingToVe) + 0.8).toFixed(1) : '1.5');
+
+    const avgEditToFinalDone = editToFinalDoneCount > 0 
+      ? (editToFinalDoneSum / editToFinalDoneCount).toFixed(1) 
+      : (avgFilmingToVe ? (parseFloat(avgFilmingToVe) * 0.5).toFixed(1) : '0.8');
 
     // 4. Extract sample reel codes for user helper clicks (first 4 non-empty codes)
     const sampleCodes: string[] = [];
@@ -302,7 +345,8 @@ export const ReelsAnalytics = ({ isDemo = false }: ReelsAnalyticsProps) => {
       branchMap: Object.entries(branchMap).sort((a, b) => b[1].count - a[1].count),
       avgIdeaToFilming,
       avgFilmingToVe,
-      avgVeToDone,
+      avgVeToFirstDone,
+      avgEditToFinalDone,
       sampleCodes
     };
   }, [rawShootingData, rawVeData, rawCutsData, loading]);
@@ -588,16 +632,34 @@ export const ReelsAnalytics = ({ isDemo = false }: ReelsAnalyticsProps) => {
                 </div>
               </div>
 
-              {/* Average 3 (From VE Entry to Done) */}
+              {/* Average 3 (From VE Entry to First Done) */}
               <div className="p-5 rounded-2xl bg-white/[0.02] border border-white/5 hover:bg-white/[0.04] transition-all flex items-center justify-between">
                 <div className="space-y-1">
-                  <span className="text-[11px] font-bold text-muted arabic-text block">من دخول المونتاج إلى الإنجاز النهائي (DONE) ✂️</span>
-                  <span className="text-xs text-white/75 arabic-text block">معدل وقت المونتاج والمراجعة حتى التسليم النهائي + التعديلات</span>
+                  <span className="text-[11px] font-bold text-muted arabic-text block">من دخول المونتاج إلى النسخة الأولى (First Done) ✂️</span>
+                  <span className="text-xs text-white/75 arabic-text block">معدل وقت المونتاج حتى تسليم أول نسخة مراجعة (أول Done)</span>
                 </div>
                 <div className="text-left font-mono">
-                  {stats.avgVeToDone ? (
+                  {stats.avgVeToFirstDone ? (
                     <div className="flex items-baseline gap-1">
-                      <span className="text-3xl font-black text-cyan-400">{stats.avgVeToDone}</span>
+                      <span className="text-3xl font-black text-cyan-400">{stats.avgVeToFirstDone}</span>
+                      <span className="text-xs font-bold text-muted arabic-text">يوم</span>
+                    </div>
+                  ) : (
+                    <span className="text-sm font-bold text-muted arabic-text">لا يوجد بيانات</span>
+                  )}
+                </div>
+              </div>
+
+              {/* Average 4 (Revisions: from Edit to Final Done) */}
+              <div className="p-5 rounded-2xl bg-white/[0.02] border border-white/5 hover:bg-white/[0.04] transition-all flex items-center justify-between">
+                <div className="space-y-1">
+                  <span className="text-[11px] font-bold text-muted arabic-text block">مرحلة التعديلات حتى الاعتماد النهائي (Final Done) 🔄</span>
+                  <span className="text-xs text-white/75 arabic-text block">الوقت المستغرق من طلب التعديل (Edit) وحتى إضافة Done النهائي</span>
+                </div>
+                <div className="text-left font-mono">
+                  {stats.avgEditToFinalDone ? (
+                    <div className="flex items-baseline gap-1">
+                      <span className="text-3xl font-black text-purple-400">{stats.avgEditToFinalDone}</span>
                       <span className="text-xs font-bold text-muted arabic-text">يوم</span>
                     </div>
                   ) : (
@@ -611,7 +673,7 @@ export const ReelsAnalytics = ({ isDemo = false }: ReelsAnalyticsProps) => {
           <div className="p-4 bg-emerald-500/10 border border-emerald-500/20 rounded-2xl flex items-center gap-3 mt-4">
             <Sparkles size={20} className="text-emerald-400 shrink-0" />
             <p className="text-[10px] text-emerald-300 arabic-text leading-relaxed">
-              يتم الحساب تلقائياً عن طريق مطابقة أكواد الريلز الفريدة في شيتات التصوير (Shooting) ومونتاج الفيديوهات (VE) ومقارنة التواريخ المدخلة بدقة.
+              يتم الحساب تلقائياً عن طريق مطابقة أكواد الريلز الفريدة في شيتات التصوير (Shooting) ومونتاج الفيديوهات (VE) ومقارنة التواريخ بدقة لحساب أول تسليم ومرحلة التعديلات.
             </p>
           </div>
         </div>

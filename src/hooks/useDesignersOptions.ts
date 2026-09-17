@@ -53,29 +53,42 @@ export function useDesignersOptions() {
   useEffect(() => {
     fetchOptions();
 
-    // Supabase Realtime subscription
-    const channel = supabase
-      .channel('designers_team_options_realtime')
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'designers_team_options_26' },
-        (payload: any) => {
-          if (payload.eventType === 'INSERT') {
-            setOptions(prev => {
-              if (prev.some(x => x.id === payload.new.id)) return prev;
-              return [...prev, payload.new];
-            });
-          } else if (payload.eventType === 'UPDATE') {
-            setOptions(prev => prev.map(x => (x.id === payload.new.id ? payload.new : x)));
-          } else if (payload.eventType === 'DELETE') {
-            setOptions(prev => prev.filter(x => x.id !== payload.old.id));
+    let channel: any = null;
+    try {
+      const channelName = 'designers_team_rt_' + Math.random().toString(36).substring(2, 9);
+      channel = supabase
+        .channel(channelName)
+        .on(
+          'postgres_changes',
+          { event: '*', schema: 'public', table: 'designers_team_options_26' },
+          (payload: any) => {
+            try {
+              if (payload.eventType === 'INSERT') {
+                setOptions(prev => {
+                  if (prev.some(x => x.id === payload.new.id)) return prev;
+                  return [...prev, payload.new];
+                });
+              } else if (payload.eventType === 'UPDATE') {
+                setOptions(prev => prev.map(x => (x.id === payload.new.id ? payload.new : x)));
+              } else if (payload.eventType === 'DELETE') {
+                setOptions(prev => prev.filter(x => x.id !== payload.old.id));
+              }
+            } catch (err) {
+              console.warn('[useDesignersOptions] Realtime payload error:', err);
+            }
           }
-        }
-      )
-      .subscribe();
+        )
+        .subscribe();
+    } catch (err) {
+      console.warn('[useDesignersOptions] Realtime subscription error:', err);
+    }
 
     return () => {
-      supabase.removeChannel(channel);
+      if (channel) {
+        try {
+          supabase.removeChannel(channel);
+        } catch {}
+      }
     };
   }, [fetchOptions]);
 

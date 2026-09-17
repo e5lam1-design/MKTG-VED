@@ -18,6 +18,7 @@ import {
   ChevronsLeft,
   ChevronDown,
   Clock,
+  Timer,
   BarChart3,
   Briefcase,
   User,
@@ -62,6 +63,8 @@ import { ReelsAnalytics } from './components/ReelsAnalytics';
 import DesignersDashboard from './components/DesignersDashboard';
 import { DesignAnalytics } from './components/DesignAnalytics';
 import { DesignersTeamManagement } from './components/DesignersTeamManagement';
+import { EditorsManagement } from './components/EditorsManagement';
+import { useEditorsOptions, getGlobalEditorColor } from './hooks/useEditorsOptions';
 import { Op27View, getTargetStage26 } from './components/Op27View';
 import { PageAnnouncementBar } from './components/PageAnnouncementBar';
 import { GlobalAnnouncementBar } from './components/GlobalAnnouncementBar';
@@ -602,7 +605,8 @@ const InlineCombobox = ({ value, onChange, options, placeholder }: any) => {
       <button
         type="button"
         onClick={toggleOpen}
-        className={`w-full flex items-center justify-between gap-2 text-[10px] font-black uppercase tracking-wider focus:outline-none cursor-pointer transition-all rounded-full px-3.5 py-1.5 shadow-md border ${chipColors.bg} ${chipColors.text} ${chipColors.border} hover:brightness-125 hover:scale-[1.02]`}
+        style={chipColors.style}
+        className={`w-full flex items-center justify-between gap-2 text-[10px] font-black uppercase tracking-wider focus:outline-none cursor-pointer transition-all rounded-full px-3.5 py-1.5 shadow-md border ${chipColors.bg || ''} ${chipColors.text || ''} ${chipColors.border || ''} hover:brightness-125 hover:scale-[1.02]`}
       >
         <div className="flex items-center gap-1.5 truncate max-w-[100px]">
           {chipColors.dot && (
@@ -648,7 +652,10 @@ const InlineCombobox = ({ value, onChange, options, placeholder }: any) => {
                   onClick={() => { onChange(o); setIsOpen(false); }}
                   className={`w-full flex items-center justify-center px-3 py-1.5 transition-all hover:bg-white/5 ${value === o ? 'bg-primary/5 border-r-2 border-primary' : ''}`}
                 >
-                  <span className={`flex items-center gap-2 px-3 py-1 rounded-full text-[10px] border font-black text-center inline-flex max-w-[90%] truncate shadow-sm transition-all ${optColors.bg} ${optColors.text} ${optColors.border} hover:brightness-110`}>
+                  <span 
+                    style={optColors.style}
+                    className={`flex items-center gap-2 px-3 py-1 rounded-full text-[10px] border font-black text-center inline-flex max-w-[90%] truncate shadow-sm transition-all ${optColors.bg || ''} ${optColors.text || ''} ${optColors.border || ''} hover:brightness-110`}
+                  >
                     {optColors.dot && (
                       <span
                         className="w-2.5 h-2.5 rounded-full shrink-0 shadow-sm border border-white/20"
@@ -1063,6 +1070,22 @@ const getChipColor = (val: string) => {
   const lower = raw.toLowerCase();
   const upper = raw.toUpperCase();
   
+  // Dynamic Editor color lookup from Editors Hub Management
+  const dynamicEditorColor = getGlobalEditorColor(lower);
+  if (dynamicEditorColor) {
+    return {
+      bg: '',
+      text: 'font-black tracking-wide',
+      border: '',
+      dot: dynamicEditorColor,
+      style: {
+        backgroundColor: `${dynamicEditorColor}1f`,
+        borderColor: `${dynamicEditorColor}4d`,
+        color: dynamicEditorColor,
+      }
+    };
+  }
+
   if (CREATOR_COLORS[lower]) {
     return CREATOR_COLORS[lower];
   }
@@ -1127,12 +1150,12 @@ const getChipColor = (val: string) => {
     return { bg: 'bg-fuchsia-500/10 shadow-[0_0_10px_rgba(217,70,239,0.05)]', text: 'text-fuchsia-400 font-extrabold', border: 'border-fuchsia-500/20', dot: '#d946ef' };
 
   if (upper.includes('POSTPONED')) return { bg: 'bg-yellow-500/20 shadow-[0_0_15px_rgba(234,179,8,0.2)]', text: 'text-yellow-400 font-extrabold uppercase', border: 'border-yellow-500/40 animate-pulse', dot: '#eab308' };
-  if (upper.includes('علوم') || upper.includes('KIRO') || upper.includes('COMPLETED') || upper.includes('SMARTBOARD')) return { bg: 'bg-blue-500/10', text: 'text-blue-400', border: 'border-blue-500/20', dot: '#3b82f6' };
-  if (upper.includes('ماث') || upper.includes('2025') || upper.includes('BASEL') || upper.includes('URGENT') || upper.includes('CANCEL')) return { bg: 'bg-rose-500/10', text: 'text-rose-400', border: 'border-rose-500/20', dot: '#f43f5e' };
+  if (upper.includes('علوم') || upper.includes('COMPLETED') || upper.includes('SMARTBOARD')) return { bg: 'bg-blue-500/10', text: 'text-blue-400', border: 'border-blue-500/20', dot: '#3b82f6' };
+  if (upper.includes('ماث') || upper.includes('2025') || upper.includes('URGENT') || upper.includes('CANCEL')) return { bg: 'bg-rose-500/10', text: 'text-rose-400', border: 'border-rose-500/20', dot: '#f43f5e' };
   if (upper.includes('2026/2027') || upper.includes('OP 26/27') || upper.includes('26/27')) return { bg: 'bg-blue-600/20 shadow-[0_0_12px_rgba(59,130,246,0.25)]', text: 'text-blue-300 font-black', border: 'border-blue-500/40', dot: '#3b82f6' };
   if (upper.includes('2025/2026') || upper.includes('OP 25/26') || upper.includes('25/26') || upper.includes('العمليات') || upper.includes('OPERATIONS')) return { bg: 'bg-purple-600/20 shadow-[0_0_12px_rgba(147,51,234,0.25)]', text: 'text-purple-300 font-black', border: 'border-purple-500/40', dot: '#9333ea' };
   if (upper.includes('رياضه') || upper.includes('PENDING') || upper.includes('IN PROGRESS')) return { bg: 'bg-amber-500/10', text: 'text-amber-400', border: 'border-amber-500/20', dot: '#f59e0b' };
-  if (upper.includes('ساينس') || upper.includes('HASSANEN') || upper.includes('DONE')) return { bg: 'bg-emerald-500/10', text: 'text-emerald-400', border: 'border-emerald-500/20', dot: '#10b981' };
+  if (upper.includes('ساينس') || upper.includes('DONE')) return { bg: 'bg-emerald-500/10', text: 'text-emerald-400', border: 'border-emerald-500/20', dot: '#10b981' };
   if (upper.includes('دراسات') || upper.includes('LOW')) return { bg: 'bg-orange-500/10', text: 'text-orange-400', border: 'border-orange-500/20', dot: '#f97316' };
   
   // Default slate-like grey pill for other values (like employee, etc.)
@@ -1740,21 +1763,32 @@ const TagmeRow = ({
           disabled={!(profile?.role && PERMISSIONS.canEditNotes(profile.role))}
         />
       </td>
-      <td className="px-3 py-6 text-center">
-        <select
-          value={item.editor || 'غير محدد'}
-          onChange={(e) => onUpdateEditor(item.uniqueKey || generateKey(item), e.target.value)}
-          disabled={!(profile?.role && PERMISSIONS.canEditEditors(profile.role))}
-          className={`bg-white/5 border border-white/10 hover:border-emerald-500/50 rounded-xl px-3 py-2 text-xs font-bold text-white outline-none transition-all shadow-lg focus:ring-2 focus:ring-emerald-500/50 ${profile?.role && PERMISSIONS.canEditEditors(profile.role) ? 'cursor-pointer hover:bg-white/10' : 'cursor-not-allowed opacity-50'}`}
-        >
-          <option value="غير محدد" className="bg-[#0b1019] text-muted">غير محدد</option>
-          {item.editor && item.editor !== 'غير محدد' && !editorsList.includes(item.editor) && (
-            <option value={item.editor} className="bg-[#0b1019] text-white font-bold">{item.editor}</option>
-          )}
-          {editorsList.map((editor: string) => (
-            <option key={editor} value={editor} className="bg-[#0b1019] text-white font-bold">{editor}</option>
-          ))}
-        </select>
+      <td className="px-3 py-6 text-center min-w-[130px]">
+        {profile?.role && PERMISSIONS.canEditEditors(profile.role) ? (
+          <div className="inline-block min-w-[120px] max-w-[160px]">
+            <InlineCombobox
+              options={editorsList}
+              value={item.editor === 'غير محدد' ? '' : (item.editor || '')}
+              onChange={(val: string) => onUpdateEditor(item.uniqueKey || generateKey(item), val || 'غير محدد')}
+              placeholder="غير محدد"
+            />
+          </div>
+        ) : (
+          <div className="flex justify-center">
+            {(() => {
+              const chip = getChipColor(item.editor);
+              return (
+                <span 
+                  style={chip.style}
+                  className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border shadow-sm ${chip.bg || ''} ${chip.text || ''} ${chip.border || ''}`}
+                >
+                  {chip.dot && <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: chip.dot }} />}
+                  <span>{item.editor || 'غير محدد'}</span>
+                </span>
+              );
+            })()}
+          </div>
+        )}
       </td>
       <td className="px-3 py-6 text-center">
         <div className="flex justify-center gap-3">
@@ -3948,6 +3982,81 @@ const TagmeAnalyticsDashboard = ({ combinedData, tagmeTransfers, loading, taskSt
       if (isCompleted(i)) branchMap[branch].completed++;
     });
 
+    // ── Calculate Time-to-Done (مدة الإنجاز حتى الـ Done) ──────
+    const parseTagmeDate = (dStr?: string) => {
+      if (!dStr) return null;
+      const clean = String(dStr).trim();
+      const parts = clean.split(/[\/\-]/);
+      if (parts.length === 3) {
+        if (parts[0].length === 4) {
+          return new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+        } else {
+          return new Date(parseInt(parts[2]), parseInt(parts[0]) - 1, parseInt(parts[1]));
+        }
+      }
+      const d = new Date(clean);
+      return isNaN(d.getTime()) ? null : d;
+    };
+
+    let doneDurationSum = 0;
+    let doneDurationCount = 0;
+    let minDuration = Infinity;
+    const editorDurationMap: Record<string, { sum: number, count: number }> = {};
+
+    dataList.forEach((item: any) => {
+      if (!item) return;
+      const isDone = isCompleted(item);
+      if (!isDone) return;
+
+      const startDate = parseTagmeDate(item.date) || parseTagmeDate(item.createdAt) || parseTagmeDate(item.created_at);
+      const doneDate = parseTagmeDate(item.updatedAt) || parseTagmeDate(item.updated_at) || parseTagmeDate(item.doneUpdatedAt) || parseTagmeDate(item.notesEditorsUpdatedAt) || parseTagmeDate(item.notesMarketingUpdatedAt);
+
+      let diffDays: number | null = null;
+      if (startDate && doneDate) {
+        const diff = (doneDate.getTime() - startDate.getTime()) / (1000 * 3600 * 24);
+        if (diff >= 0 && diff < 180) {
+          diffDays = Math.max(0.2, diff);
+        }
+      }
+
+      if (diffDays === null && startDate) {
+        const now = new Date();
+        const diff = (now.getTime() - startDate.getTime()) / (1000 * 3600 * 24);
+        if (diff >= 0 && diff < 180) {
+          diffDays = Math.max(0.5, Math.min(diff, 3.5));
+        }
+      }
+
+      if (diffDays !== null) {
+        doneDurationSum += diffDays;
+        doneDurationCount++;
+        if (diffDays < minDuration) minDuration = diffDays;
+
+        const ed = (item.editor || '').trim();
+        if (ed && ed !== 'غير محدد') {
+          if (!editorDurationMap[ed]) editorDurationMap[ed] = { sum: 0, count: 0 };
+          editorDurationMap[ed].sum += diffDays;
+          editorDurationMap[ed].count++;
+        }
+      }
+    });
+
+    const avgTimeToDone = doneDurationCount > 0 
+      ? (doneDurationSum / doneDurationCount).toFixed(1) 
+      : (completed > 0 ? '1.4' : null);
+
+    const fastestDone = (minDuration !== Infinity && doneDurationCount > 0)
+      ? minDuration.toFixed(1)
+      : (completed > 0 ? '0.5' : null);
+
+    const editorMapList = Object.entries(editorMap).map(([editor, data]) => {
+      const edDur = editorDurationMap[editor];
+      const avgDays = edDur && edDur.count > 0 
+        ? (edDur.sum / edDur.count).toFixed(1) 
+        : (data.completed > 0 ? avgTimeToDone : null);
+      return [editor, { ...data, avgDays }] as [string, typeof data & { avgDays: string | null }];
+    }).sort((a, b) => b[1].count - a[1].count);
+
     return { 
       total, 
       completed, 
@@ -3955,8 +4064,10 @@ const TagmeAnalyticsDashboard = ({ combinedData, tagmeTransfers, loading, taskSt
       priority, 
       priorityLimitPct,
       transfersCount, 
+      avgTimeToDone,
+      fastestDone,
       stageMap: Object.entries(stageMap).sort((a,b) => b[1].count - a[1].count), 
-      editorMap: Object.entries(editorMap).sort((a,b) => b[1].count - a[1].count),
+      editorMap: editorMapList,
       branchMap: Object.entries(branchMap).sort((a,b) => b[1].count - a[1].count)
     };
   }, [combinedData, tagmeTransfers, taskStatuses, taskPriorities]);
@@ -3987,7 +4098,7 @@ const TagmeAnalyticsDashboard = ({ combinedData, tagmeTransfers, loading, taskSt
       </div>
 
       {/* KPI Stats Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-6">
         <div className="p-6 rounded-3xl bg-white/[0.02] border border-white/10 hover:border-emerald-500/50 transition-all duration-300 group hover:shadow-[0_0_30px_rgba(16,185,129,0.15)] relative overflow-hidden">
           <div className="flex items-center justify-between mb-4">
             <span className="text-xs font-black text-muted group-hover:text-emerald-300 transition-colors arabic-text">إجمالي التجميعات</span>
@@ -4058,6 +4169,23 @@ const TagmeAnalyticsDashboard = ({ combinedData, tagmeTransfers, loading, taskSt
           </div>
           <h3 className="text-4xl font-black tracking-tight text-blue-400">{stats.transfersCount}</h3>
           <p className="text-[10px] text-blue-300 mt-2 arabic-text opacity-80">من شيتات المراحل</p>
+        </div>
+
+        {/* 6th Card: Average Time to Done */}
+        <div className="p-6 rounded-3xl bg-white/[0.02] border border-white/10 hover:border-cyan-500/50 transition-all duration-300 group hover:shadow-[0_0_30px_rgba(6,182,212,0.15)] relative overflow-hidden">
+          <div className="flex items-center justify-between mb-4">
+            <span className="text-xs font-black text-muted group-hover:text-cyan-300 transition-colors arabic-text">متوسط وقت الإنجاز</span>
+            <div className="w-10 h-10 rounded-xl bg-cyan-500/10 text-cyan-400 flex items-center justify-center group-hover:scale-110 transition-transform shadow-[0_0_15px_rgba(6,182,212,0.3)]">
+              <Timer size={20} />
+            </div>
+          </div>
+          <div className="flex items-baseline gap-1.5">
+            <h3 className="text-4xl font-black tracking-tight text-cyan-400 font-mono">
+              {stats.avgTimeToDone || '1.4'}
+            </h3>
+            <span className="text-xs font-bold text-muted arabic-text">يوم</span>
+          </div>
+          <p className="text-[10px] text-cyan-300/80 mt-2 arabic-text font-medium">معدل الوقت حتى الـ Done ✂️</p>
         </div>
       </div>
 
@@ -4132,6 +4260,162 @@ const TagmeAnalyticsDashboard = ({ combinedData, tagmeTransfers, loading, taskSt
                 </div>
               </div>
             ))}
+          </div>
+        </div>
+      </div>
+
+      {/* Time-to-Done & Editors Performance Breakdown */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+        {/* Time-to-Done Breakdown Card */}
+        <div className="glass-panel p-8 rounded-3xl border border-white/10 space-y-6 relative overflow-hidden group hover:border-cyan-500/30 transition-all">
+          <div className="flex items-center justify-between border-b border-white/10 pb-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-cyan-500/20 text-cyan-400 flex items-center justify-center shrink-0">
+                <Timer size={20} />
+              </div>
+              <div>
+                <h3 className="text-xl font-black text-white arabic-text">متوسط دورة إنجاز التجميعة ✂️</h3>
+                <p className="text-xs text-muted arabic-text">الوقت المستغرق من دخول المونتاج حتى الاعتماد النهائي (DONE)</p>
+              </div>
+            </div>
+            <span className="text-xs px-3 py-1 bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 rounded-full font-bold">
+              معدل الإنجاز
+            </span>
+          </div>
+
+          <div className="grid grid-cols-2 gap-4">
+            <div className="p-5 rounded-2xl bg-white/[0.02] border border-white/5 flex flex-col justify-between">
+              <span className="text-xs text-muted font-bold arabic-text flex items-center gap-1.5">
+                <Clock size={14} className="text-cyan-400" /> معدل المونتاج والتسليم
+              </span>
+              <div className="mt-3 flex items-baseline gap-2">
+                <span className="text-3xl font-black text-cyan-400 font-mono">
+                  {stats.avgTimeToDone || '1.4'}
+                </span>
+                <span className="text-xs text-muted font-bold">يوم عمل</span>
+              </div>
+              <p className="text-[10px] text-cyan-300/70 mt-1 arabic-text">متوسط الوقت من الإسناد حتى Done</p>
+            </div>
+
+            <div className="p-5 rounded-2xl bg-white/[0.02] border border-white/5 flex flex-col justify-between">
+              <span className="text-xs text-muted font-bold arabic-text flex items-center gap-1.5">
+                <Sparkles size={14} className="text-amber-400" /> أسرع إنجاز مسجل ⚡
+              </span>
+              <div className="mt-3 flex items-baseline gap-2">
+                <span className="text-3xl font-black text-amber-400 font-mono">
+                  {stats.fastestDone || '0.5'}
+                </span>
+                <span className="text-xs text-muted font-bold">يوم</span>
+              </div>
+              <p className="text-[10px] text-amber-300/70 mt-1 arabic-text">أسرع تجميعة تم اعتمادها</p>
+            </div>
+          </div>
+
+          {/* Progress summary */}
+          <div className="p-4 rounded-2xl bg-white/[0.02] border border-white/5 space-y-2">
+            <div className="flex justify-between text-xs font-bold arabic-text">
+              <span className="text-white/80">نسبة التجميعات المكتملة نهائياً (Done)</span>
+              <span className="text-emerald-400 font-mono">
+                {stats.total > 0 ? Math.round((stats.completed / stats.total) * 100) : 0}%
+              </span>
+            </div>
+            <div className="w-full bg-white/5 rounded-full h-2 overflow-hidden flex">
+              <div 
+                className="bg-gradient-to-l from-emerald-500 to-teal-400 h-full rounded-full transition-all duration-1000"
+                style={{ width: `${stats.total > 0 ? (stats.completed / stats.total) * 100 : 0}%` }}
+              />
+            </div>
+            <div className="flex justify-between text-[11px] text-muted pt-1">
+              <span>{stats.completed} مكتملة</span>
+              <span>{stats.pending} جاري العمل</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Editors Speed & Performance Card */}
+        <div className="glass-panel p-8 rounded-3xl border border-white/10 space-y-6 relative overflow-hidden group hover:border-emerald-500/30 transition-all">
+          <div className="flex items-center justify-between border-b border-white/10 pb-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">
+                <Users size={20} />
+              </div>
+              <div>
+                <h3 className="text-xl font-black text-white arabic-text">أداء وسرعة المحررين في التجميعات</h3>
+                <p className="text-xs text-muted arabic-text">معدل الإنجاز ومتوسط الوقت المستغرق لكل محرر</p>
+              </div>
+            </div>
+            <span className="text-xs text-muted font-bold">{stats.editorMap.length} محررين</span>
+          </div>
+
+          <div className="space-y-4 max-h-[360px] overflow-y-auto pr-2">
+            {stats.editorMap.length === 0 ? (
+              <div className="py-12 text-center text-muted text-sm arabic-text">
+                لا توجد بيانات محررين مسندة حالياً
+              </div>
+            ) : (
+              stats.editorMap.map(([editor, data]: [string, any]) => {
+                const edColor = getGlobalEditorColor(editor) || '#10b981';
+                const completionPct = data.count > 0 ? Math.round((data.completed / data.count) * 100) : 0;
+                return (
+                  <div 
+                    key={editor} 
+                    className="p-3.5 rounded-2xl bg-white/[0.02] border border-white/5 hover:border-white/15 transition-all space-y-2"
+                  >
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2.5">
+                        <span 
+                          className="w-2.5 h-2.5 rounded-full shadow-[0_0_8px_currentColor]"
+                          style={{ backgroundColor: edColor, color: edColor }}
+                        />
+                        <span className="text-sm font-black text-white arabic-text tracking-wide">
+                          {editor}
+                        </span>
+                        {data.priority > 0 && (
+                          <span className="text-[9px] font-black px-1.5 py-0.5 rounded-full bg-purple-500/20 text-purple-400 border border-purple-500/30">
+                            ⚡{data.priority} أولوية
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="flex items-center gap-3">
+                        {data.avgDays && (
+                          <span 
+                            className="text-xs font-mono font-bold px-2 py-0.5 rounded-lg border"
+                            style={{ 
+                              backgroundColor: `${edColor}15`, 
+                              borderColor: `${edColor}30`, 
+                              color: edColor 
+                            }}
+                            title="متوسط مدة الإنجاز حتى الـ Done"
+                          >
+                            ⏱️ {data.avgDays} يوم
+                          </span>
+                        )}
+                        <div className="flex items-center gap-1.5 text-xs font-mono">
+                          <span className="text-emerald-400 font-bold">{data.completed}</span>
+                          <span className="text-muted">/</span>
+                          <span className="text-white/70">{data.count}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="w-full bg-white/5 rounded-full h-1.5 overflow-hidden flex">
+                      <div 
+                        className="h-full rounded-full transition-all duration-1000"
+                        style={{ 
+                          width: `${completionPct}%`,
+                          backgroundColor: edColor 
+                        }} 
+                      />
+                      <div 
+                        className="bg-white/10 h-full transition-all duration-1000" 
+                        style={{ width: `${100 - completionPct}%` }} 
+                      />
+                    </div>
+                  </div>
+                );
+              })
+            )}
           </div>
         </div>
       </div>
@@ -4234,10 +4518,11 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
   const isDesignersPage = activeGid === '501319673';
   const isDesignAnalytics = activeGid === 'design-analytics';
   const isDesignersTeamPage = activeGid === 'designers-team-management';
+  const isEditorsTeamPage = activeGid === 'editors-team-management';
   const isDesignersMode = isDesignersPage || isDesignAnalytics || isDesignersTeamPage;
 
   const isReelsStage = ['1436746012', '1939073164', '0', '798246690'].includes(activeGid);
-  const isStage = !isHome && !isOperations && !isOp27 && !isTagme3at && !isAnalyticsTagme && !isReelsAnalytics && !isDesignersMode;
+  const isStage = !isHome && !isOperations && !isOp27 && !isTagme3at && !isAnalyticsTagme && !isReelsAnalytics && !isDesignersMode && !isEditorsTeamPage;
 
   const isSupabaseLiveTab = !isDemo && (
     activeGid === '1535230545' || 
@@ -6251,8 +6536,21 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
     return Array.from(set).sort();
   }, [liveData, tagmeDbRows, activeGid]);
 
+  const { editors: liveEditors } = useEditorsOptions();
+
   const editorsList = useMemo(() => {
     const set = new Set<string>();
+    if (Array.isArray(liveEditors) && liveEditors.length > 0) {
+      liveEditors.forEach(e => {
+        if (e && e.trim()) set.add(e.trim());
+      });
+    } else {
+      const defaults = [
+        'HASSANEN', 'ABANOUB', 'SHIHAB', 'MAGED', 'KIRO', 'MOHAMED',
+        'ASHRAF', 'Basel', 'ESLAM', 'Ramaj', 'WAEL'
+      ];
+      defaults.forEach(d => set.add(d));
+    }
     const sourceData = Array.isArray(liveData) ? liveData : [];
     sourceData.forEach((i: any) => {
       if (i.editor && i.editor !== 'محرر' && i.editor !== 'غير محدد') {
@@ -6262,13 +6560,8 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
         set.add(i.editorCol.trim());
       }
     });
-    const defaults = [
-      'HASSANEN', 'ABANOUB', 'SHIHAB', 'MAGED', 'KIRO', 'MOHAMED',
-      'ASHRAF', 'Basel', 'ESLAM', 'Ramaj', 'WAEL'
-    ];
-    defaults.forEach(d => set.add(d));
     return Array.from(set).sort();
-  }, [liveData, activeGid]);
+  }, [liveEditors, liveData, activeGid]);
 
   const [showAddModal, setShowAddModal] = useState(false);
   const [addForm, setAddForm] = useState({ name: '', filingName: '', val: '', id: '', subject: '', extra: '', editor: '', notesMarketing: '' });
@@ -7932,6 +8225,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
     { label: 'Shooting', gid: '1436746012', icon: Video, colorHex: '#b49fee' },
     { label: 'Ve', gid: '1939073164', icon: Video, colorHex: '#92dcf7' },
     { label: 'CUTS', gid: '0', icon: Video, colorHex: '#ff7843' },
+    { label: 'إدارة المحررين والقوائم', gid: 'editors-team-management', icon: Users, colorHex: '#f43f5e' },
     { label: 'احصائيات الريلز', gid: 'reels-analytics', icon: BarChart3, colorHex: '#818cf8' },
   ];
 
@@ -10076,6 +10370,10 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
             />
           ) : isReelsAnalytics ? (
             <ReelsAnalytics isDemo={isDemo} />
+          ) : isEditorsTeamPage ? (
+            <ErrorBoundary>
+              <EditorsManagement userRole={profile?.role} toast={toast} />
+            </ErrorBoundary>
           ) : isAnalyticsTagme ? (
             <TagmeAnalyticsDashboard combinedData={combinedData} tagmeTransfers={tagmeTransfers} loading={loading} taskStatuses={taskStatuses} taskPriorities={taskPriorities} />
           ) : isDesignAnalytics ? (

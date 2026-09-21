@@ -77,6 +77,7 @@ import { sortTasksByChunkAscending, sortMultiLineLessonName, sortCombinedFilingN
 import { supabase, PERMISSIONS, ROLE_LABELS, ROLE_COLORS, DEFAULT_ROLE_PERMISSIONS, setRuntimeRolePermissions } from './lib/supabase';
 
 
+
 const yearLabels: Record<string, string> = {
   'J4': 'Junior 4 (الرابع الابتدائي)',
   'J5': 'Junior 5 (الخامس الابتدائي)',
@@ -1128,10 +1129,10 @@ const getChipColor = (val: string) => {
   // Reels Branches
   if (upper.includes('DESOUK') || upper.includes('دسور') || upper.includes('دسوق')) 
     return { bg: 'bg-emerald-500/10 shadow-[0_0_10px_rgba(16,185,129,0.05)]', text: 'text-emerald-400 font-extrabold', border: 'border-emerald-500/20', dot: '#10b981' };
-  if (upper.includes('ALEXANDRIA') || upper.includes('ALEX') || upper.includes('اسكندريه') || upper.includes('الاسكندرية')) 
-    return { bg: 'bg-blue-500/10 shadow-[0_0_10px_rgba(59,130,246,0.05)]', text: 'text-blue-400 font-extrabold', border: 'border-blue-500/20', dot: '#3b82f6' };
-  if (upper.includes('CAIRO') || upper.includes('القاهره') || upper.includes('القاهرة')) 
-    return { bg: 'bg-rose-500/10 shadow-[0_0_10px_rgba(244,63,94,0.05)]', text: 'text-rose-400 font-extrabold', border: 'border-rose-500/20', dot: '#f43f5e' };
+  if (upper.includes('ALEX') || upper.includes('اسكندر') || upper.includes('إسكندر')) 
+    return { bg: 'bg-blue-500/15 shadow-[0_0_10px_rgba(59,130,246,0.15)]', text: 'text-blue-400 font-extrabold', border: 'border-blue-500/30', dot: '#3b82f6' };
+  if (upper.includes('CAIRO') || upper.includes('قاهر')) 
+    return { bg: 'bg-rose-500/15 shadow-[0_0_10px_rgba(244,63,94,0.15)]', text: 'text-rose-400 font-extrabold', border: 'border-rose-500/30', dot: '#f43f5e' };
   if (upper.includes('ONLINE') || upper.includes('أونلاين') || upper.includes('اونلاين')) 
     return { bg: 'bg-purple-500/10 shadow-[0_0_10px_rgba(168,85,247,0.05)]', text: 'text-purple-400 font-extrabold', border: 'border-purple-500/20', dot: '#a855f7' };
 
@@ -1736,20 +1737,57 @@ const TagmeRow = ({
         </td>
       )}
       <td className="px-3 py-6 text-center">
-        <select
-          value={(item.branch && !item.branch.includes('يوتيوب') && !item.branch.includes('تجميعة')) ? item.branch : ''}
-          onChange={(e) => onUpdateBranch(item.uniqueKey || generateKey(item), e.target.value)}
-          disabled={!(profile?.role && PERMISSIONS.canEditEditors(profile.role))}
-          className={`bg-white/5 border border-white/10 hover:border-emerald-500/50 rounded-xl px-3 py-2 text-xs font-bold text-white outline-none transition-all shadow-lg focus:ring-2 focus:ring-emerald-500/50 min-w-[90px] ${profile?.role && PERMISSIONS.canEditEditors(profile.role) ? 'cursor-pointer hover:bg-white/10' : 'cursor-not-allowed opacity-50'}`}
-        >
-          <option value="" className="bg-[#0b1019] text-muted">غير محدد</option>
-          {item.branch && !item.branch.includes('يوتيوب') && !item.branch.includes('تجميعة') && !branchesList?.includes(item.branch) && (
-            <option value={item.branch} className="bg-[#0b1019] text-white font-bold">{item.branch}</option>
-          )}
-          {branchesList?.filter((b: string) => !b.includes('يوتيوب') && !b.includes('تجميعة')).map((branch: string) => (
-            <option key={branch} value={branch} className="bg-[#0b1019] text-white font-bold">{branch}</option>
-          ))}
-        </select>
+        {(() => {
+          const currentBranch = (item.branch && !item.branch.includes('يوتيوب') && !item.branch.includes('تجميعة')) ? item.branch : '';
+          const bUpper = String(currentBranch).toUpperCase();
+          const isAlex = bUpper.includes('ALEX') || bUpper.includes('اسكندر') || bUpper.includes('إسكندر');
+          const isCairo = bUpper.includes('CAIRO') || bUpper.includes('قاهر');
+          const isDesouk = bUpper.includes('DESOUK') || bUpper.includes('دسوق') || bUpper.includes('دسور');
+
+          const containerStyle = isAlex
+            ? 'bg-blue-500/15 border-blue-500/40 text-blue-300 shadow-[0_0_12px_rgba(59,130,246,0.25)] ring-1 ring-blue-500/30'
+            : isCairo
+            ? 'bg-rose-500/15 border-rose-500/40 text-rose-300 shadow-[0_0_12px_rgba(244,63,94,0.25)] ring-1 ring-rose-500/30'
+            : isDesouk
+            ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300 shadow-[0_0_12px_rgba(16,185,129,0.25)] ring-1 ring-emerald-500/30'
+            : 'bg-white/5 border-white/10 text-white hover:border-emerald-500/50';
+
+          const dotElement = isAlex ? (
+            <span className="w-2.5 h-2.5 rounded-full bg-blue-500 shadow-[0_0_8px_rgba(59,130,246,0.9)] shrink-0 animate-pulse" title="اسكندرية" />
+          ) : isCairo ? (
+            <span className="w-2.5 h-2.5 rounded-full bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.9)] shrink-0 animate-pulse" title="القاهرة" />
+          ) : isDesouk ? (
+            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.9)] shrink-0 animate-pulse" title="دسوق" />
+          ) : null;
+
+          const renderBranchOption = (b: string) => {
+            const up = String(b).toUpperCase();
+            if (up.includes('ALEX') || up.includes('اسكندر') || up.includes('إسكندر')) return `🔵 ${b}`;
+            if (up.includes('CAIRO') || up.includes('قاهر')) return `🔴 ${b}`;
+            if (up.includes('DESOUK') || up.includes('دسوق') || up.includes('دسور')) return `🟢 ${b}`;
+            return b;
+          };
+
+          return (
+            <div className={`inline-flex items-center gap-1.5 rounded-xl px-2.5 py-1.5 border transition-all duration-300 ${containerStyle} ${profile?.role && PERMISSIONS.canEditEditors(profile.role) ? 'hover:bg-white/10' : 'opacity-60'}`}>
+              {dotElement}
+              <select
+                value={currentBranch}
+                onChange={(e) => onUpdateBranch(item.uniqueKey || generateKey(item), e.target.value)}
+                disabled={!(profile?.role && PERMISSIONS.canEditEditors(profile.role))}
+                className={`bg-transparent text-xs font-black outline-none transition-all ${profile?.role && PERMISSIONS.canEditEditors(profile.role) ? 'cursor-pointer' : 'cursor-not-allowed'} ${isAlex ? 'text-blue-300' : isCairo ? 'text-rose-300' : isDesouk ? 'text-emerald-300' : 'text-white'}`}
+              >
+                <option value="" className="bg-[#0b1019] text-muted">غير محدد</option>
+                {item.branch && !item.branch.includes('يوتيوب') && !item.branch.includes('تجميعة') && !branchesList?.includes(item.branch) && (
+                  <option value={item.branch} className="bg-[#0b1019] text-white font-bold">{renderBranchOption(item.branch)}</option>
+                )}
+                {branchesList?.filter((b: string) => !b.includes('يوتيوب') && !b.includes('تجميعة')).map((branch: string) => (
+                  <option key={branch} value={branch} className="bg-[#0b1019] text-white font-bold">{renderBranchOption(branch)}</option>
+                ))}
+              </select>
+            </div>
+          );
+        })()}
       </td>
       <td className="px-3 py-6 text-center">
         <HistoryInput
@@ -2515,11 +2553,12 @@ const ShootingRow = ({ item, index, activeGid, onToggleFilmed, loadingFilmedCode
     const currentSheetData = Array.isArray(liveData) ? liveData : [];
     let maxSeq = -1;
     currentSheetData.forEach((row: any) => {
-      if (row.id && row.id.toLowerCase().startsWith(prefix) && row.id !== item.id) {
-        const parts = row.id.split('-');
-        if (parts.length >= 4) {
-          const seqStr = parts[3].split(' ')[0];
-          const seq = parseInt(seqStr, 10);
+      const rId = (row.id || row.code || '').toLowerCase().trim();
+      if (rId && rId.startsWith(prefix) && rId !== (item.id || '').toLowerCase()) {
+        const remainder = rId.slice(prefix.length).trim();
+        const m = remainder.match(/^(\d+)/);
+        if (m) {
+          const seq = parseInt(m[1], 10);
           if (!isNaN(seq) && seq > maxSeq) {
             maxSeq = seq;
           }
@@ -2544,11 +2583,12 @@ const ShootingRow = ({ item, index, activeGid, onToggleFilmed, loadingFilmedCode
         const currentSheetData = Array.isArray(liveData) ? liveData : [];
         let maxSeq = 0;
         currentSheetData.forEach((row: any) => {
-          if (row.id && row.id.toLowerCase().startsWith(prefix) && row.id !== item.id) {
-            const parts = row.id.split('-');
-            if (parts.length >= 4) {
-              const seqStr = parts[3].split(' ')[0];
-              const seq = parseInt(seqStr, 10);
+          const rId = (row.id || row.code || '').toLowerCase().trim();
+          if (rId && rId.startsWith(prefix) && rId !== (item.id || '').toLowerCase()) {
+            const remainder = rId.slice(prefix.length).trim();
+            const m = remainder.match(/^(\d+)/);
+            if (m) {
+              const seq = parseInt(m[1], 10);
               if (!isNaN(seq) && seq > maxSeq) {
                 maxSeq = seq;
               }
@@ -6643,12 +6683,12 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
     const currentSheetData = Array.isArray(combinedData) ? combinedData : [];
     let maxSeq = 0;
     currentSheetData.forEach((row: any) => {
-      const rowId = row.code || row.id || '';
-      if (rowId && rowId.toLowerCase().startsWith(prefix)) {
-        const parts = rowId.split('-');
-        if (parts.length >= 4) {
-          const seqStr = parts[3].split(' ')[0];
-          const seq = parseInt(seqStr, 10);
+      const rowId = (row.code || row.id || '').toLowerCase().trim();
+      if (rowId.startsWith(prefix)) {
+        const remainder = rowId.slice(prefix.length).trim();
+        const m = remainder.match(/^(\d+)/);
+        if (m) {
+          const seq = parseInt(m[1], 10);
           if (!isNaN(seq) && seq > maxSeq) {
             maxSeq = seq;
           }
@@ -6900,6 +6940,28 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
 
         if (tbl) {
           try {
+            let finalCode = generatedCode;
+            const cutPrefix = `${shootingAddForm.year}-cut-${shootingAddForm.extraName}-`.toLowerCase().replace(/\s+/g, ' ');
+            const { data: existingCut } = await supabase.from(tbl).select('code').eq('code', finalCode).maybeSingle();
+            if (existingCut) {
+              const { data: allWithPrefix } = await supabase.from(tbl).select('code').ilike('code', `${cutPrefix}%`);
+              let maxSeq = 0;
+              (allWithPrefix || []).forEach((r: any) => {
+                const rCode = (r.code || '').toLowerCase().trim();
+                if (rCode.startsWith(cutPrefix)) {
+                  const m = rCode.slice(cutPrefix.length).trim().match(/^(\d+)/);
+                  if (m) {
+                    const s = parseInt(m[1], 10);
+                    if (!isNaN(s) && s > maxSeq) maxSeq = s;
+                  }
+                }
+              });
+              finalCode = `${cutPrefix}${(maxSeq + 1).toString().padStart(2, '0')} v7`.toLowerCase();
+              newCut.code = finalCode;
+              newCut.id = finalCode;
+              newCut.uniqueKey = finalCode;
+            }
+
             const { error } = await supabase.from(tbl).insert([{
               date: newCut.date,
               branch: newCut.branch,
@@ -6965,6 +7027,28 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
 
         if (tbl) {
           try {
+            let finalCode = generatedCode;
+            const shootingPrefix = `${shootingAddForm.year}-${shootingAddForm.teacher}-${shootingAddForm.extraName}-`.toLowerCase().replace(/\s+/g, ' ');
+            const { data: existingShooting } = await supabase.from(tbl).select('code').eq('code', finalCode).maybeSingle();
+            if (existingShooting) {
+              const { data: allWithPrefix } = await supabase.from(tbl).select('code').ilike('code', `${shootingPrefix}%`);
+              let maxSeq = 0;
+              (allWithPrefix || []).forEach((r: any) => {
+                const rCode = (r.code || '').toLowerCase().trim();
+                if (rCode.startsWith(shootingPrefix)) {
+                  const m = rCode.slice(shootingPrefix.length).trim().match(/^(\d+)/);
+                  if (m) {
+                    const s = parseInt(m[1], 10);
+                    if (!isNaN(s) && s > maxSeq) maxSeq = s;
+                  }
+                }
+              });
+              finalCode = `${shootingPrefix}${(maxSeq + 1).toString().padStart(2, '0')} v7`.toLowerCase();
+              newShooting.code = finalCode;
+              newShooting.id = finalCode;
+              newShooting.uniqueKey = finalCode;
+            }
+
             const { error } = await supabase.from(tbl).insert([{
               date: newShooting.date,
               branch: newShooting.branch,
@@ -7005,17 +7089,19 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
         }
       }
 
+      const broadcastCode = (activeGid === '0' ? newCut.code : newShooting.code) || generatedCode;
+
       // Broadcast new entry over WebSocket to other clients
       if (globalChannelRef.current && profile?.name) {
         globalChannelRef.current.send({
           type: 'broadcast',
           event: 'update',
           payload: {
-            itemKey: generatedCode,
-            taskName: scriptValue || generatedCode,
+            itemKey: broadcastCode,
+            taskName: scriptValue || broadcastCode,
             message: activeGid === '0' 
-              ? `🎬 تم إضافة مهمة مونتاج (Cut) جديدة: "${scriptValue || generatedCode}"`
-              : `🆕 تم إضافة سكريبت جديد: "${scriptValue || generatedCode}"`,
+              ? `🎬 تم إضافة مهمة مونتاج (Cut) جديدة: "${scriptValue || broadcastCode}"`
+              : `🆕 تم إضافة سكريبت جديد: "${scriptValue || broadcastCode}"`,
             type: 'new_entry',
             from: profile.name,
             activeGid
@@ -7617,6 +7703,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
           toast.success("تم تحديث الصف بنجاح في Supabase! 🚀");
         }
 
+
         // Automatic copy / sync to Ve table (reels_ve_26) when filmed in Shooting tab
         if (activeGid === '1436746012') {
           if (isFilmed) {
@@ -7831,6 +7918,27 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
         toast.error(`خطأ أثناء الحفظ في قاعدة البيانات: ${error.message}`);
       } else {
         toast.success("⚠️ تم تسجيل طلب التعديل (EDIT) وإعادة فتح المهمة!");
+
+        // Telegram Notification for Edit Request to the Editor
+        const editorName = item.editor_col || item.editor || '';
+        if (editorName && editorName !== 'غير محدد') {
+          getUserTelegramChatId(undefined, editorName).then((chatId) => {
+            if (chatId) {
+              notifyTaskEditRequested({
+                chatId,
+                taskTitle: item.script || item.extra_name || item.code || rowCode,
+                taskCode: item.code || rowCode,
+                sourceSheet: 'Reels (Ve)',
+                branch: item.branch,
+                editorName: editorName,
+                notes: item.notes || item.editor_notes || 'مطلوب مراجعة وتعديل المونتاج 📝',
+                driveLink: item.drive_final || item.drive_raw
+              }).then(res => {
+                if (res.ok) toast.success('✈️ تم إرسال إشعار التعديل للمحرر على تليجرام!');
+              }).catch(console.error);
+            }
+          }).catch(console.error);
+        }
       }
     } catch (err: any) {
       console.error(err);

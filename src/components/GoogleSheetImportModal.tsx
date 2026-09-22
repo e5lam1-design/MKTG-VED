@@ -695,19 +695,7 @@ export const GoogleSheetImportModal: React.FC<Props> = ({
       ]);
 
       // 3. Callback parent to save to Supabase and trigger live UI update
-      await onImportSuccess(dbShootingRecords, rawRowsForSheet, { updateOnlyScript });
-
-      // 4. Background append to Google Sheet tab 'Shooting' (only when full importing)
-      if (!onlyUpdateScript) {
-        fetch('/api/google-sheet-import', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            action: 'append_to_sheet',
-            rowsToImport: rawRowsForSheet
-          })
-        }).catch(e => console.warn('Background append to sheet error:', e));
-      }
+      await onImportSuccess(dbShootingRecords, rawRowsForSheet, { updateOnlyScript: onlyUpdateScript });
 
       toast.success(
         onlyUpdateScript

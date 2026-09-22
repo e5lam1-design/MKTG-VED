@@ -334,11 +334,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             .limit(100)
         ]);
 
-        const allTasks = [...(cuts || []), ...(ve || [])];
-        const myPending = allTasks.filter(t => !t.done && !t.problem && !t.edit_check);
-        const myPriority = allTasks.filter(t => (t.missing_details === true) && !t.done);
-        const myEdits = allTasks.filter(t => (t.problem === true || t.edit_check === true) && !t.done);
-        const myCompleted = allTasks.filter(t => t.done === true);
+        const allTasks: any[] = [...(cuts || []), ...(ve || [])];
+        const myPending = allTasks.filter((t: any) => !t.done && !t.problem && !t.edit_check);
+        const myPriority = allTasks.filter((t: any) => (t.missing_details === true) && !t.done);
+        const myEdits = allTasks.filter((t: any) => (t.problem === true || t.edit_check === true) && !t.done);
+        const myCompleted = allTasks.filter((t: any) => t.done === true);
 
         statsData = {
           userName: targetUserName,
@@ -350,9 +350,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             availableUnassigned: 0,
             myTotal: allTasks.length
           },
-          pendingTasks: myPending.slice(0, 5).map(t => ({ code: t.code, notes: t.editor_notes || t.notes })),
-          priorityTasks: myPriority.slice(0, 5).map(t => ({ code: t.code, notes: t.editor_notes || t.notes })),
-          editTasks: myEdits.slice(0, 5).map(t => ({ code: t.code, notes: t.editor_notes || t.notes })),
+          pendingTasks: myPending.slice(0, 5).map((t: any) => ({ code: t.code, notes: t.editor_notes || t.notes })),
+          priorityTasks: myPriority.slice(0, 5).map((t: any) => ({ code: t.code, notes: t.editor_notes || t.notes })),
+          editTasks: myEdits.slice(0, 5).map((t: any) => ({ code: t.code, notes: t.editor_notes || t.notes })),
           availableTasks: []
         };
       } catch {}

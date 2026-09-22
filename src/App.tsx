@@ -10568,17 +10568,22 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
             const updateOnlyScript = options?.updateOnlyScript === true;
 
             if (updateOnlyScript) {
-              // 1. Update the script column only for matching codes in Supabase
-              const updatePromises = importedShootingRows.map(row => 
-                supabase
-                  .from('reels_shooting_26')
-                  .update({ 
-                    script: row.script, 
-                    updated_at: new Date().toISOString() 
-                  })
-                  .eq('code', row.code)
-              );
-              await Promise.all(updatePromises);
+              // 1. Update the script column in batches of 50 to prevent connection pool exhaustion
+              const BATCH_SIZE = 50;
+              for (let i = 0; i < importedShootingRows.length; i += BATCH_SIZE) {
+                const chunk = importedShootingRows.slice(i, i + BATCH_SIZE);
+                await Promise.all(
+                  chunk.map(row => 
+                    supabase
+                      .from('reels_shooting_26')
+                      .update({ 
+                        script: row.script, 
+                        updated_at: new Date().toISOString() 
+                      })
+                      .eq('code', row.code)
+                  )
+                );
+              }
 
               // 2. Update local state
               const scriptMap = new Map(importedShootingRows.map(r => [(r.code || '').toLowerCase(), r.script]));
@@ -10604,15 +10609,23 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
               return;
             }
 
-            const { data, error } = await supabase
-              .from('reels_shooting_26')
-              .upsert(importedShootingRows, { onConflict: 'code' })
-              .select();
+            // Upsert in batches of 100 to prevent payload size errors
+            const BATCH_SIZE = 100;
+            const allSavedData: any[] = [];
+            for (let i = 0; i < importedShootingRows.length; i += BATCH_SIZE) {
+              const chunk = importedShootingRows.slice(i, i + BATCH_SIZE);
+              const { data: chunkData, error } = await supabase
+                .from('reels_shooting_26')
+                .upsert(chunk, { onConflict: 'code' })
+                .select();
 
-            if (error) {
-              console.error('Supabase import error:', error);
-              throw error;
+              if (error) {
+                console.error('Supabase import error:', error);
+                throw error;
+              }
+              if (chunkData) allSavedData.push(...chunkData);
             }
+            const data = allSavedData;
 
             const newlyMapped = (data && data.length > 0 ? data : importedShootingRows).map((i: any) => ({
               id: i.code,

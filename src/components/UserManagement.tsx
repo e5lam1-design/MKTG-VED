@@ -6,8 +6,9 @@ import { useAuth } from '../contexts/AuthContext';
 import {
   Users, UserPlus, Shield, Search, X, Check,
   Loader2, AlertCircle, ChevronDown, ToggleLeft, ToggleRight, Trash2,
-  Key, Eye, EyeOff, Lock
+  Key, Eye, EyeOff, Lock, Send, QrCode
 } from 'lucide-react';
+import { TelegramQrModal } from './TelegramQrModal';
 
 const MARKETING_TABS = [
   'OP 25/26', 'OP 26/27', 'تجميعات', 'إحصائيات التجميعات 📊',
@@ -750,6 +751,7 @@ export const UserManagement = () => {
   const [editingUser, setEditingUser] = useState<UserProfile | null>(null);
   const [passwordUser, setPasswordUser] = useState<UserProfile | null>(null);
   const [passwordToast, setPasswordToast] = useState<string | null>(null);
+  const [telegramModalUser, setTelegramModalUser] = useState<UserProfile | null>(null);
   const [showInvite, setShowInvite] = useState(false);
   const [filterRole, setFilterRole] = useState<Role | 'all'>('all');
   const [rolePermissions, setRolePermissions] = useState(DEFAULT_ROLE_PERMISSIONS);
@@ -1295,6 +1297,13 @@ const DEFAULT_SYSTEM_USERS: UserProfile[] = [
                 </div>
                 <div className="flex items-center justify-center gap-2">
                   <button
+                    onClick={() => setTelegramModalUser(u)}
+                    className="w-8 h-8 rounded-xl bg-sky-500/10 hover:bg-sky-500/25 hover:text-sky-300 text-sky-400 flex items-center justify-center transition-all cursor-pointer shadow-sm hover:scale-105 active:scale-95"
+                    title="رابط تليجرام المخصص وكود QR لهذا المستخدم ✈️"
+                  >
+                    <Send size={13} />
+                  </button>
+                  <button
                     onClick={() => setPasswordUser(u)}
                     className="w-8 h-8 rounded-xl bg-purple-500/10 hover:bg-purple-500/25 hover:text-purple-300 text-purple-400 flex items-center justify-center transition-all cursor-pointer shadow-sm hover:scale-105 active:scale-95"
                     title="تغيير كلمة المرور في Supabase 🔑"
@@ -1450,6 +1459,12 @@ const DEFAULT_SYSTEM_USERS: UserProfile[] = [
           </motion.div>
         )}
       </AnimatePresence>
+
+      <TelegramQrModal
+        isOpen={!!telegramModalUser}
+        onClose={() => setTelegramModalUser(null)}
+        user={telegramModalUser}
+      />
     </div>
   );
 };

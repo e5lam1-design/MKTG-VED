@@ -72,6 +72,7 @@ import { GlobalAnnouncementBar } from './components/GlobalAnnouncementBar';
 import { HomeView } from './components/HomeView';
 import { FeedbackModal } from './components/FeedbackModal';
 import { SystemGuideModal } from './components/SystemGuideModal';
+import { TelegramQrModal } from './components/TelegramQrModal';
 import { InteractiveTour } from './components/InteractiveTour';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { sortTasksByChunkAscending, sortMultiLineLessonName, sortCombinedFilingName } from './lib/chunkSort';
@@ -4866,6 +4867,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
   const [showMyNotifs, setShowMyNotifs] = useState(false);
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
   const [showGuideModal, setShowGuideModal] = useState(false);
+  const [showTelegramModal, setShowTelegramModal] = useState(false);
   const [showChangePasswordModal, setShowChangePasswordModal] = useState(false);
   const [showTour, setShowTour] = useState(false);
   const unreadCount = myNotifs.filter(n => !n.read).length;
@@ -9427,12 +9429,9 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
           <div className="flex items-center gap-3">
             {/* Telegram Bot Button */}
             <button
-              onClick={() => {
-                setActiveGid('home');
-                setActiveLabel('الرئيسية');
-              }}
+              onClick={() => setShowTelegramModal(true)}
               className="px-3.5 py-2.5 rounded-2xl border border-sky-500/30 bg-sky-500/10 hover:bg-sky-500/20 text-sky-300 font-bold text-xs transition-all flex items-center gap-2 shadow-sm cursor-pointer active:scale-95"
-              title="إشعارات بوت تليجرام التلقائية"
+              title="رابط تليجرام المخصص وكود QR للإشعارات"
             >
               <Send size={15} className="text-sky-400" />
               <span className="hidden sm:inline">بوت تليجرام ✈️</span>
@@ -11486,6 +11485,13 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
           onClose={() => setShowGuideModal(false)}
           currentGid={activeGid}
           currentLabel={activeLabel}
+        />
+
+        {/* Telegram QR & Deep Link Modal */}
+        <TelegramQrModal
+          isOpen={showTelegramModal}
+          onClose={() => setShowTelegramModal(false)}
+          user={profile}
         />
 
         {/* Change Password Modal */}

@@ -24,8 +24,11 @@ import {
   Settings,
   HelpCircle,
   ChevronDown,
-  ChevronUp
+  ChevronUp,
+  QrCode,
+  Copy
 } from 'lucide-react';
+import { TelegramQrModal } from './TelegramQrModal';
 import { supabase } from '../lib/supabase';
 import type { UserProfile } from '../lib/supabase';
 import { toast } from '../lib/toast';
@@ -188,6 +191,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
   const [showBotSettings, setShowBotSettings] = useState<boolean>(false);
   const [savingBotSettings, setSavingBotSettings] = useState<boolean>(false);
   const [testingTelegram, setTestingTelegram] = useState<boolean>(false);
+  const [showQrModal, setShowQrModal] = useState<boolean>(false);
 
   // Load user's saved Chat ID and system Bot info
   useEffect(() => {
@@ -1076,22 +1080,45 @@ export const HomeView: React.FC<HomeViewProps> = ({
                 </p>
               </div>
 
-              <a
-                href={botUsername ? `https://t.me/${botUsername}?start=${currentUser?.id || currentUser?.username || 'user'}` : '#'}
-                target="_blank"
-                rel="noreferrer"
-                onClick={(e) => {
-                  if (!botUsername) {
-                    e.preventDefault();
-                    toast.error('يرجى كتابة اسم مستخدم البوت (Bot Username) من زر إعدادات البوت أولاً ⚙️');
-                    setShowBotSettings(true);
-                  }
-                }}
-                className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-sky-500 via-blue-600 to-indigo-600 hover:from-sky-400 hover:to-blue-500 text-white font-bold text-xs shadow-lg shadow-sky-500/30 flex items-center gap-2 transition-all transform hover:scale-[1.02] cursor-pointer whitespace-nowrap"
-              >
-                <Send size={15} />
-                <span>ربط حسابي بتليجرام بنقرة واحدة ✈️</span>
-              </a>
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  onClick={() => setShowQrModal(true)}
+                  className="px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/15 border border-white/10 text-white font-bold text-xs flex items-center gap-2 transition-all cursor-pointer shadow-sm hover:scale-[1.02] active:scale-95"
+                >
+                  <QrCode size={15} className="text-sky-400" />
+                  <span>كود QR للموبايل 📱</span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    const cleanBot = (botUsername || 'Kheta_notify_bot').replace(/^@/, '');
+                    const link = `https://t.me/${cleanBot}?start=${currentUser?.id || currentUser?.username || 'user'}`;
+                    navigator.clipboard.writeText(link);
+                    toast.success('تم نسخ رابط الربط المخصص لحسابك بنجاح! 📋');
+                  }}
+                  className="px-4 py-2.5 rounded-xl bg-sky-500/15 hover:bg-sky-500/25 border border-sky-400/30 text-sky-300 font-bold text-xs flex items-center gap-2 transition-all cursor-pointer shadow-sm hover:scale-[1.02] active:scale-95"
+                >
+                  <Copy size={14} />
+                  <span>نسخ الرابط 📋</span>
+                </button>
+
+                <a
+                  href={botUsername ? `https://t.me/${botUsername.replace(/^@/, '')}?start=${currentUser?.id || currentUser?.username || 'user'}` : '#'}
+                  target="_blank"
+                  rel="noreferrer"
+                  onClick={(e) => {
+                    if (!botUsername) {
+                      e.preventDefault();
+                      toast.error('يرجى كتابة اسم مستخدم البوت (Bot Username) من زر إعدادات البوت أولاً ⚙️');
+                      setShowBotSettings(true);
+                    }
+                  }}
+                  className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-sky-500 via-blue-600 to-indigo-600 hover:from-sky-400 hover:to-blue-500 text-white font-bold text-xs shadow-lg shadow-sky-500/30 flex items-center gap-2 transition-all transform hover:scale-[1.02] cursor-pointer whitespace-nowrap"
+                >
+                  <Send size={15} />
+                  <span>ربط حسابي بنقرة واحدة ✈️</span>
+                </a>
+              </div>
             </div>
           ) : (
             <div className="flex flex-1 items-center justify-between gap-3 flex-wrap bg-emerald-950/30 border border-emerald-500/20 rounded-2xl p-3.5">
@@ -1103,7 +1130,16 @@ export const HomeView: React.FC<HomeViewProps> = ({
                 </span>
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  onClick={() => setShowQrModal(true)}
+                  className="px-3.5 py-1.5 rounded-xl bg-white/10 hover:bg-white/15 border border-white/10 text-white text-xs font-bold transition-all shadow-sm flex items-center gap-1.5 cursor-pointer"
+                  title="عرض كود QR ورابط الحساب"
+                >
+                  <QrCode size={13} className="text-sky-400" />
+                  <span>كود QR واللينك 📱</span>
+                </button>
+
                 <button
                   onClick={handleSendTestMessage}
                   disabled={testingTelegram}
@@ -1661,6 +1697,13 @@ export const HomeView: React.FC<HomeViewProps> = ({
           </div>
         )}
       </div>
+
+      <TelegramQrModal
+        isOpen={showQrModal}
+        onClose={() => setShowQrModal(false)}
+        user={currentUser}
+        botUsername={botUsername}
+      />
     </div>
   );
 };

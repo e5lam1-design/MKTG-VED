@@ -9049,10 +9049,19 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
 
     combinedData.forEach((item: any) => {
       const searchVal = searchQuery.trim().toLowerCase();
+      const normSearch = searchVal.replace(/\s*-\s*/g, '-').replace(/\s+/g, ' ');
+      const codeStr = String(item.code || item.id || item.name || '').toLowerCase();
+      const normCode = codeStr.replace(/\s*-\s*/g, '-').replace(/\s+/g, ' ');
+
       const matchesSearch = !searchVal ||
+        (normCode && normCode.includes(normSearch)) ||
+        (codeStr && codeStr.includes(searchVal)) ||
         (item.name && String(item.name).toLowerCase().includes(searchVal)) ||
         (item.filingName && String(item.filingName).toLowerCase().includes(searchVal)) ||
         (item.id && String(item.id).toLowerCase().includes(searchVal)) ||
+        (item.code && String(item.code).toLowerCase().includes(searchVal)) ||
+        (item.extraName && String(item.extraName).toLowerCase().includes(searchVal)) ||
+        (item.script && String(item.script).toLowerCase().includes(searchVal)) ||
         (item.val && String(item.val).toLowerCase().includes(searchVal)) ||
         (item.teacher && String(item.teacher).toLowerCase().includes(searchVal)) ||
         (item.editor && String(item.editor).toLowerCase().includes(searchVal)) ||
@@ -9063,7 +9072,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
 
       if (!matchesSearch) return;
 
-      if (isMyTasksOnly && currentUserName) {
+      if (isMyTasksOnly && currentUserName && !searchVal) {
         const me = currentUserName.toLowerCase().trim();
         const meFirstName = me.split(/[\s._-]+/)[0];
         

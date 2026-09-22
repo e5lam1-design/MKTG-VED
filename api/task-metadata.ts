@@ -18,15 +18,20 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
       const { data, error } = await supabaseAdminClient
         .from('dashboard_data')
-        .select('field, value')
-        .eq('key', 'task_metadata');
+        .select('key, field, value')
+        .in('key', ['task_metadata', 'note_authors']);
       if (error) throw error;
       
       const metadata: Record<string, any> = {};
       if (data) {
         data.forEach(row => {
           try {
-            metadata[row.field] = JSON.parse(row.value);
+            const parsed = JSON.parse(row.value);
+            if (row.key === 'note_authors') {
+              metadata['note_authors'] = parsed;
+            } else {
+              metadata[row.field] = parsed;
+            }
           } catch(e) {}
         });
       }
@@ -40,26 +45,27 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       if (!field) throw new Error('field is required');
       
       const value = JSON.stringify(metadata || {});
+      const targetKey = field === 'note_authors' ? 'note_authors' : 'task_metadata';
+      const targetField = field === 'note_authors' ? 'authors' : field;
+
       // Check if exists
       const { data: existing } = await supabaseAdminClient
         .from('dashboard_data')
         .select('key, field')
-        .eq('key', 'task_metadata')
-        .eq('field', field)
+        .eq('key', targetKey)
         .maybeSingle();
 
       let error;
       if (existing) {
         const res = await supabaseAdminClient
           .from('dashboard_data')
-          .update({ value, updated_by: requester.id })
-          .eq('key', 'task_metadata')
-          .eq('field', field);
+          .update({ value, updated_by: requester.id, updated_at: new Date().toISOString() })
+          .eq('key', targetKey);
         error = res.error;
       } else {
         const res = await supabaseAdminClient
           .from('dashboard_data')
-          .insert({ key: 'task_metadata', field, value, updated_by: requester.id });
+          .insert({ key: targetKey, field: targetField, value, updated_by: requester.id });
         error = res.error;
       }
         

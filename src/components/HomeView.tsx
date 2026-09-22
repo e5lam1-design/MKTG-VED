@@ -215,21 +215,54 @@ export const HomeView: React.FC<HomeViewProps> = ({
     });
   }, [currentUser]);
 
-  // Real-time Auto-Detection: Polls every 3s while user is not connected yet
-  // As soon as the user taps "Start" in Telegram, the bot links it and the dashboard turns green automatically!
+  // Real-time Auto-Detection: Supabase Realtime listener + fast polling fallback
+  // As soon as the user taps "Start" in Telegram, the bot links it and the dashboard turns green instantly!
   useEffect(() => {
-    if (!currentUser?.id || telegramChatId) return;
+    if (!currentUser?.id) return;
 
+    // 1. Supabase Realtime subscription on page_announcements
+    const channel = supabase
+      .channel(`tg-status-${currentUser.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'page_announcements'
+        },
+        (payload) => {
+          const key = (payload.new as any)?.page_key || (payload.old as any)?.page_key;
+          if (key === `tg_chat_${currentUser.id}` || key === `tg_editor_${currentUser.name?.trim().toLowerCase()}`) {
+            if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
+              const newChatId = String((payload.new as any)?.message || '').trim();
+              if (newChatId && newChatId !== telegramChatId) {
+                setTelegramChatId(newChatId);
+                toast.success('🎉 رائع! تم ربط حسابك بتليجرام بنجاح وبدء الاتصال!');
+              }
+            } else if (payload.eventType === 'DELETE') {
+              setTelegramChatId('');
+            }
+          }
+        }
+      )
+      .subscribe();
+
+    // 2. Fast Polling fallback every 2s
     const interval = setInterval(async () => {
       const id = await getUserTelegramChatId(currentUser.id, currentUser.name);
-      if (id && id !== telegramChatId) {
+      if (id !== telegramChatId) {
         setTelegramChatId(id);
-        toast.success('🎉 رائع! تم ربط حسابك بتليجرام بنجاح!');
+        if (id && !telegramChatId) {
+          toast.success('🎉 رائع! تم ربط حسابك بتليجرام بنجاح وبدء الاتصال!');
+        }
       }
-    }, 3000);
+    }, 2000);
 
-    return () => clearInterval(interval);
-  }, [currentUser, telegramChatId]);
+    return () => {
+      clearInterval(interval);
+      supabase.removeChannel(channel);
+    };
+  }, [currentUser?.id, currentUser?.name, telegramChatId]);
 
   // Save Bot Settings (Token + Username for System)
   const handleSaveBotSettings = async () => {
@@ -417,10 +450,11 @@ export const HomeView: React.FC<HomeViewProps> = ({
           reelsData.forEach((item: any) => {
             const editorAssigned = item.editor_col && item.editor_col !== '---' && item.editor_col !== 'غير محدد' ? item.editor_col.trim() : '';
             const byPerson = item.by && item.by !== '---' && item.by !== 'غير محدد' ? item.by.trim() : '';
+            const creator = item.extra_name && item.extra_name !== '---' && item.extra_name !== 'غير محدد' ? item.extra_name.trim() : '';
             const notesText = `${item.notes || ''} ${item.editor_notes || ''}`.trim();
             const isDone = item.done === true;
             const isEdit = item.edit_check === true || item.canceled === true || notesText.includes('تعديل') || notesText.includes('edit');
-            const isAssigned = checkIsAssigned(editorAssigned, notesText) || checkIsAssigned(byPerson, notesText);
+            const isAssigned = checkIsAssigned(editorAssigned, notesText) || checkIsAssigned(byPerson, notesText) || checkIsAssigned(creator, notesText);
             const isClaimable = checkIsClaimable(editorAssigned, isDone) && !item.canceled;
             const isPriority = item.missing_details === true;
 
@@ -449,8 +483,8 @@ export const HomeView: React.FC<HomeViewProps> = ({
               sourceGid: '1939073164',
               status,
               statusLabel,
-              assignedTo: editorAssigned || 'غير محدد',
-              notes: [byPerson ? `المصور/السكريبت: ${byPerson}` : '', notesText].filter(Boolean).join(' | ') || undefined,
+              assignedTo: editorAssigned || (creator ? `المبتكر: ${creator}` : 'غير محدد'),
+              notes: [creator ? `المبتكر: ${creator}` : '', byPerson ? `المصور: ${byPerson}` : '', notesText].filter(Boolean).join(' | ') || undefined,
               date: item.date || item.filming_date,
               done: isDone,
               link: item.drive_final || item.drive_raw,
@@ -544,8 +578,61 @@ export const HomeView: React.FC<HomeViewProps> = ({
         console.error('Error fetching reels_cuts tasks:', e);
       }
 
-      // 4. Fetch Shooting tasks (1436746012) for Marketing & Media Team Members (Assigned only, not claimable)
+      // 4. Fetch Shooting tasks (1436746012) from Supabase reels_shooting_26 and Google Sheets
       try {
+        const seenShootingCodes = new Set<string>();
+
+        // 4a. Fetch from direct Supabase table first (Instant Real-time)
+        try {
+          const { data: shootingDb } = await supabase
+            .from('reels_shooting_26')
+            .select('*')
+            .order('updated_at', { ascending: false })
+            .limit(200);
+
+          if (shootingDb && shootingDb.length > 0) {
+            shootingDb.forEach((item: any) => {
+              const byPerson = item.by && item.by !== '---' && item.by !== 'غير محدد' ? item.by.trim() : '';
+              const creator = item.extra_name && item.extra_name !== '---' && item.extra_name !== 'غير محدد' ? item.extra_name.trim() : '';
+              const notesText = `${item.notes || ''} ${item.editor_notes || ''}`.trim();
+              const isFilmed = item.filmed === true;
+              const isAssigned = checkIsAssigned(byPerson, notesText) || checkIsAssigned(creator, notesText);
+
+              if (!isAssigned && !canSwitchUsers) return;
+
+              const code = item.code || `shooting-${item.id}`;
+              seenShootingCodes.add(code);
+              const title = item.code ? item.code : (creator ? `${creator} (${item.teacher || 'تصوير'})` : code);
+
+              collected.push({
+                id: `shooting-${code}`,
+                uniqueKey: code,
+                title,
+                code,
+                sourceSheet: 'Shooting (تصوير)',
+                sourceGid: '1436746012',
+                status: isFilmed ? 'completed' : 'in_progress',
+                statusLabel: isFilmed ? 'تم التصوير ✅' : 'قيد التصوير ⏳',
+                assignedTo: byPerson || (creator ? `المبتكر: ${creator}` : 'غير محدد'),
+                notes: [creator ? `المبتكر: ${creator}` : '', notesText].filter(Boolean).join(' | ') || undefined,
+                date: item.filming_date || item.date,
+                done: isFilmed,
+                link: item.drive_raw || undefined,
+                isAssignedToMe: isAssigned,
+                isClaimable: false,
+                isPriority: item.missing_details === true,
+                isEdit: false,
+                branch: item.branch || undefined,
+                createdAt: item.created_at || item.updated_at,
+                details: item
+              });
+            });
+          }
+        } catch (dbErr) {
+          console.warn('Could not fetch reels_shooting_26 from db:', dbErr);
+        }
+
+        // 4b. Also fetch from Google Sheets published CSV for older archive rows
         const reelsDocId = '2PACX-1vTvcQ3v1JOzacx9tcsYrbriofFyHlu7rOKKlsobvpP9vjnbHGcg_Qn9TLlbkgB2YsGiX0GO1U4wlZjd';
         const shootingCsvUrl = `https://docs.google.com/spreadsheets/d/e/${reelsDocId}/pub?gid=1436746012&output=csv&single=true`;
         const res = await fetch(shootingCsvUrl);
@@ -555,13 +642,16 @@ export const HomeView: React.FC<HomeViewProps> = ({
           lines.slice(1).forEach((line, idx) => {
             if (!line.trim()) return;
             const cols = line.split(',').map(c => c.replace(/^"|"$/g, '').trim());
+            const code = cols[5] || `shooting-csv-${idx}`;
+            if (seenShootingCodes.has(code)) return;
+
+            const creator = cols[4] || '';
             const byPerson = cols[11] || '';
             const notes = cols[13] || '';
             const isFilmed = cols[9]?.toUpperCase() === 'TRUE';
-            const isAssigned = checkIsAssigned(byPerson, notes);
+            const isAssigned = checkIsAssigned(byPerson, notes) || checkIsAssigned(creator, notes);
             if (!isAssigned && !canSwitchUsers) return;
 
-            const code = cols[5] || `shooting-${idx}`;
             const title = cols[4] ? `${cols[4]} (${cols[3] || 'تصوير'})` : cols[3] ? `تصوير: ${cols[3]}` : code;
 
             collected.push({
@@ -573,13 +663,13 @@ export const HomeView: React.FC<HomeViewProps> = ({
               sourceGid: '1436746012',
               status: isFilmed ? 'completed' : 'in_progress',
               statusLabel: isFilmed ? 'تم التصوير ✅' : 'قيد التصوير ⏳',
-              assignedTo: byPerson || 'غير محدد',
-              notes: notes || undefined,
+              assignedTo: byPerson || (creator ? `المبتكر: ${creator}` : 'غير محدد'),
+              notes: [creator ? `المبتكر: ${creator}` : '', notes].filter(Boolean).join(' | ') || undefined,
               date: cols[10] || cols[0],
               done: isFilmed,
               link: cols[14] || undefined,
               isAssignedToMe: isAssigned,
-              isClaimable: false, // NOT claimable
+              isClaimable: false,
               isPriority: false,
               isEdit: false,
               createdAt: cols[0],
@@ -747,6 +837,69 @@ export const HomeView: React.FC<HomeViewProps> = ({
       totalSystem 
     };
   }, [tasks]);
+
+  // Sync live dashboard statistics to page_announcements for the Telegram Bot query buttons
+  useEffect(() => {
+    if (!currentUser?.id || loading || tasks.length === 0) return;
+
+    const myTasks = tasks.filter(t => t.isAssignedToMe);
+    const payload = {
+      userId: currentUser.id,
+      userName: currentUser.name,
+      stats,
+      pendingTasks: myTasks.filter(t => !t.done && !t.isEdit).slice(0, 5).map(t => ({
+        code: t.code,
+        title: t.title,
+        sheet: t.sourceSheet,
+        notes: t.notes,
+        link: t.link
+      })),
+      priorityTasks: myTasks.filter(t => t.isPriority && !t.done).slice(0, 5).map(t => ({
+        code: t.code,
+        title: t.title,
+        sheet: t.sourceSheet,
+        notes: t.notes
+      })),
+      editTasks: myTasks.filter(t => t.isEdit && !t.done).slice(0, 5).map(t => ({
+        code: t.code,
+        title: t.title,
+        sheet: t.sourceSheet,
+        notes: t.notes
+      })),
+      availableTasks: tasks.filter(t => t.isClaimable && CLAIMABLE_ALLOWED_GIDS.includes(t.sourceGid)).slice(0, 5).map(t => ({
+        code: t.code,
+        title: t.title,
+        sheet: t.sourceSheet
+      })),
+      updatedAt: new Date().toISOString()
+    };
+
+    const cleanUName = currentUser.name.trim().toLowerCase();
+    (async () => {
+      try {
+        await supabase.from('page_announcements').upsert([
+          {
+            page_key: `tg_stats_${currentUser.id}`,
+            page_label: 'user_telegram_stats',
+            message: JSON.stringify(payload),
+            type: 'info',
+            is_active: true,
+            updated_at: new Date().toISOString()
+          },
+          {
+            page_key: `tg_stats_${cleanUName}`,
+            page_label: 'user_telegram_stats',
+            message: JSON.stringify(payload),
+            type: 'info',
+            is_active: true,
+            updated_at: new Date().toISOString()
+          }
+        ], { onConflict: 'page_key' });
+      } catch (err) {
+        // Ignore background sync errors
+      }
+    })();
+  }, [currentUser?.id, currentUser?.name, stats, tasks, loading]);
 
   // Adjust default category: ALWAYS focus on the user's own tasks first
   useEffect(() => {

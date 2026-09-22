@@ -15,6 +15,7 @@ import {
   AlertCircle
 } from 'lucide-react';
 import { toast } from '../lib/toast';
+import { supabase } from '../lib/supabase';
 import { getUserTelegramChatId, sendTestTelegramMessage, getTelegramBotToken } from '../lib/telegram';
 
 interface TelegramQrModalProps {
@@ -47,7 +48,7 @@ export const TelegramQrModal: React.FC<TelegramQrModalProps> = ({
   const telegramLink = `https://t.me/${cleanBot}?start=${userPayload}`;
   const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=240x240&data=${encodeURIComponent(telegramLink)}&margin=1`;
 
-  // Fetch or verify chat ID when opened
+  // Fetch or verify chat ID when opened + Realtime listener
   useEffect(() => {
     if (!isOpen || !user?.id) return;
     setChatId(user.telegram_chat_id || '');
@@ -58,17 +59,49 @@ export const TelegramQrModal: React.FC<TelegramQrModalProps> = ({
       setLoadingChatId(false);
     }).catch(() => setLoadingChatId(false));
 
-    // Auto poll while modal is open if user isn't linked yet
+    // 1. Supabase Realtime subscription for instant 100ms detection
+    const channel = supabase
+      .channel(`tg-modal-${user.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'page_announcements'
+        },
+        (payload) => {
+          const key = (payload.new as any)?.page_key || (payload.old as any)?.page_key;
+          if (key === `tg_chat_${user.id}` || key === `tg_editor_${user.name?.trim().toLowerCase()}`) {
+            if (payload.eventType === 'INSERT' || payload.eventType === 'UPDATE') {
+              const newChatId = String((payload.new as any)?.message || '').trim();
+              if (newChatId && newChatId !== chatId) {
+                setChatId(newChatId);
+                toast.success(`🎉 تم ربط حساب (${user.name}) بتليجرام بنجاح!`);
+              }
+            } else if (payload.eventType === 'DELETE') {
+              setChatId('');
+            }
+          }
+        }
+      )
+      .subscribe();
+
+    // 2. Fast 1.5s fallback polling while modal is open
     const interval = setInterval(async () => {
       const liveId = await getUserTelegramChatId(user.id, user.name);
-      if (liveId && liveId !== chatId) {
+      if (liveId !== chatId) {
         setChatId(liveId);
-        toast.success(`🎉 تم ربط حساب (${user.name}) بتليجرام بنجاح!`);
+        if (liveId && !chatId) {
+          toast.success(`🎉 تم ربط حساب (${user.name}) بتليجرام بنجاح!`);
+        }
       }
-    }, 3000);
+    }, 1500);
 
-    return () => clearInterval(interval);
-  }, [isOpen, user?.id, user?.name]);
+    return () => {
+      clearInterval(interval);
+      supabase.removeChannel(channel);
+    };
+  }, [isOpen, user?.id, user?.name, chatId]);
 
   if (!isOpen || !user) return null;
 

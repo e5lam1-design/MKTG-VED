@@ -18,6 +18,7 @@ export interface TelegramNotificationParams {
   branch?: string;
   notes?: string;
   completedAt?: string;
+  statusLabel?: string;
 }
 
 /**
@@ -284,11 +285,6 @@ export async function saveUserPhone(
 export async function getUserTelegramChatId(userId?: string, userName?: string): Promise<string> {
   if (!userId && !userName) return '';
 
-  // If user explicitly unlinked, respect user action and return empty immediately
-  if (userId && localStorage.getItem(`tg_unlinked_${userId}`) === 'true') {
-    return '';
-  }
-
   const cleanName = userName ? userName.trim().toLowerCase() : '';
 
   // 1. Check localStorage first
@@ -393,7 +389,7 @@ export async function unlinkUserTelegram(userId?: string, userName?: string): Pr
   const cleanName = userName ? userName.trim().toLowerCase() : '';
 
   if (userId) {
-    localStorage.setItem(`tg_unlinked_${userId}`, 'true');
+    localStorage.removeItem(`tg_unlinked_${userId}`);
     localStorage.removeItem(`tg_chat_${userId}`);
   }
   if (cleanName) {
@@ -404,9 +400,14 @@ export async function unlinkUserTelegram(userId?: string, userName?: string): Pr
   try {
     if (userId) {
       await supabase.from('page_announcements').delete().eq('page_key', `tg_chat_${userId}`);
+      await supabase.from('page_announcements').delete().eq('page_key', `tg_stats_${userId}`);
     }
     if (cleanName) {
       await supabase.from('page_announcements').delete().eq('page_key', `tg_editor_${cleanName}`);
+      const firstName = cleanName.split(/\s+/)[0];
+      if (firstName && firstName !== cleanName) {
+        await supabase.from('page_announcements').delete().eq('page_key', `tg_editor_${firstName}`);
+      }
     }
   } catch {}
 
@@ -612,14 +613,10 @@ export async function sendTestTelegramMessage(
   });
 
   const msg = [
-    `🔔 <b>تجربة إشعار تليجرام ناجحة!</b> 🎉`,
-    `━━━━━━━━━━━━━━━━━━━━`,
-    `👤 <b>المستخدم:</b> ${userName || 'المستخدم'}`,
-    `🕒 <b>الوقت:</b> ${time}`,
-    `✅ <b>الحالة:</b> البوت متصل وجاهز لإرسال تفاصيل المهام وروابطها فور إتمامها! 🚀`,
-    `━━━━━━━━━━━━━━━━━━━━`,
-    `<i>لوحة تحكم الخطة التعليمية — ميزة تجريبية</i>`
-  ].join('\n');
+    userName ? `أهلاً بك يا ${userName} 👋` : '',
+    `أنت الآن متصل بتاسكات الخطة ✅`,
+    `🕒 الوقت: ${time}`
+  ].filter(Boolean).join('\n');
 
   return sendTelegramMessage(token, chatId, msg);
 }
@@ -647,23 +644,18 @@ export async function notifyTaskCompleted(
   });
 
   const lines = [
-    `🎬 <b>تم إنجاز مهمة جديدة بنجاح!</b> ✅`,
-    `━━━━━━━━━━━━━━━━━━━━`,
-    `📌 <b>اسم التاسك:</b> ${escapeHtml(params.taskTitle || 'بدون عنوان')}`,
-    params.taskCode ? `🔢 <b>الكود:</b> <code>${escapeHtml(params.taskCode)}</code>` : '',
-    params.sourceSheet ? `📂 <b>القسم:</b> ${escapeHtml(params.sourceSheet)}` : '',
-    params.branch ? `🏢 <b>الفرع:</b> ${escapeHtml(params.branch)}` : '',
-    params.editorName ? `👤 <b>المحرر / المونتير:</b> ${escapeHtml(params.editorName)}` : '',
-    `🕒 <b>وقت الإنجاز:</b> ${timeStr} (${dateStr})`,
-    params.notes ? `📝 <b>ملاحظات:</b> ${escapeHtml(params.notes)}` : '',
-    `━━━━━━━━━━━━━━━━━━━━`,
+    `<b>الحالة:</b> تم الإنجاز ✅`,
+    params.taskCode ? `<b>كود التاسك:</b> <code>${escapeHtml(params.taskCode)}</code>` : '',
+    params.taskTitle && params.taskTitle !== params.taskCode ? `<b>اسم التاسك:</b> ${escapeHtml(params.taskTitle)}` : '',
+    params.sourceSheet ? `<b>القسم:</b> ${escapeHtml(params.sourceSheet)}` : '',
+    params.editorName ? `<b>المحرر:</b> ${escapeHtml(params.editorName)}` : '',
+    `<b>وقت الإنجاز:</b> ${timeStr} (${dateStr})`,
     params.driveLink && params.driveLink.startsWith('http')
-      ? `🔗 <b>الرابط النهائي / الدرايف:</b>\n👉 <a href="${params.driveLink}">${params.driveLink}</a>`
+      ? `<b>الرابط النهائي:</b> <a href="${params.driveLink}">${params.driveLink}</a>`
       : params.driveLink
-      ? `🔗 <b>الرابط:</b> ${escapeHtml(params.driveLink)}`
-      : `⚠️ <i>لم يتم إرفاق رابط نهائي في المهمة</i>`,
-    `━━━━━━━━━━━━━━━━━━━━`,
-    `🚀 <i>لوحة تحكم الخطة التعليمية</i>`
+      ? `<b>الرابط النهائي:</b> ${escapeHtml(params.driveLink)}`
+      : `<b>الرابط النهائي:</b> <i>لم يُرفق رابط</i>`,
+    params.notes ? `<b>ملاحظات:</b> ${escapeHtml(params.notes)}` : '',
   ].filter(Boolean);
 
   const htmlText = lines.join('\n');
@@ -692,24 +684,21 @@ export async function notifyTaskEditRequested(
     day: 'numeric'
   });
 
+  const statusTitle = params.statusLabel || 'مطلوب تعديل ⚠️';
+
   const lines = [
-    `⚠️ <b>تنبيه: مطلوب تعديل على مهمتك!</b> 📝`,
-    `━━━━━━━━━━━━━━━━━━━━`,
-    `📌 <b>اسم التاسك:</b> ${escapeHtml(params.taskTitle || 'بدون عنوان')}`,
-    params.taskCode ? `🔢 <b>الكود:</b> <code>${escapeHtml(params.taskCode)}</code>` : '',
-    params.sourceSheet ? `📂 <b>القسم:</b> ${escapeHtml(params.sourceSheet)}` : '',
-    params.branch ? `🏢 <b>الفرع:</b> ${escapeHtml(params.branch)}` : '',
-    params.editorName ? `👤 <b>المحرر / المونتير:</b> ${escapeHtml(params.editorName)}` : '',
-    `🕒 <b>الوقت:</b> ${timeStr} (${dateStr})`,
-    params.notes ? `📝 <b>تفاصيل التعديل / الملاحظات:</b>\n<i>${escapeHtml(params.notes)}</i>` : '',
-    `━━━━━━━━━━━━━━━━━━━━`,
+    `<b>الحالة:</b> ${statusTitle}`,
+    params.taskCode ? `<b>كود التاسك:</b> <code>${escapeHtml(params.taskCode)}</code>` : '',
+    params.taskTitle && params.taskTitle !== params.taskCode ? `<b>اسم التاسك:</b> ${escapeHtml(params.taskTitle)}` : '',
+    params.sourceSheet ? `<b>القسم:</b> ${escapeHtml(params.sourceSheet)}` : '',
+    params.editorName ? `<b>المسند إليه:</b> ${escapeHtml(params.editorName)}` : '',
+    `<b>وقت الطلب:</b> ${timeStr} (${dateStr})`,
+    params.notes ? `<b>التفاصيل / الملاحظات:</b> ${escapeHtml(params.notes)}` : '',
     params.driveLink && params.driveLink.startsWith('http')
-      ? `🔗 <b>رابط المهمة / العمل:</b>\n👉 <a href="${params.driveLink}">${params.driveLink}</a>`
+      ? `<b>الرابط النهائي:</b> <a href="${params.driveLink}">${params.driveLink}</a>`
       : params.driveLink
-      ? `🔗 <b>الرابط:</b> ${escapeHtml(params.driveLink)}`
+      ? `<b>الرابط النهائي:</b> ${escapeHtml(params.driveLink)}`
       : '',
-    `━━━━━━━━━━━━━━━━━━━━`,
-    `🚀 <i>لوحة تحكم الخطة التعليمية — إشعار تعديل</i>`
   ].filter(Boolean);
 
   const htmlText = lines.join('\n');

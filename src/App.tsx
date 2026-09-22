@@ -75,6 +75,7 @@ import { SystemGuideModal } from './components/SystemGuideModal';
 import { TelegramQrModal } from './components/TelegramQrModal';
 import { InteractiveTour } from './components/InteractiveTour';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { GoogleSheetImportModal } from './components/GoogleSheetImportModal';
 import { sortTasksByChunkAscending, sortMultiLineLessonName, sortCombinedFilingName } from './lib/chunkSort';
 import { supabase, PERMISSIONS, ROLE_LABELS, ROLE_COLORS, DEFAULT_ROLE_PERMISSIONS, setRuntimeRolePermissions } from './lib/supabase';
 import { notifyTaskCompleted, notifyTaskEditRequested, getUserTelegramChatId } from './lib/telegram';
@@ -261,7 +262,7 @@ type HistoryEntry = {
   author: string;
 };
 
-const HistoryInput = ({ itemKey, fieldKey, value, onChange, placeholder, updatedAt, updatedBy }: any) => {
+const HistoryInput = ({ itemKey, fieldKey, value, onChange, placeholder, updatedAt, updatedBy, fallbackAuthor, disabled }: any) => {
   const { profile } = useAuth();
   
   const getLoggedInUserName = () => {
@@ -278,32 +279,65 @@ const HistoryInput = ({ itemKey, fieldKey, value, onChange, placeholder, updated
     return 'مستخدم';
   };
 
+  const loggedInName = getLoggedInUserName();
+
   const historyKey = `hist_${fieldKey || 'note'}_${itemKey || 'global'}`;
   const timestampKey = `time_${fieldKey || 'note'}_${itemKey || 'global'}`;
   const authorKey = `author_${fieldKey || 'note'}_${itemKey || 'global'}`;
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Resolve the true author of an existing note:
+  // 1. updatedBy from server note_authors or table column
+  // 2. fallbackAuthor (e.g. assigned editor for editor notes, or creator for notes)
+  // 3. Cached localStorage author ONLY if it doesn't match the current viewer (preventing old bug contamination)
+  const getResolvedExistingAuthor = () => {
+    if (updatedBy && String(updatedBy).trim() && String(updatedBy).trim() !== 'غير محدد') {
+      return String(updatedBy).trim();
+    }
+    if (fallbackAuthor && String(fallbackAuthor).trim() && String(fallbackAuthor).trim() !== 'غير محدد') {
+      return String(fallbackAuthor).trim();
+    }
+    try {
+      const savedAuthor = localStorage.getItem(authorKey);
+      if (savedAuthor && savedAuthor.trim() && savedAuthor.trim() !== loggedInName && savedAuthor.trim() !== 'غير محدد') {
+        return savedAuthor.trim();
+      }
+    } catch {}
+    return undefined;
+  };
   
   const [history, setHistory] = useState<HistoryEntry[]>(() => {
     const saved = localStorage.getItem(historyKey);
     let entries: HistoryEntry[] = [];
-    const currentAuthor = updatedBy || getLoggedInUserName();
+    const resolvedAuthor = getResolvedExistingAuthor();
+
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) {
           entries = parsed.map((item: any) => {
             if (typeof item === 'string') {
-              return { text: item, timestamp: updatedAt || new Date().toISOString(), author: currentAuthor };
+              return { text: item, timestamp: updatedAt || new Date().toISOString(), author: resolvedAuthor || '' };
+            }
+            if (resolvedAuthor && item.author === loggedInName && resolvedAuthor !== loggedInName) {
+              return { ...item, author: resolvedAuthor };
             }
             return item;
           });
         }
       } catch (e) {}
     }
+
     const currentText = (value || '').trim();
     if (currentText) {
       if (entries.length === 0 || entries[entries.length - 1].text !== currentText) {
-        entries.push({ text: currentText, timestamp: updatedAt || new Date().toISOString(), author: currentAuthor });
+        entries.push({
+          text: currentText,
+          timestamp: updatedAt || new Date().toISOString(),
+          author: resolvedAuthor || ''
+        });
+      } else if (resolvedAuthor && entries[entries.length - 1].author !== resolvedAuthor) {
+        entries[entries.length - 1].author = resolvedAuthor;
       }
     }
     return entries.slice(-30);
@@ -319,9 +353,13 @@ const HistoryInput = ({ itemKey, fieldKey, value, onChange, placeholder, updated
       : updatedAt || localStorage.getItem(timestampKey) || undefined;
   });
   const [lastEditedBy, setLastEditedBy] = useState<string | undefined>(() => {
-    return (history.length > 0 && currentIndex >= 0 && history[currentIndex]?.author) 
-      ? history[currentIndex].author 
-      : updatedBy || localStorage.getItem(authorKey) || getLoggedInUserName();
+    const resolved = getResolvedExistingAuthor();
+    if (resolved) return resolved;
+    if (history.length > 0 && currentIndex >= 0 && history[currentIndex]?.author) {
+      const entryAuthor = history[currentIndex].author;
+      if (entryAuthor && entryAuthor !== loggedInName) return entryAuthor;
+    }
+    return undefined;
   });
 
   // Sync external value if it changes independently
@@ -331,16 +369,30 @@ const HistoryInput = ({ itemKey, fieldKey, value, onChange, placeholder, updated
       return;
     }
     const valStr = value || '';
-    if (valStr === localValue) return;
+    if (valStr !== localValue) {
+      setLocalValue(valStr);
+    }
 
-    setLocalValue(valStr);
+    const resolved = getResolvedExistingAuthor();
+    if (resolved) {
+      setLastEditedBy(resolved);
+    }
+    if (updatedAt) {
+      setLastEditedAt(updatedAt);
+    }
+
     const trimmed = valStr.trim();
     if (trimmed) {
-      const currentAuthor = updatedBy || getLoggedInUserName();
+      const currentAuthor = resolved || '';
       setHistory(prev => {
         const existingIdx = prev.findIndex(e => e.text === trimmed);
         if (existingIdx !== -1) {
           setCurrentIndex(existingIdx);
+          if (resolved && prev[existingIdx].author !== resolved) {
+            const updatedH = [...prev];
+            updatedH[existingIdx] = { ...updatedH[existingIdx], author: resolved };
+            return updatedH;
+          }
           return prev;
         }
         const newH = [...prev, { text: trimmed, timestamp: updatedAt || new Date().toISOString(), author: currentAuthor }].slice(-30);
@@ -349,7 +401,7 @@ const HistoryInput = ({ itemKey, fieldKey, value, onChange, placeholder, updated
         return newH;
       });
     }
-  }, [value]);
+  }, [value, updatedBy, updatedAt, fallbackAuthor]);
 
   // Auto-grow textarea height with buffer so text is never clipped
   useEffect(() => {
@@ -463,11 +515,11 @@ const HistoryInput = ({ itemKey, fieldKey, value, onChange, placeholder, updated
   return (
     <div className="relative flex items-center justify-center group/history mx-auto w-full min-w-[190px] max-w-[280px]">
       {/* Floating Hover Tooltip */}
-      {hasValue && timeLabel && (
+      {hasValue && (timeLabel || lastEditedBy) && (
         <div className="absolute bottom-full mb-2 hidden group-hover/history:flex flex-col items-center z-[300] pointer-events-none animate-fadeIn left-1/2 -translate-x-1/2">
           <div className="bg-[#0c121e]/95 border border-emerald-500/40 rounded-xl px-3 py-1.5 shadow-[0_10px_30px_rgba(0,0,0,0.7)] backdrop-blur-md text-[11px] text-white whitespace-nowrap text-right flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0"></span>
-            <span className="font-mono text-emerald-300 font-bold">{timeLabel}</span>
+            {timeLabel && <span className="font-mono text-emerald-300 font-bold">{timeLabel}</span>}
             {lastEditedBy && (
               <span className="text-muted/90 text-[10px] arabic-text font-bold">👤 {lastEditedBy}</span>
             )}
@@ -635,10 +687,10 @@ const InlineCombobox = ({ value, onChange, options, placeholder }: any) => {
             backgroundColor: '#0c1222',
             zIndex: 999999
           }}
-          className="border border-white/25 rounded-2xl shadow-[0_25px_70px_rgba(0,0,0,0.98)] py-2 flex flex-col justify-between max-h-64 overflow-hidden animate-fadeIn"
+          className="border border-white/25 rounded-2xl shadow-[0_25px_70px_rgba(0,0,0,0.98)] py-2 flex flex-col justify-between max-h-96 overflow-hidden animate-fadeIn"
           onClick={(e) => e.stopPropagation()}
         >
-          <div className="flex-1 overflow-y-auto scrollbar-hide">
+          <div className="flex-1 overflow-y-auto pr-1">
             <button
               type="button"
               onClick={() => { onChange(''); setIsOpen(false); }}
@@ -1031,39 +1083,55 @@ const SidebarGroup = ({ title, iconEmoji, colorHex, stagesList, activeGid, onSel
 
 // ─── Creator Color Map ────────────────────────────────────────────────────────
 const CREATOR_COLORS: Record<string, { bg: string; text: string; border: string; dot: string }> = {
-  'manar': { bg: 'bg-teal-500/15', text: 'text-teal-300 font-extrabold', border: 'border-teal-500/30', dot: '#5eead4' },
   'esraa': { bg: 'bg-pink-500/15', text: 'text-pink-300 font-extrabold', border: 'border-pink-500/30', dot: '#f472b6' },
-  'yomna': { bg: 'bg-amber-500/15', text: 'text-amber-300 font-extrabold', border: 'border-amber-500/30', dot: '#fcd34d' },
+  'esraa aboelkheir': { bg: 'bg-pink-500/15', text: 'text-pink-300 font-extrabold', border: 'border-pink-500/30', dot: '#f472b6' },
+  'esraaaboelkheir': { bg: 'bg-pink-500/15', text: 'text-pink-300 font-extrabold', border: 'border-pink-500/30', dot: '#f472b6' },
   'maram': { bg: 'bg-lime-500/15', text: 'text-lime-300 font-extrabold', border: 'border-lime-500/30', dot: '#a3e635' },
   'han': { bg: 'bg-sky-500/15', text: 'text-sky-300 font-extrabold', border: 'border-sky-500/30', dot: '#7dd3fc' },
   'nader': { bg: 'bg-slate-500/15', text: 'text-slate-300 font-extrabold', border: 'border-slate-500/30', dot: '#94a3b8' },
   'eman': { bg: 'bg-red-500/15', text: 'text-red-300 font-extrabold', border: 'border-red-500/30', dot: '#ef4444' },
-  'noor': { bg: 'bg-amber-900/30', text: 'text-amber-400 font-extrabold', border: 'border-amber-800/40', dot: '#78350f' },
-  'khaled': { bg: 'bg-emerald-500/15', text: 'text-emerald-300 font-extrabold', border: 'border-emerald-500/30', dot: '#34d399' },
-  'awney': { bg: 'bg-emerald-800/30', text: 'text-emerald-300 font-extrabold', border: 'border-emerald-700/40', dot: '#047857' },
-  'shrouk': { bg: 'bg-cyan-800/30', text: 'text-cyan-300 font-extrabold', border: 'border-cyan-700/40', dot: '#0e7490' },
-  'anas': { bg: 'bg-purple-500/15', text: 'text-purple-300 font-extrabold', border: 'border-purple-500/30', dot: '#a855f7' },
-  'ahmed-amr': { bg: 'bg-rose-500/15', text: 'text-rose-300 font-extrabold', border: 'border-rose-500/30', dot: '#fb7185' },
-  'sherif': { bg: 'bg-blue-500/15', text: 'text-blue-300 font-extrabold', border: 'border-blue-500/30', dot: '#60a5fa' },
-  'samir': { bg: 'bg-gray-500/15', text: 'text-gray-300 font-extrabold', border: 'border-gray-500/30', dot: '#9ca3af' },
-  'alaa': { bg: 'bg-cyan-500/15', text: 'text-cyan-300 font-extrabold', border: 'border-cyan-500/30', dot: '#06b6d4' },
-  'ahmed': { bg: 'bg-blue-600/20', text: 'text-blue-300 font-extrabold', border: 'border-blue-500/40', dot: '#2563eb' },
-  'donia': { bg: 'bg-rose-400/15', text: 'text-rose-300 font-extrabold', border: 'border-rose-400/30', dot: '#fda4af' },
-  'alaa zakria': { bg: 'bg-sky-400/15', text: 'text-sky-300 font-extrabold', border: 'border-sky-400/30', dot: '#38bdf8' },
-  'esraa naga': { bg: 'bg-pink-400/15', text: 'text-pink-300 font-extrabold', border: 'border-pink-400/30', dot: '#f472b6' },
-  'nada': { bg: 'bg-fuchsia-500/15', text: 'text-fuchsia-300 font-extrabold', border: 'border-fuchsia-500/30', dot: '#d946ef' },
-  'abdelkerim': { bg: 'bg-amber-950/40', text: 'text-amber-500 font-extrabold', border: 'border-amber-900/50', dot: '#9a3412' },
+  'noor': { bg: 'bg-amber-900/30', text: 'text-amber-400 font-extrabold', border: 'border-amber-800/40', dot: '#b45309' },
+  'manar': { bg: 'bg-teal-500/15', text: 'text-teal-300 font-extrabold', border: 'border-teal-500/30', dot: '#2dd4bf' },
+  'manarr': { bg: 'bg-teal-500/15', text: 'text-teal-300 font-extrabold', border: 'border-teal-500/30', dot: '#2dd4bf' },
+  'yomna': { bg: 'bg-amber-500/15', text: 'text-amber-300 font-extrabold', border: 'border-amber-500/30', dot: '#f59e0b' },
+  'yomana': { bg: 'bg-amber-500/15', text: 'text-amber-300 font-extrabold', border: 'border-amber-500/30', dot: '#f59e0b' },
   'sohaila': { bg: 'bg-slate-400/15', text: 'text-slate-200 font-extrabold', border: 'border-slate-400/30', dot: '#cbd5e1' },
-  'hesham': { bg: 'bg-zinc-800/60', text: 'text-zinc-200 font-extrabold', border: 'border-zinc-700/50', dot: '#18181b' },
-  'a.medhat': { bg: 'bg-emerald-600/20', text: 'text-emerald-300 font-extrabold', border: 'border-emerald-500/30', dot: '#059669' },
-  'ramy': { bg: 'bg-gray-500/15', text: 'text-gray-300 font-extrabold', border: 'border-gray-500/30', dot: '#9ca3af' },
-  'manar awad': { bg: 'bg-pink-400/15', text: 'text-pink-300 font-extrabold', border: 'border-pink-400/30', dot: '#fbcfe8' },
-  'habiba': { bg: 'bg-emerald-400/15', text: 'text-emerald-300 font-extrabold', border: 'border-emerald-400/30', dot: '#10b981' },
+  'hima': { bg: 'bg-yellow-500/15', text: 'text-yellow-300 font-extrabold', border: 'border-yellow-500/30', dot: '#eab308' },
+  'ahmed samir': { bg: 'bg-blue-500/15', text: 'text-blue-300 font-extrabold', border: 'border-blue-500/30', dot: '#3b82f6' },
+  'adham elbadry': { bg: 'bg-purple-500/15', text: 'text-purple-300 font-extrabold', border: 'border-purple-500/30', dot: '#a855f7' },
+  'awney': { bg: 'bg-emerald-800/30', text: 'text-emerald-300 font-extrabold', border: 'border-emerald-700/40', dot: '#059669' },
+  'ramy elnaggar': { bg: 'bg-blue-600/20', text: 'text-blue-300 font-extrabold', border: 'border-blue-500/40', dot: '#2563eb' },
+  'ramy': { bg: 'bg-blue-600/20', text: 'text-blue-300 font-extrabold', border: 'border-blue-500/40', dot: '#2563eb' },
+  'ramyelnagar': { bg: 'bg-blue-600/20', text: 'text-blue-300 font-extrabold', border: 'border-blue-500/40', dot: '#2563eb' },
+  'nourhan': { bg: 'bg-indigo-500/15', text: 'text-indigo-300 font-extrabold', border: 'border-indigo-500/30', dot: '#818cf8' },
+  'hesham': { bg: 'bg-slate-500/20', text: 'text-slate-200 font-extrabold', border: 'border-slate-500/30', dot: '#64748b' },
+  'shorouk': { bg: 'bg-cyan-800/30', text: 'text-cyan-300 font-extrabold', border: 'border-cyan-700/40', dot: '#0e7490' },
+  'shrouk': { bg: 'bg-cyan-800/30', text: 'text-cyan-300 font-extrabold', border: 'border-cyan-700/40', dot: '#0e7490' },
   'taher': { bg: 'bg-sky-500/15', text: 'text-sky-300 font-extrabold', border: 'border-sky-500/30', dot: '#0ea5e9' },
-  'ramy elnaggar': { bg: 'bg-blue-600/20', text: 'text-blue-300 font-extrabold', border: 'border-blue-500/40', dot: '#1d4ed8' },
-  'khalil': { bg: 'bg-sky-500/15', text: 'text-sky-300 font-extrabold', border: 'border-sky-500/30', dot: '#38bdf8' },
-  'adham': { bg: 'bg-purple-500/15', text: 'text-purple-300 font-extrabold', border: 'border-purple-500/30', dot: '#c084fc' },
-  'hassanien': { bg: 'bg-emerald-500/15', text: 'text-emerald-300 font-extrabold', border: 'border-emerald-500/30', dot: '#4ade80' },
+  'alaa abouobeid': { bg: 'bg-violet-500/15', text: 'text-violet-300 font-extrabold', border: 'border-violet-500/30', dot: '#8b5cf6' },
+  'ahmed hossam': { bg: 'bg-cyan-500/15', text: 'text-cyan-300 font-extrabold', border: 'border-cyan-500/30', dot: '#06b6d4' },
+  'abdelkarim': { bg: 'bg-orange-500/15', text: 'text-orange-300 font-extrabold', border: 'border-orange-500/30', dot: '#f97316' },
+  'abdelkerim': { bg: 'bg-orange-500/15', text: 'text-orange-300 font-extrabold', border: 'border-orange-500/30', dot: '#f97316' },
+  'sherif': { bg: 'bg-blue-400/15', text: 'text-blue-300 font-extrabold', border: 'border-blue-400/30', dot: '#60a5fa' },
+  'alaa medhat': { bg: 'bg-emerald-500/15', text: 'text-emerald-300 font-extrabold', border: 'border-emerald-500/30', dot: '#10b981' },
+  'a.medhat': { bg: 'bg-emerald-500/15', text: 'text-emerald-300 font-extrabold', border: 'border-emerald-500/30', dot: '#10b981' },
+  'donia': { bg: 'bg-rose-300/15', text: 'text-rose-300 font-extrabold', border: 'border-rose-300/30', dot: '#fda4af' },
+  'donia 2': { bg: 'bg-rose-300/15', text: 'text-rose-300 font-extrabold', border: 'border-rose-300/30', dot: '#fda4af' },
+  'alaa': { bg: 'bg-sky-400/15', text: 'text-sky-300 font-extrabold', border: 'border-sky-400/30', dot: '#38bdf8' },
+  'nada': { bg: 'bg-fuchsia-500/15', text: 'text-fuchsia-300 font-extrabold', border: 'border-fuchsia-500/30', dot: '#d946ef' },
+  'nourasharaf': { bg: 'bg-rose-400/15', text: 'text-rose-300 font-extrabold', border: 'border-rose-400/30', dot: '#fb7185' },
+  'nourkhaled': { bg: 'bg-green-400/15', text: 'text-green-300 font-extrabold', border: 'border-green-400/30', dot: '#4ade80' },
+  'rawan': { bg: 'bg-orange-400/15', text: 'text-orange-300 font-extrabold', border: 'border-orange-400/30', dot: '#fb923c' },
+  'aya': { bg: 'bg-pink-600/15', text: 'text-pink-300 font-extrabold', border: 'border-pink-600/30', dot: '#ec4899' },
+  'narden': { bg: 'bg-purple-400/15', text: 'text-purple-300 font-extrabold', border: 'border-purple-400/30', dot: '#c084fc' },
+  'khaled': { bg: 'bg-teal-600/15', text: 'text-teal-300 font-extrabold', border: 'border-teal-600/30', dot: '#14b8a6' },
+  'anas': { bg: 'bg-purple-500/15', text: 'text-purple-300 font-extrabold', border: 'border-purple-500/30', dot: '#a855f7' },
+  'habiba': { bg: 'bg-emerald-400/15', text: 'text-emerald-300 font-extrabold', border: 'border-emerald-400/30', dot: '#10b981' },
+  'khalil': { bg: 'bg-sky-600/15', text: 'text-sky-300 font-extrabold', border: 'border-sky-600/30', dot: '#0284c7' },
+  'hassanien': { bg: 'bg-green-500/15', text: 'text-green-300 font-extrabold', border: 'border-green-500/30', dot: '#22c55e' },
+  'ahmed': { bg: 'bg-blue-600/20', text: 'text-blue-300 font-extrabold', border: 'border-blue-500/40', dot: '#2563eb' },
+  'samir': { bg: 'bg-gray-500/15', text: 'text-gray-300 font-extrabold', border: 'border-gray-500/30', dot: '#9ca3af' },
+  'ahmed-amr': { bg: 'bg-rose-500/15', text: 'text-rose-300 font-extrabold', border: 'border-rose-500/30', dot: '#fb7185' },
 };
 
 // ─── Chip Colors ──────────────────────────────────────────────────────────────
@@ -1073,7 +1141,7 @@ const getChipColor = (val: string) => {
   const lower = raw.toLowerCase();
   const upper = raw.toUpperCase();
   
-  // Dynamic Editor color lookup from Editors Hub Management
+  // Dynamic Editor/Creator color lookup from Editors Hub Management / Supabase
   const dynamicEditorColor = getGlobalEditorColor(lower);
   if (dynamicEditorColor) {
     return {
@@ -1103,8 +1171,15 @@ const getChipColor = (val: string) => {
 
   // Done Status
   if (lower === 'done' || lower === 'تم') {
-    return { bg: 'bg-emerald-500/20 shadow-[0_0_12px_rgba(16,185,129,0.35)]', text: 'text-emerald-300 font-black', border: 'border-emerald-500/60', dot: '#10b981' };
+    return { bg: 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300 font-extrabold shadow-[0_0_12px_rgba(16,185,129,0.2)]', text: '', border: '', dot: '#10b981' };
   }
+  if (lower === 'canceled' || lower === 'ملغي' || lower === 'ملغى') {
+    return { bg: 'bg-rose-500/20 border-rose-500/40 text-rose-300 font-extrabold shadow-[0_0_12px_rgba(244,63,94,0.2)]', text: '', border: '', dot: '#f43f5e' };
+  }
+  if (lower === 'missing' || lower === 'بيانات ناقصة') {
+    return { bg: 'bg-amber-500/20 border-amber-500/40 text-amber-300 font-extrabold shadow-[0_0_12px_rgba(245,158,11,0.2)]', text: '', border: '', dot: '#f59e0b' };
+  }
+
   if (lower === 'not done' || lower === 'لم يتم' || lower === 'غير مكتمل') {
     return { bg: 'bg-amber-500/15 shadow-[0_0_10px_rgba(245,158,11,0.15)]', text: 'text-amber-300 font-extrabold', border: 'border-amber-500/30', dot: '#f59e0b' };
   }
@@ -1161,8 +1236,20 @@ const getChipColor = (val: string) => {
   if (upper.includes('ساينس') || upper.includes('DONE')) return { bg: 'bg-emerald-500/10', text: 'text-emerald-400', border: 'border-emerald-500/20', dot: '#10b981' };
   if (upper.includes('دراسات') || upper.includes('LOW')) return { bg: 'bg-orange-500/10', text: 'text-orange-400', border: 'border-orange-500/20', dot: '#f97316' };
   
-  // Default slate-like grey pill for other values (like employee, etc.)
-  return { bg: 'bg-slate-500/10 border border-slate-500/20 shadow-[0_0_10px_rgba(100,116,139,0.05)]', text: 'text-slate-300 font-bold', border: 'border-slate-500/20', dot: '' };
+  // Deterministic colorful fallback for any creator/option with no explicit mapping
+  const hash = lower.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+  const hue = (hash * 137.5) % 360;
+  return {
+    bg: '',
+    text: 'font-extrabold tracking-wide',
+    border: '',
+    dot: `hsl(${hue}, 80%, 65%)`,
+    style: {
+      backgroundColor: `hsla(${hue}, 80%, 60%, 0.12)`,
+      borderColor: `hsla(${hue}, 80%, 60%, 0.35)`,
+      color: `hsl(${hue}, 85%, 75%)`,
+    }
+  };
 };
 
 export const toInputDate = (dStr: string) => {
@@ -1798,7 +1885,7 @@ const TagmeRow = ({
           value={item.notesMarketing || ''}
           updatedAt={item.notesMarketingUpdatedAt || item.updatedAt}
           updatedBy={item.notesMarketingUpdatedBy}
-          onChange={(val: string, nowIso?: string, user?: string) => onUpdateMarketingNotes(item.uniqueKey || generateKey(item), val, user)}
+          onChange={(val: string, nowIso?: string, user?: string) => onUpdateMarketingNotes(item.uniqueKey || generateKey(item), val, undefined, nowIso, user)}
           placeholder="أضف ملاحظة..."
           disabled={!(profile?.role && PERMISSIONS.canEditNotes(profile.role))}
         />
@@ -1872,7 +1959,10 @@ const TagmeRow = ({
             itemKey={item.uniqueKey || generateKey(item)}
             fieldKey="editor_notes"
             value={item.notesEditors || ''}
-            onChange={(val: string) => onUpdateEditorNotes(item.uniqueKey || generateKey(item), val)}
+            updatedAt={item.notesEditorsUpdatedAt || item.updatedAt}
+            updatedBy={item.notesEditorsUpdatedBy || (item.editor && item.editor !== 'غير محدد' ? item.editor : undefined)}
+            fallbackAuthor={item.editor && item.editor !== 'غير محدد' ? item.editor : undefined}
+            onChange={(val: string, nowIso?: string, user?: string) => onUpdateEditorNotes(item.uniqueKey || generateKey(item), val, undefined, nowIso, user)}
             placeholder="اكتب ملاحظة..."
             disabled={!(profile?.role && PERMISSIONS.canEditNotes(profile.role))}
           />
@@ -2446,8 +2536,26 @@ const parseScriptValue = (val: string) => {
     };
   }
   
-  // 2. Check if it contains a google docs/drive URL or is a raw Google Doc path
-  if (s.includes('document/d/') || s.includes('spreadsheets/d/') || s.includes('drive.google.com') || s.includes('docs.google.com') || s.startsWith('http://') || s.startsWith('https://')) {
+  // 2. Check if it contains a google docs URL, truncated Doc path, or raw Google Doc ID
+  const docMatch = s.match(/(?:docs\.google\.com\/document\/d\/|[a-zA-Z0-9_\/'\.-]*document\/d\/|[a-zA-Z0-9_\/'\.-]*cument\/d\/)(1[a-zA-Z0-9_-]+)/i);
+  if (docMatch && docMatch[1]) {
+    const docId = docMatch[1];
+    return {
+      url: `https://docs.google.com/document/d/${docId}/edit`,
+      text: `Doc: ${docId.substring(0, 16)}...`,
+      isLink: true
+    };
+  }
+
+  if (/^1[a-zA-Z0-9_-]{25,}$/.test(s)) {
+    return {
+      url: `https://docs.google.com/document/d/${s}/edit`,
+      text: `Doc: ${s.substring(0, 16)}...`,
+      isLink: true
+    };
+  }
+
+  if (s.includes('spreadsheets/d/') || s.includes('drive.google.com') || s.includes('docs.google.com') || s.startsWith('http://') || s.startsWith('https://')) {
     let url = s;
     if (!url.startsWith('http://') && !url.startsWith('https://')) {
       if (url.startsWith('docs.google.com') || url.startsWith('drive.google.com')) {
@@ -2474,7 +2582,7 @@ const parseScriptValue = (val: string) => {
     
     return {
       url,
-      text: text,
+      text,
       isLink: true
     };
   }
@@ -2488,7 +2596,7 @@ const parseScriptValue = (val: string) => {
 };
 
 // ─── REELS Row (Shooting, Ve, Counter) ────────────────────────────────────────
-const ShootingRow = ({ item, index, activeGid, onToggleFilmed, loadingFilmedCode, onUpdateShootingRow, onToggleEditCheck, liveData, optionsLists, autofillDrag, setAutofillDrag, onApplyAutofill, activeCell, setActiveCell, toast, isSubscribed, onToggleSubscribe, isSimple, publishedTasks, sharedLinks, onTogglePublish, onUpdateSharedLink }: any) => {
+const ShootingRow = ({ item, index, activeGid, onToggleFilmed, loadingFilmedCode, onUpdateShootingRow, onToggleEditCheck, liveData, optionsLists, autofillDrag, setAutofillDrag, onApplyAutofill, activeCell, setActiveCell, toast, isSubscribed, onToggleSubscribe, isSimple, publishedTasks, sharedLinks, onTogglePublish, onUpdateSharedLink, noteAuthors }: any) => {
   const isGlowing = false;
   const [isEditChecked, setIsEditChecked] = useState(Boolean(item.editCheck || item.edit_check));
   useEffect(() => {
@@ -2571,7 +2679,7 @@ const ShootingRow = ({ item, index, activeGid, onToggleFilmed, loadingFilmedCode
     return `${prefix}${nextSeq.toString().padStart(2, '0')} v7`.toLowerCase();
   }, [editForm, item, liveData, activeGid]);
 
-  const handleFieldChange = async (fieldName: string, value: string) => {
+  const handleFieldChange = async (fieldName: string, value: string, time?: string, author?: string) => {
     // 1. Update the state immediately for fast feedback
     const updatedForm = { ...editForm, [fieldName]: value };
     setEditForm(updatedForm);
@@ -2642,7 +2750,7 @@ const ShootingRow = ({ item, index, activeGid, onToggleFilmed, loadingFilmedCode
       updatedForm.editorNotes || ''
     ];
     try {
-      await onUpdateShootingRow(rowCode, rowData);
+      await onUpdateShootingRow(rowCode, rowData, { fieldName, value, time, author });
     } catch(e) {
       console.error(e);
     } finally {
@@ -2905,7 +3013,10 @@ const ShootingRow = ({ item, index, activeGid, onToggleFilmed, loadingFilmedCode
           itemKey={item.code || item.id}
           fieldKey="shooting_notes"
           value={editForm.notes}
-          onChange={(val: string) => handleFieldChange('notes', val)}
+          updatedAt={noteAuthors?.[`shooting_notes_${item.code || item.id}`]?.timestamp || item.updatedAt}
+          updatedBy={noteAuthors?.[`shooting_notes_${item.code || item.id}`]?.author}
+          fallbackAuthor={item.extraName || item.teacher}
+          onChange={(val: string, time?: string, author?: string) => handleFieldChange('notes', val, time, author)}
           placeholder="اكتب ملاحظة..."
           disabled={false}
         />
@@ -2916,7 +3027,10 @@ const ShootingRow = ({ item, index, activeGid, onToggleFilmed, loadingFilmedCode
             itemKey={item.code || item.id}
             fieldKey="ve_editor_notes"
             value={editForm.editorNotes}
-            onChange={(val: string) => handleFieldChange('editorNotes', val)}
+            updatedAt={noteAuthors?.[`ve_editor_notes_${item.code || item.id}`]?.timestamp || item.updatedAt}
+            updatedBy={noteAuthors?.[`ve_editor_notes_${item.code || item.id}`]?.author || (item.editorCol && item.editorCol !== 'غير محدد' ? item.editorCol : undefined)}
+            fallbackAuthor={item.editorCol && item.editorCol !== 'غير محدد' ? item.editorCol : undefined}
+            onChange={(val: string, time?: string, author?: string) => handleFieldChange('editorNotes', val, time, author)}
             placeholder="ملاحظات المونتير..."
             disabled={false}
           />
@@ -3347,7 +3461,8 @@ const CutsRow = ({
   setActiveCell,
   toast,
   isSubscribed,
-  onToggleSubscribe
+  onToggleSubscribe,
+  noteAuthors
 }: any) => {
   const [editForm, setEditForm] = useState({
     branch: item.branch || '',
@@ -3485,7 +3600,7 @@ const CutsRow = ({
     } catch {}
   };
 
-  const handleFieldChange = async (fieldName: string, value: string) => {
+  const handleFieldChange = async (fieldName: string, value: string, time?: string, author?: string) => {
     const updatedForm = { ...editForm, [fieldName]: value };
     setEditForm(updatedForm);
     saveCutsOverrideLocally(item.id, fieldName, value);
@@ -3540,7 +3655,7 @@ const CutsRow = ({
       item.canceled ? 'TRUE' : 'FALSE'
     ];
     try {
-      await onUpdateShootingRow(item.id, rowData);
+      await onUpdateShootingRow(item.id, rowData, { fieldName, value, time, author });
     } catch(e) {
       console.error(e);
     } finally {
@@ -3815,7 +3930,10 @@ const CutsRow = ({
           itemKey={item.id}
           fieldKey="cuts_creator_notes"
           value={editForm.creatorNotes}
-          onChange={(val: string) => handleFieldChange('creatorNotes', val)}
+          updatedAt={noteAuthors?.[`cuts_creator_notes_${item.id}`]?.timestamp || item.updatedAt}
+          updatedBy={noteAuthors?.[`cuts_creator_notes_${item.id}`]?.author || item.creator}
+          fallbackAuthor={item.creator}
+          onChange={(val: string, time?: string, author?: string) => handleFieldChange('creatorNotes', val, time, author)}
           placeholder="ملاحظات المبتكر..."
           disabled={false}
         />
@@ -3826,7 +3944,10 @@ const CutsRow = ({
           itemKey={item.id}
           fieldKey="cuts_editor_notes"
           value={editForm.editorNotes}
-          onChange={(val: string) => handleFieldChange('editorNotes', val)}
+          updatedAt={noteAuthors?.[`cuts_editor_notes_${item.id}`]?.timestamp || item.updatedAt}
+          updatedBy={noteAuthors?.[`cuts_editor_notes_${item.id}`]?.author || (item.editor && item.editor !== 'غير محدد' ? item.editor : undefined)}
+          fallbackAuthor={item.editor && item.editor !== 'غير محدد' ? item.editor : undefined}
+          onChange={(val: string, time?: string, author?: string) => handleFieldChange('editorNotes', val, time, author)}
           placeholder="ملاحظات المحرر..."
           disabled={false}
         />
@@ -5051,7 +5172,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
   }, [isDemo]);
 
   // Helper for direct Supabase updates
-  const updateTagme3atDbField = async (itemKey: string, field: string, value: any) => {
+  const updateTagme3atDbField = async (itemKey: string, field: string, value: any, customTimestamp?: string, customAuthor?: string) => {
     const dbFieldMap: Record<string, string> = {
       editor: 'editor',
       notesMarketing: 'notes_marketing',
@@ -5070,8 +5191,8 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
     };
 
     const col = dbFieldMap[field] || field;
-    const nowIso = new Date().toISOString();
-    const currentUser = profile?.name || localStorage.getItem('user_editor_name') || 'مستخدم';
+    const nowIso = customTimestamp || new Date().toISOString();
+    const currentUser = customAuthor || profile?.name || localStorage.getItem('user_editor_name') || 'مستخدم';
     const cleanKey = String(itemKey || '').replace(/^tgm-/, '').trim().toLowerCase();
 
     // Optimistic UI update
@@ -5760,6 +5881,30 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
   const [activeTagmeToast, setActiveTagmeToast] = useState<{ item: any, stage: { gid: string, label: string }, uniqueKey: string } | null>(null);
   const [activeVeToast, setActiveVeToast] = useState<{ item: any } | null>(null);
 
+  const [noteAuthors, setNoteAuthors] = useState<Record<string, { author: string; timestamp: string }>>(() => {
+    const saved = localStorage.getItem('note_authors');
+    if (saved) {
+      try { return JSON.parse(saved); } catch (e) {}
+    }
+    return {};
+  });
+
+  const saveNoteAuthors = async (updated: Record<string, { author: string; timestamp: string }>) => {
+    localStorage.setItem('note_authors', JSON.stringify(updated));
+    const token = session?.access_token || profile?.id;
+    if (token) {
+      try {
+        await fetch('/api/task-metadata', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+          body: JSON.stringify({ field: 'note_authors', metadata: updated })
+        });
+      } catch (err) {
+        console.error('Error saving note_authors to /api/task-metadata:', err);
+      }
+    }
+  };
+
   const [assignedEditors, setAssignedEditors] = useState<Record<string, string>>(() => {
     const saved = localStorage.getItem('assigned_editors');
     if (saved) {
@@ -6183,6 +6328,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
          if (data?.metadata) {
             const m = data.metadata;
             console.log('[Sync] Metadata loaded from server:', Object.keys(m));
+            if (m.note_authors) { setNoteAuthors(prev => ({ ...prev, ...m.note_authors })); localStorage.setItem('note_authors', JSON.stringify(m.note_authors)); }
             if (m.assigned_editors) { setAssignedEditors(m.assigned_editors); localStorage.setItem('assigned_editors', JSON.stringify(m.assigned_editors)); }
             if (m.editor_notes) { setEditorNotes(m.editor_notes); localStorage.setItem('editor_notes', JSON.stringify(m.editor_notes)); }
             if (m.marketing_notes) { setMarketingNotes(m.marketing_notes); localStorage.setItem('marketing_notes', JSON.stringify(m.marketing_notes)); }
@@ -6291,8 +6437,9 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
       
       if (field && dict) {
          console.log('[Sync] Received broadcast update:', field, 'from:', from);
-         localStorage.setItem(field, JSON.stringify(dict));
-         if (field === 'assigned_editors') setAssignedEditors(dict);
+          localStorage.setItem(field, JSON.stringify(dict));
+          if (field === 'note_authors') setNoteAuthors(dict);
+          else if (field === 'assigned_editors') setAssignedEditors(dict);
          else if (field === 'editor_notes') setEditorNotes(dict);
          else if (field === 'marketing_notes') setMarketingNotes(dict);
          else if (field === 'assigned_opsheets') setAssignedOpSheets(dict);
@@ -6665,7 +6812,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
     return Array.from(set).sort();
   }, [liveData, tagmeDbRows, activeGid]);
 
-  const { editors: liveEditors } = useEditorsOptions();
+  const { editors: liveEditors, creators: liveCreators } = useEditorsOptions();
 
   const editorsList = useMemo(() => {
     const set = new Set<string>();
@@ -6693,6 +6840,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
   }, [liveEditors, liveData, activeGid]);
 
   const [showAddModal, setShowAddModal] = useState(false);
+  const [showGoogleSheetImportModal, setShowGoogleSheetImportModal] = useState(false);
   const [addForm, setAddForm] = useState({ name: '', filingName: '', val: '', id: '', subject: '', extra: '', editor: '', notesMarketing: '' });
   const [shootingAddForm, setShootingAddForm] = useState({
     branch: 'Alexandria',
@@ -7552,9 +7700,39 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
     return () => window.removeEventListener('mouseup', handleGlobalMouseUp);
   }, [autofillDrag]);
 
-  const handleUpdateShootingRow = async (oldCode: string, newRowData: any[]) => {
+  const handleUpdateShootingRow = async (oldCode: string, newRowData: any[], noteMeta?: { fieldName?: string; value?: string; time?: string; author?: string }) => {
     const tbl = REELS_TABLE_MAP[activeGid];
     const newCode = newRowData[5] || oldCode;
+
+    if (noteMeta?.author && noteMeta?.fieldName) {
+      let fieldKey = noteMeta.fieldName;
+      if (activeGid === '0') {
+        fieldKey = noteMeta.fieldName === 'creatorNotes' ? 'cuts_creator_notes' : 'cuts_editor_notes';
+      } else {
+        fieldKey = noteMeta.fieldName === 'editorNotes' ? 've_editor_notes' : 'shooting_notes';
+      }
+      const noteKey = `${fieldKey}_${oldCode}`;
+      const entry = { author: noteMeta.author, timestamp: noteMeta.time || new Date().toISOString() };
+      setNoteAuthors(prev => {
+        const updated = { ...prev, [noteKey]: entry };
+        saveNoteAuthors(updated);
+        return updated;
+      });
+
+      if (globalChannelRef.current && profile?.name) {
+        globalChannelRef.current.send({
+          type: 'broadcast',
+          event: 'update',
+          payload: {
+            field: 'note_authors',
+            dict: { ...noteAuthors, [noteKey]: entry },
+            from: profile.name,
+            itemKey: oldCode,
+            message: `📝 قام ${noteMeta.author} بتحديث الملاحظات`
+          }
+        });
+      }
+    }
 
     let updatedItem: any;
     let dbPayload: any;
@@ -7797,45 +7975,194 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
             }
           }).catch(console.error);
         }
-        // 2. Task Has Edits / Problem Notification
+        // 2. Missing Details Notification (تفاصيل ناقصة)
+        else if (updatedItem.missingDetails === true && prevItem?.missingDetails !== true) {
+          const missingNotes = updatedItem.editorNotes || updatedItem.notes || 'يرجى مراجعة وتوفير التفاصيل والملفات الناقصة لإتمام المهمة 🔍';
+          const creatorName = updatedItem.creator || updatedItem.extraName || '';
+
+          (async () => {
+            try {
+              const sentChatIds = new Set<string>();
+
+              // Notify the logged-in user who marked missing details
+              if (profile?.id || profile?.name) {
+                const myChatId = await getUserTelegramChatId(profile?.id, profile?.name);
+                if (myChatId) {
+                  sentChatIds.add(myChatId);
+                  const res = await notifyTaskEditRequested({
+                    chatId: myChatId,
+                    taskTitle,
+                    taskCode,
+                    sourceSheet,
+                    branch: updatedItem.branch,
+                    editorName: currentEditor || profile?.name || 'غير محدد',
+                    driveLink: taskDriveLink,
+                    notes: missingNotes,
+                    statusLabel: '🔍 تفاصيل ناقصة مطلوبة ⚠️'
+                  });
+                  if (res.ok) toast.success('✈️ تم إرسال إشعار التفاصيل الناقصة على تليجرام!');
+                }
+              }
+
+              // Notify Creator
+              if (creatorName && creatorName !== 'غير محدد' && creatorName !== '---') {
+                const crChatId = await getUserTelegramChatId(undefined, creatorName);
+                if (crChatId && !sentChatIds.has(crChatId)) {
+                  sentChatIds.add(crChatId);
+                  notifyTaskEditRequested({
+                    chatId: crChatId,
+                    taskTitle,
+                    taskCode,
+                    sourceSheet,
+                    branch: updatedItem.branch,
+                    editorName: currentEditor || 'غير محدد',
+                    driveLink: taskDriveLink,
+                    notes: missingNotes,
+                    statusLabel: '🔍 تفاصيل ناقصة مطلوبة ⚠️'
+                  }).catch(console.error);
+                }
+              }
+
+              // Notify Editor
+              if (currentEditor && currentEditor !== 'غير محدد' && currentEditor !== '---') {
+                const edChatId = await getUserTelegramChatId(undefined, currentEditor);
+                if (edChatId && !sentChatIds.has(edChatId)) {
+                  sentChatIds.add(edChatId);
+                  notifyTaskEditRequested({
+                    chatId: edChatId,
+                    taskTitle,
+                    taskCode,
+                    sourceSheet,
+                    branch: updatedItem.branch,
+                    editorName: currentEditor,
+                    driveLink: taskDriveLink,
+                    notes: missingNotes,
+                    statusLabel: '🔍 تفاصيل ناقصة مطلوبة ⚠️'
+                  }).catch(console.error);
+                }
+              }
+
+              // Notify Admin
+              const cleanActor = (profile?.name || '').trim().toLowerCase();
+              const isAdminActor = cleanActor === 'admin' || cleanActor === 'eslam' || cleanActor === 'eslam abdalhamid';
+              if (!isAdminActor) {
+                const adminChatId = await getUserTelegramChatId(undefined, 'admin') || await getUserTelegramChatId(undefined, 'eslam');
+                if (adminChatId && !sentChatIds.has(adminChatId)) {
+                  sentChatIds.add(adminChatId);
+                  notifyTaskEditRequested({
+                    chatId: adminChatId,
+                    taskTitle: `[تفاصيل ناقصة]: ${taskTitle}`,
+                    taskCode,
+                    sourceSheet,
+                    branch: updatedItem.branch,
+                    editorName: currentEditor || 'غير محدد',
+                    driveLink: taskDriveLink,
+                    notes: missingNotes,
+                    statusLabel: '🔍 تفاصيل ناقصة مطلوبة ⚠️'
+                  }).catch(console.error);
+                }
+              }
+            } catch (tgErr) {
+              console.warn('[Telegram] Error triggering missingDetails notifications:', tgErr);
+            }
+          })();
+        }
+        // 3. Task Has Edits / Problem / Canceled Notification
         else if (
           (updatedItem.problem === true && prevItem?.problem !== true) ||
           (updatedItem.canceled === true && prevItem?.canceled !== true) ||
           (updatedItem.editCheck === true && prevItem?.editCheck !== true)
         ) {
           const editNotes = updatedItem.creatorNotes || updatedItem.editorNotes || updatedItem.notes || 'مطلوب مراجعة وتعديل المهمة 📝';
-          getUserTelegramChatId(undefined, currentEditor).then(async (editorChatId) => {
-            if (editorChatId) {
-              const res = await notifyTaskEditRequested({
-                chatId: editorChatId,
-                taskTitle,
-                taskCode,
-                sourceSheet,
-                branch: updatedItem.branch,
-                editorName: currentEditor || 'محرر المهمة',
-                driveLink: taskDriveLink,
-                notes: editNotes
-              });
-              if (res.ok) toast.success('✈️ تم إرسال إشعار التعديل للمحرر على تليجرام!');
-            }
+          const creatorName = updatedItem.creator || updatedItem.extraName || '';
+          const statusLbl = updatedItem.canceled ? 'تم إلغاء المهمة 🚫' : updatedItem.problem ? 'مشكلة في التاسك ❌' : 'مطلوب تعديل (EDIT) ⚠️';
 
-            // Also notify the actor if they have Telegram linked
-            if (profile?.id) {
-              const myChatId = await getUserTelegramChatId(profile.id, profile.name);
-              if (myChatId && myChatId !== editorChatId) {
-                notifyTaskEditRequested({
-                  chatId: myChatId,
-                  taskTitle,
-                  taskCode,
-                  sourceSheet,
-                  branch: updatedItem.branch,
-                  editorName: currentEditor || profile.name || 'محرر المهمة',
-                  driveLink: taskDriveLink,
-                  notes: editNotes
-                }).catch(console.error);
+          (async () => {
+            try {
+              const sentChatIds = new Set<string>();
+
+              // Notify the actor
+              if (profile?.id || profile?.name) {
+                const myChatId = await getUserTelegramChatId(profile?.id, profile?.name);
+                if (myChatId) {
+                  sentChatIds.add(myChatId);
+                  const res = await notifyTaskEditRequested({
+                    chatId: myChatId,
+                    taskTitle,
+                    taskCode,
+                    sourceSheet,
+                    branch: updatedItem.branch,
+                    editorName: currentEditor || profile?.name || 'محرر المهمة',
+                    driveLink: taskDriveLink,
+                    notes: editNotes,
+                    statusLabel: statusLbl
+                  });
+                  if (res.ok) toast.success('✈️ تم إرسال إشعار التعديل على تليجرام!');
+                }
               }
+
+              // Notify Editor
+              if (currentEditor && currentEditor !== 'غير محدد' && currentEditor !== '---') {
+                const edChatId = await getUserTelegramChatId(undefined, currentEditor);
+                if (edChatId && !sentChatIds.has(edChatId)) {
+                  sentChatIds.add(edChatId);
+                  notifyTaskEditRequested({
+                    chatId: edChatId,
+                    taskTitle,
+                    taskCode,
+                    sourceSheet,
+                    branch: updatedItem.branch,
+                    editorName: currentEditor,
+                    driveLink: taskDriveLink,
+                    notes: editNotes,
+                    statusLabel: statusLbl
+                  }).catch(console.error);
+                }
+              }
+
+              // Notify Creator
+              if (creatorName && creatorName !== 'غير محدد' && creatorName !== '---') {
+                const crChatId = await getUserTelegramChatId(undefined, creatorName);
+                if (crChatId && !sentChatIds.has(crChatId)) {
+                  sentChatIds.add(crChatId);
+                  notifyTaskEditRequested({
+                    chatId: crChatId,
+                    taskTitle,
+                    taskCode,
+                    sourceSheet,
+                    branch: updatedItem.branch,
+                    editorName: currentEditor || 'غير محدد',
+                    driveLink: taskDriveLink,
+                    notes: editNotes,
+                    statusLabel: statusLbl
+                  }).catch(console.error);
+                }
+              }
+
+              // Notify Admin
+              const cleanActor = (profile?.name || '').trim().toLowerCase();
+              const isAdminActor = cleanActor === 'admin' || cleanActor === 'eslam' || cleanActor === 'eslam abdalhamid';
+              if (!isAdminActor) {
+                const adminChatId = await getUserTelegramChatId(undefined, 'admin') || await getUserTelegramChatId(undefined, 'eslam');
+                if (adminChatId && !sentChatIds.has(adminChatId)) {
+                  sentChatIds.add(adminChatId);
+                  notifyTaskEditRequested({
+                    chatId: adminChatId,
+                    taskTitle: `[${statusLbl}]: ${taskTitle}`,
+                    taskCode,
+                    sourceSheet,
+                    branch: updatedItem.branch,
+                    editorName: currentEditor || 'محرر المهمة',
+                    driveLink: taskDriveLink,
+                    notes: editNotes,
+                    statusLabel: statusLbl
+                  }).catch(console.error);
+                }
+              }
+            } catch (tgErr) {
+              console.warn('[Telegram] Error triggering edit/problem notifications:', tgErr);
             }
-          }).catch(console.error);
+          })();
         }
 
         // Automatic copy / sync to Ve table (reels_ve_26) when filmed in Shooting tab
@@ -8053,26 +8380,101 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
       } else {
         toast.success("⚠️ تم تسجيل طلب التعديل (EDIT) وإعادة فتح المهمة!");
 
-        // Telegram Notification for Edit Request to the Editor
+        // Telegram Notification for Edit Request
         const editorName = item.editor_col || item.editor || '';
-        if (editorName && editorName !== 'غير محدد') {
-          getUserTelegramChatId(undefined, editorName).then((chatId) => {
-            if (chatId) {
-              notifyTaskEditRequested({
-                chatId,
-                taskTitle: item.script || item.extra_name || item.code || rowCode,
-                taskCode: item.code || rowCode,
-                sourceSheet: 'Reels (Ve)',
-                branch: item.branch,
-                editorName: editorName,
-                notes: item.notes || item.editor_notes || 'مطلوب مراجعة وتعديل المونتاج 📝',
-                driveLink: item.drive_final || item.drive_raw
-              }).then(res => {
-                if (res.ok) toast.success('✈️ تم إرسال إشعار التعديل للمحرر على تليجرام!');
-              }).catch(console.error);
+        const creatorName = item.extra_name || item.creator || '';
+        const taskTitle = item.script || item.extra_name || item.code || rowCode;
+        const taskCode = item.code || rowCode;
+        const taskNotes = item.editor_notes || item.notes || 'مطلوب مراجعة وتعديل المونتاج 📝';
+        const taskDrive = item.drive_final || item.drive_raw || '';
+        const sheetName = activeGid === '1939073164' ? 'Reels (Ve)' : activeGid === '0' ? 'Cuts' : 'Shooting';
+
+        (async () => {
+          try {
+            const sentChatIds = new Set<string>();
+
+            // 1. Notify the logged-in user who clicked EDIT (instant feedback/alert!)
+            if (profile?.id || profile?.name) {
+              const myChatId = await getUserTelegramChatId(profile?.id, profile?.name);
+              if (myChatId) {
+                sentChatIds.add(myChatId);
+                const res = await notifyTaskEditRequested({
+                  chatId: myChatId,
+                  taskTitle,
+                  taskCode,
+                  sourceSheet: sheetName,
+                  branch: item.branch,
+                  editorName: editorName || profile?.name || 'محرر المهمة',
+                  notes: taskNotes,
+                  driveLink: taskDrive,
+                  statusLabel: '⚠️ طلب تعديل (EDIT) مسجل'
+                });
+                if (res.ok) toast.success('✈️ تم إرسال إشعار التعديل على تليجرام!');
+              }
             }
-          }).catch(console.error);
-        }
+
+            // 2. Notify assigned Editor
+            if (editorName && editorName !== 'غير محدد' && editorName !== '---') {
+              const edChatId = await getUserTelegramChatId(undefined, editorName);
+              if (edChatId && !sentChatIds.has(edChatId)) {
+                sentChatIds.add(edChatId);
+                notifyTaskEditRequested({
+                  chatId: edChatId,
+                  taskTitle,
+                  taskCode,
+                  sourceSheet: sheetName,
+                  branch: item.branch,
+                  editorName: editorName,
+                  notes: taskNotes,
+                  driveLink: taskDrive,
+                  statusLabel: 'مطلوب تعديل (EDIT) ⚠️'
+                }).catch(console.error);
+              }
+            }
+
+            // 3. Notify Creator
+            if (creatorName && creatorName !== 'غير محدد' && creatorName !== '---') {
+              const crChatId = await getUserTelegramChatId(undefined, creatorName);
+              if (crChatId && !sentChatIds.has(crChatId)) {
+                sentChatIds.add(crChatId);
+                notifyTaskEditRequested({
+                  chatId: crChatId,
+                  taskTitle,
+                  taskCode,
+                  sourceSheet: sheetName,
+                  branch: item.branch,
+                  editorName: editorName || 'غير محدد',
+                  notes: taskNotes,
+                  driveLink: taskDrive,
+                  statusLabel: 'تنبيه: تم طلب تعديل على الريل 📝'
+                }).catch(console.error);
+              }
+            }
+
+            // 4. Notify Admin (if someone other than admin requested)
+            const cleanActor = (profile?.name || '').trim().toLowerCase();
+            const isAdminActor = cleanActor === 'admin' || cleanActor === 'eslam' || cleanActor === 'eslam abdalhamid';
+            if (!isAdminActor) {
+              const adminChatId = await getUserTelegramChatId(undefined, 'admin') || await getUserTelegramChatId(undefined, 'eslam');
+              if (adminChatId && !sentChatIds.has(adminChatId)) {
+                sentChatIds.add(adminChatId);
+                notifyTaskEditRequested({
+                  chatId: adminChatId,
+                  taskTitle: `[طلب تعديل]: ${taskTitle}`,
+                  taskCode,
+                  sourceSheet: sheetName,
+                  branch: item.branch,
+                  editorName: editorName || 'غير محدد',
+                  notes: taskNotes,
+                  driveLink: taskDrive,
+                  statusLabel: 'مطلوب تعديل (EDIT) ⚠️'
+                }).catch(console.error);
+              }
+            }
+          } catch (tgErr) {
+            console.warn('[Telegram] Error triggering edit notifications:', tgErr);
+          }
+        })();
       }
     } catch (err: any) {
       console.error(err);
@@ -8663,18 +9065,66 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
 
       if (isMyTasksOnly && currentUserName) {
         const me = currentUserName.toLowerCase().trim();
-        const meFirstName = me.split(' ')[0];
-        const editor = String(item.editor || '').toLowerCase().trim();
-        const by = String(item.by || '').toLowerCase().trim();
-        const editorCol = String(item.editorCol || '').toLowerCase().trim();
-        const creator = String(item.creator || '').toLowerCase().trim();
+        const meFirstName = me.split(/[\s._-]+/)[0];
+        
+        const aliases = new Set<string>();
+        aliases.add(me);
+        if (meFirstName.length > 2) aliases.add(meFirstName);
+        if (profile?.email) {
+          const ep = profile.email.split('@')[0].toLowerCase().trim();
+          aliases.add(ep);
+          const epFirst = ep.split(/[\s._-]+/)[0];
+          if (epFirst.length > 2) aliases.add(epFirst);
+        }
+        if (profile?.username) aliases.add(profile.username.toLowerCase().trim());
+        if (aliases.has('eslam') || aliases.has('admin')) {
+          aliases.add('eslam');
+          aliases.add('admin');
+        }
+        if (aliases.has('esraa') || aliases.has('esraaaboelkheir')) {
+          aliases.add('esraa');
+          aliases.add('esraaaboelkheir');
+          aliases.add('esraa abo elkheir');
+        }
+        if (aliases.has('ramy') || aliases.has('ramyelnagar')) {
+          aliases.add('ramy');
+          aliases.add('ramyelnagar');
+          aliases.add('ramy elnaggar');
+        }
+        if (aliases.has('yomna') || aliases.has('yomana')) {
+          aliases.add('yomna');
+          aliases.add('yomana');
+        }
+        if (aliases.has('donia') || aliases.has('donia 2')) {
+          aliases.add('donia');
+          aliases.add('donia 2');
+        }
+        if (aliases.has('manar') || aliases.has('manarr')) {
+          aliases.add('manar');
+          aliases.add('manarr');
+        }
 
-        const matchesUser = (val: string) => {
-          if (!val || val === 'غير محدد') return false;
-          return val === me || val.includes(me) || me.includes(val) || (meFirstName.length > 2 && val.includes(meFirstName));
+        const aliasList = Array.from(aliases);
+
+        const matchesVal = (val: string) => {
+          if (!val || val === 'غير محدد' || val === '---') return false;
+          const clean = val.toLowerCase().trim();
+          return aliasList.some(a => clean === a || clean.includes(a) || a.includes(clean));
         };
 
-        if (!matchesUser(editor) && !matchesUser(by) && !matchesUser(editorCol) && !matchesUser(creator)) return;
+        const editor = String(item.editor || '');
+        const by = String(item.by || '');
+        const editorCol = String(item.editorCol || '');
+        const creator = String(item.creator || '');
+        const code = String(item.code || item.name || item.filingName || item.val || item.id || '').toLowerCase();
+        const notes = `${item.notes || ''} ${item.notesMarketing || ''} ${item.notesEditors || ''} ${item.creatorNotes || ''}`.toLowerCase();
+
+        const codeTokens = code.split(/[-_/\s]+/);
+        const codeMatches = codeTokens.some(tok => tok.length > 2 && aliasList.some(a => tok === a || a.startsWith(tok) || tok.startsWith(a)));
+        const notesMatches = aliasList.some(a => a.length > 2 && (notes.includes(`المبتكر: ${a}`) || notes.includes(a)));
+
+        const isAssignedToMe = matchesVal(editor) || matchesVal(by) || matchesVal(editorCol) || matchesVal(creator) || codeMatches || notesMatches;
+        if (!isAssignedToMe) return;
       }
 
       all++;
@@ -8712,19 +9162,65 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
 
       if (isMyTasksOnly && currentUserName) {
         const me = currentUserName.toLowerCase().trim();
-        const meFirstName = me.split(' ')[0];
+        const meFirstName = me.split(/[\s._-]+/)[0];
         
-        const editor = String(item.editor || '').toLowerCase().trim();
-        const by = String(item.by || '').toLowerCase().trim();
-        const editorCol = String(item.editorCol || '').toLowerCase().trim();
-        const creator = String(item.creator || '').toLowerCase().trim();
+        const aliases = new Set<string>();
+        aliases.add(me);
+        if (meFirstName.length > 2) aliases.add(meFirstName);
+        if (profile?.email) {
+          const ep = profile.email.split('@')[0].toLowerCase().trim();
+          aliases.add(ep);
+          const epFirst = ep.split(/[\s._-]+/)[0];
+          if (epFirst.length > 2) aliases.add(epFirst);
+        }
+        if (profile?.username) aliases.add(profile.username.toLowerCase().trim());
+        if (aliases.has('eslam') || aliases.has('admin')) {
+          aliases.add('eslam');
+          aliases.add('admin');
+        }
+        if (aliases.has('esraa') || aliases.has('esraaaboelkheir')) {
+          aliases.add('esraa');
+          aliases.add('esraaaboelkheir');
+          aliases.add('esraa abo elkheir');
+        }
+        if (aliases.has('ramy') || aliases.has('ramyelnagar')) {
+          aliases.add('ramy');
+          aliases.add('ramyelnagar');
+          aliases.add('ramy elnaggar');
+        }
+        if (aliases.has('yomna') || aliases.has('yomana')) {
+          aliases.add('yomna');
+          aliases.add('yomana');
+        }
+        if (aliases.has('donia') || aliases.has('donia 2')) {
+          aliases.add('donia');
+          aliases.add('donia 2');
+        }
+        if (aliases.has('manar') || aliases.has('manarr')) {
+          aliases.add('manar');
+          aliases.add('manarr');
+        }
 
-        const matchesUser = (val: string) => {
-          if (!val || val === 'غير محدد') return false;
-          return val === me || val.includes(me) || me.includes(val) || (meFirstName.length > 2 && val.includes(meFirstName));
+        const aliasList = Array.from(aliases);
+
+        const matchesVal = (val: string) => {
+          if (!val || val === 'غير محدد' || val === '---') return false;
+          const clean = val.toLowerCase().trim();
+          return aliasList.some(a => clean === a || clean.includes(a) || a.includes(clean));
         };
 
-        const isAssignedToMe = matchesUser(editor) || matchesUser(by) || matchesUser(editorCol) || matchesUser(creator);
+        const editor = String(item.editor || '');
+        const by = String(item.by || '');
+        const editorCol = String(item.editorCol || '');
+        const creator = String(item.creator || '');
+        const code = String(item.code || item.name || item.filingName || item.val || item.id || '').toLowerCase();
+        const notes = `${item.notes || ''} ${item.notesMarketing || ''} ${item.notesEditors || ''} ${item.creatorNotes || ''}`.toLowerCase();
+
+        const codeTokens = code.split(/[-_/\s]+/);
+        const codeMatches = codeTokens.some(tok => tok.length > 2 && aliasList.some(a => tok === a || a.startsWith(tok) || tok.startsWith(a)));
+        const notesMatches = aliasList.some(a => a.length > 2 && (notes.includes(`المبتكر: ${a}`) || notes.includes(a)));
+
+        const isAssignedToMe = matchesVal(editor) || matchesVal(by) || matchesVal(editorCol) || matchesVal(creator) || codeMatches || notesMatches;
         if (!isAssignedToMe) return false;
       }
 
@@ -9140,10 +9636,12 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
   ];
 
   const ALL_CREATORS_LIST = [
-    'manar', 'esraa', 'yomna', 'maram', 'han', 'nader', 'eman', 'noor', 'khaled', 'awney',
-    'shrouk', 'anas', 'ahmed-amr', 'sherif', 'samir', 'alaa', 'Ahmed', 'Donia', 'alaa zakria',
-    'Esraa naga', 'nada', 'abdelkerim', 'sohaila', 'Hesham', 'A.Medhat', 'Ramy', 'manar awad',
-    'Habiba', 'Taher', 'Ramy Elnaggar'
+    'esraa', 'Maram', 'han', 'nader', 'eman', 'noor', 'Manar', 'yomna',
+    'Sohaila', 'hima', 'Ahmed Samir', 'Adham elbadry', 'awney', 'Ramy Elnaggar',
+    'nourhan', 'hesham', 'shorouk', 'taher', 'alaa abouobeid', 'ahmed hossam',
+    'abdelkarim', 'Sherif', 'alaa medhat', 'donia', 'alaa', 'nada',
+    'nourasharaf', 'nourkhaled', 'rawan', 'aya', 'narden', 'khaled',
+    'anas', 'Habiba', 'Khalil', 'hassanien'
   ];
 
   const ALL_TYPES_LIST = ['حواري', 'تمثيلي'];
@@ -9158,13 +9656,29 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
       uniqueBranches: ['Alexandria', 'Cairo', 'Desouk'],
       uniqueYears: Array.from(new Set([...ALL_YEARS_LIST, ...getUnique('year').map(y => y.toLowerCase())])),
       uniqueTeachers: Array.from(new Set([...ALL_TEACHERS_LIST, ...getUnique('teacher')])),
-      uniqueExtraNames: Array.from(new Set([...ALL_CREATORS_LIST, ...(activeGid === '0' ? getUnique('creator') : getUnique('extraName'))])),
+      uniqueExtraNames: (() => {
+        const set = new Set<string>();
+        const seenLower = new Set<string>();
+        const addClean = (val: string) => {
+          const clean = String(val || '').trim();
+          const lower = clean.toLowerCase();
+          if (clean && !seenLower.has(lower)) {
+            seenLower.add(lower);
+            set.add(clean);
+          }
+        };
+        (liveCreators || []).forEach(addClean);
+        ALL_CREATORS_LIST.forEach(addClean);
+        const fromData = activeGid === '0' ? getUnique('creator') : getUnique('extraName');
+        fromData.forEach(addClean);
+        return Array.from(set).sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+      })(),
       uniqueTypes: activeGid === '0' ? Array.from(new Set(['CUT', ...getUnique('type')])) : Array.from(new Set([...ALL_TYPES_LIST, ...getUnique('type').filter(t => t.toUpperCase() !== 'CUT')])),
       uniqueFormats: Array.from(new Set([...ALL_FORMATS_LIST, ...getUnique('format')])),
       uniqueBys: Array.from(new Set([...ALL_BYS_LIST, ...getUnique('by')])),
       uniqueStorages: Array.from(new Set([...ALL_STORAGES_LIST, ...getUnique('storage')])),
     };
-  }, [combinedData, activeGid]);
+  }, [combinedData, activeGid, liveCreators]);
 
   const yearOptions = useMemo(() => {
     const list = new Set(ALL_YEARS_LIST);
@@ -9623,6 +10137,17 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
                 <span>Synchronize</span>
               </button>
             )}
+            {profile?.role && activeGid === '1436746012' && (
+              <button
+                onClick={() => setShowGoogleSheetImportModal(true)}
+                className="px-6 py-3.5 rounded-2xl bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-emerald-400 text-xs font-black uppercase tracking-widest flex items-center gap-2.5 shadow-lg shadow-emerald-500/5 transition-all hover:scale-105 active:scale-95 cursor-pointer"
+                title="استيراد صفوف وسكريبتات من شيت جوجل خارجي إلى جدول التصوير"
+              >
+                <FileSpreadsheet size={18} className="text-emerald-400" />
+                <span>Import from Google Sheet</span>
+              </button>
+            )}
+
             {profile?.role && (activeGid === '1436746012' || activeGid === '0' || PERMISSIONS.canAddEntry(profile.role)) && (
               <button
                 onClick={() => {
@@ -10032,6 +10557,113 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
             </div>
           )}
         </AnimatePresence>
+
+        {/* Google Sheet Import Modal for Shooting */}
+        <GoogleSheetImportModal
+          isOpen={showGoogleSheetImportModal}
+          onClose={() => setShowGoogleSheetImportModal(false)}
+          existingCodes={new Set(reelsDbRows.map((r: any) => (r.code || '').toLowerCase()).filter(Boolean))}
+          currentUser={profile?.name || 'User'}
+          onImportSuccess={async (importedShootingRows, _rawRows, options) => {
+            const updateOnlyScript = options?.updateOnlyScript === true;
+
+            if (updateOnlyScript) {
+              // 1. Update the script column only for matching codes in Supabase
+              const updatePromises = importedShootingRows.map(row => 
+                supabase
+                  .from('reels_shooting_26')
+                  .update({ 
+                    script: row.script, 
+                    updated_at: new Date().toISOString() 
+                  })
+                  .eq('code', row.code)
+              );
+              await Promise.all(updatePromises);
+
+              // 2. Update local state
+              const scriptMap = new Map(importedShootingRows.map(r => [(r.code || '').toLowerCase(), r.script]));
+              setReelsDbRows(prev => prev.map(row => {
+                const newScript = scriptMap.get((row.code || '').toLowerCase());
+                return newScript !== undefined ? { ...row, script: newScript } : row;
+              }));
+
+              if (globalChannelRef.current && profile?.name) {
+                globalChannelRef.current.send({
+                  type: 'broadcast',
+                  event: 'update',
+                  payload: {
+                    itemKey: importedShootingRows[0]?.code || 'import-script',
+                    taskName: `تحديث السكريبت لـ ${importedShootingRows.length} كود`,
+                    message: `📝 قام ${profile.name} بتحديث السكريبت لـ ${importedShootingRows.length} كود في جدول Shooting!`,
+                    type: 'update',
+                    from: profile.name,
+                    activeGid: '1436746012'
+                  }
+                });
+              }
+              return;
+            }
+
+            const { data, error } = await supabase
+              .from('reels_shooting_26')
+              .upsert(importedShootingRows, { onConflict: 'code' })
+              .select();
+
+            if (error) {
+              console.error('Supabase import error:', error);
+              throw error;
+            }
+
+            const newlyMapped = (data && data.length > 0 ? data : importedShootingRows).map((i: any) => ({
+              id: i.code,
+              code: i.code,
+              date: i.date || '',
+              branch: i.branch || '',
+              year: i.year || '',
+              teacher: i.teacher || '',
+              extraName: i.extra_name || '',
+              script: i.script || '',
+              type: i.type || '',
+              format: i.format || '',
+              filmed: i.filmed === true,
+              filmingDate: i.filming_date || '',
+              by: i.by || '',
+              storage: i.storage || '',
+              notes: i.notes || '',
+              editorNotes: i.editor_notes || '',
+              driveRaw: i.drive_raw || '',
+              editorCol: i.editor_col || '',
+              done: i.done === true,
+              driveFinal: i.drive_final || '',
+              canceled: i.canceled === true,
+              missingDetails: i.missing_details === true,
+              editCheck: i.edit_check === true,
+              publish: i.publish === true,
+              sharedLink: i.shared_link || '',
+              uniqueKey: i.code,
+              createdAt: i.created_at || new Date().toISOString(),
+              updatedAt: i.updated_at || new Date().toISOString()
+            }));
+
+            const importedCodeSet = new Set(newlyMapped.map((m: any) => m.code));
+            setReelsDbRows(prev => [...newlyMapped, ...prev.filter(r => !importedCodeSet.has(r.code))]);
+
+            if (globalChannelRef.current && profile?.name) {
+              globalChannelRef.current.send({
+                type: 'broadcast',
+                event: 'update',
+                payload: {
+                  itemKey: newlyMapped[0]?.code || 'import',
+                  taskName: `استيراد ${newlyMapped.length} سكريبت جديد`,
+                  message: `📥 قام ${profile.name} باستيراد ${newlyMapped.length} سكريبت من شيت جوجل إلى جدول Shooting!`,
+                  type: 'new_entry',
+                  from: profile.name,
+                  activeGid: '1436746012'
+                }
+              });
+            }
+          }}
+        />
 
 
 
@@ -11132,6 +11764,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
                           toast={toast}
                           isSubscribed={isSubscribed}
                           onToggleSubscribe={() => toggleSubscribe(item.code || item.id || item.uniqueKey)}
+                          noteAuthors={noteAuthors}
                         />;
                       }
                       if (['1436746012', '1939073164', '798246690'].includes(activeGid)) {
@@ -11140,7 +11773,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
                           const candidates = [item.id, item.code, item.uniqueKey].filter(Boolean).map(c => String(c).trim().toLowerCase());
                           return candidates.some(c => c === ck || c.includes(ck) || ck.includes(c));
                         });
-                        return <ShootingRow key={item.code || item.id || item.uniqueKey || idx} item={item} index={idx} activeGid={activeGid} onToggleFilmed={handleFilmedToggle} onToggleEditCheck={handleToggleEditCheck} loadingFilmedCode={loadingFilmedCode} onUpdateShootingRow={handleUpdateShootingRow} liveData={liveData} optionsLists={{ branches: uniqueBranches, years: uniqueYears, teachers: uniqueTeachers, extraNames: uniqueExtraNames, types: uniqueTypes, formats: uniqueFormats, bys: uniqueBys, storages: uniqueStorages, editors: editorsList }} autofillDrag={autofillDrag} setAutofillDrag={setAutofillDrag} onApplyAutofill={handleApplyAutofill} activeCell={activeCell} setActiveCell={setActiveCell} toast={toast} isSubscribed={isSubscribed} onToggleSubscribe={() => toggleSubscribe(item.code || item.id || item.uniqueKey)} isSimple={activeGid === '1939073164' && veViewMode === 'SIMPLE'} publishedTasks={publishedTasks} sharedLinks={sharedLinks} onTogglePublish={handleTogglePublish} onUpdateSharedLink={handleUpdateSharedLink} />;
+                        return <ShootingRow key={item.code || item.id || item.uniqueKey || idx} item={item} index={idx} activeGid={activeGid} onToggleFilmed={handleFilmedToggle} onToggleEditCheck={handleToggleEditCheck} loadingFilmedCode={loadingFilmedCode} onUpdateShootingRow={handleUpdateShootingRow} liveData={liveData} optionsLists={{ branches: uniqueBranches, years: uniqueYears, teachers: uniqueTeachers, extraNames: uniqueExtraNames, types: uniqueTypes, formats: uniqueFormats, bys: uniqueBys, storages: uniqueStorages, editors: editorsList }} autofillDrag={autofillDrag} setAutofillDrag={setAutofillDrag} onApplyAutofill={handleApplyAutofill} activeCell={activeCell} setActiveCell={setActiveCell} toast={toast} isSubscribed={isSubscribed} onToggleSubscribe={() => toggleSubscribe(item.code || item.id || item.uniqueKey)} isSimple={activeGid === '1939073164' && veViewMode === 'SIMPLE'} publishedTasks={publishedTasks} sharedLinks={sharedLinks} onTogglePublish={handleTogglePublish} onUpdateSharedLink={handleUpdateSharedLink} noteAuthors={noteAuthors} />;
                       }
                       return <StageRow key={idx} item={item} index={idx} tagmeTransfers={tagmeTransfers} onTagmeToggle={handleTagmeToggle} activeLabel={activeLabel} isGlowing={isGlowing} onUpdateDate={handleUpdateDate} onUpdateWeek={handleUpdateWeek} onUpdateThumbnailLink={handleUpdateThumbnailLink} onUpdateTime={handleUpdateTime} onUpdateYoutubeLink={handleUpdateYoutubeLink} onUpdateUploaded={handleUpdateUploaded} onToggleDelivered={handleToggleDelivered} />;
                     }) : (

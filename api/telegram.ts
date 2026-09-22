@@ -204,14 +204,26 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                 .eq('id', user.id);
             } catch {}
 
-            // Send confirmation welcome message
+            // Send confirmation welcome message with query buttons
             await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
                 chat_id: chatId,
-                text: `🎉 <b>أهلاً بك يا ${user.name}!</b>\n\n✅ تم ربط حسابك بنجاح في <b>لوحة تحكم الخطة</b>.\n🚀 من الآن فصاعداً، ستصلك هنا إشعارات فورية بكل المهام التي تنجزها وروابطها تلقائياً!`,
-                parse_mode: 'HTML'
+                text: user?.name
+                  ? `أهلاً بك يا ${user.name} 👋\n\nأنت الآن متصل بتاسكات الخطة ✅\n\n👇 يمكنك الآن الاستعلام عن مهامك مباشرة من الأزرار بالأسفل:`
+                  : `أنت الآن متصل بتاسكات الخطة ✅\n\n👇 يمكنك الآن الاستعلام عن مهامك مباشرة من الأزرار بالأسفل:`,
+                parse_mode: 'HTML',
+                reply_markup: {
+                  keyboard: [
+                    [{ text: '⏳ لسه متعملتش' }, { text: '⚡ أولوية' }],
+                    [{ text: '📝 اطلب إيديت' }, { text: '✅ خلصت' }],
+                    [{ text: '📥 مهام متاحة' }, { text: '👤 إجمالي مهامي' }],
+                    [{ text: '📊 ملخص شامل' }]
+                  ],
+                  resize_keyboard: true,
+                  is_persistent: true
+                }
               })
             }).catch(() => {});
 
@@ -228,13 +240,233 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           chat_id: chatId,
-          text: `👋 <b>مرحباً بك في بوت لوحة تحكم الخطة!</b>\n\nلربط حسابك تلقائياً، يرجى فتح لوحة التحكم والضغط على زر <b>"ربط حسابي بتليجرام"</b> في صفحتك الرئيسية.`,
-          parse_mode: 'HTML'
+          text: `أنت الآن متصل بتاسكات الخطة ✅\n\n👇 يمكنك الاستعلام عن مهامك باستخدام الأزرار أدناه:`,
+          parse_mode: 'HTML',
+          reply_markup: {
+            keyboard: [
+              [{ text: '⏳ لسه متعملتش' }, { text: '⚡ أولوية' }],
+              [{ text: '📝 اطلب إيديت' }, { text: '✅ خلصت' }],
+              [{ text: '📥 مهام متاحة' }, { text: '👤 إجمالي مهامي' }],
+              [{ text: '📊 ملخص شامل' }]
+            ],
+            resize_keyboard: true,
+            is_persistent: true
+          }
         })
       }).catch(() => {});
 
       return res.json({ ok: true });
     }
+
+    // Handle Query Buttons when user taps any button
+    let targetUserId = '';
+    let targetUserName = '';
+
+    if (supabaseAdminClient) {
+      try {
+        const { data: rows } = await supabaseAdminClient
+          .from('page_announcements')
+          .select('page_key, message')
+          .eq('message', String(chatId));
+
+        if (rows) {
+          for (const r of rows) {
+            if (r.page_key.startsWith('tg_chat_')) {
+              targetUserId = r.page_key.replace('tg_chat_', '');
+            } else if (r.page_key.startsWith('tg_editor_')) {
+              targetUserName = r.page_key.replace('tg_editor_', '');
+            }
+          }
+        }
+      } catch {}
+
+      if (targetUserId && !targetUserName) {
+        try {
+          const { data: p } = await supabaseAdminClient
+            .from('user_profiles')
+            .select('name')
+            .eq('id', targetUserId)
+            .maybeSingle();
+          if (p?.name) targetUserName = p.name;
+        } catch {}
+      }
+    }
+
+    // Fetch cached stats from page_announcements
+    let statsData: any = null;
+    if (supabaseAdminClient && (targetUserId || targetUserName)) {
+      try {
+        const orFilter = [
+          targetUserId ? `page_key.eq.tg_stats_${targetUserId}` : '',
+          targetUserName ? `page_key.eq.tg_stats_${targetUserName.trim().toLowerCase()}` : ''
+        ].filter(Boolean).join(',');
+
+        if (orFilter) {
+          const { data: sRow } = await supabaseAdminClient
+            .from('page_announcements')
+            .select('message')
+            .or(orFilter)
+            .order('updated_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+          if (sRow?.message) {
+            statsData = JSON.parse(sRow.message);
+          }
+        }
+      } catch {}
+    }
+
+    // Fallback to direct DB query on reels_cuts_26 & reels_ve_26 if statsData not cached
+    if (!statsData && supabaseAdminClient && targetUserName) {
+      try {
+        const cleanU = targetUserName.trim().toLowerCase();
+        const [{ data: cuts }, { data: ve }] = await Promise.all([
+          supabaseAdminClient
+            .from('reels_cuts_26')
+            .select('code, editor, done, missing_details, problem, drive_final, creator, editor_notes')
+            .ilike('editor', `%${cleanU}%`)
+            .limit(100),
+          supabaseAdminClient
+            .from('reels_ve_26')
+            .select('code, editor_col, done, missing_details, edit_check, notes')
+            .ilike('editor_col', `%${cleanU}%`)
+            .limit(100)
+        ]);
+
+        const allTasks = [...(cuts || []), ...(ve || [])];
+        const myPending = allTasks.filter(t => !t.done && !t.problem && !t.edit_check);
+        const myPriority = allTasks.filter(t => (t.missing_details === true) && !t.done);
+        const myEdits = allTasks.filter(t => (t.problem === true || t.edit_check === true) && !t.done);
+        const myCompleted = allTasks.filter(t => t.done === true);
+
+        statsData = {
+          userName: targetUserName,
+          stats: {
+            myPending: myPending.length,
+            myPriority: myPriority.length,
+            myEdits: myEdits.length,
+            myCompleted: myCompleted.length,
+            availableUnassigned: 0,
+            myTotal: allTasks.length
+          },
+          pendingTasks: myPending.slice(0, 5).map(t => ({ code: t.code, notes: t.editor_notes || t.notes })),
+          priorityTasks: myPriority.slice(0, 5).map(t => ({ code: t.code, notes: t.editor_notes || t.notes })),
+          editTasks: myEdits.slice(0, 5).map(t => ({ code: t.code, notes: t.editor_notes || t.notes })),
+          availableTasks: []
+        };
+      } catch {}
+    }
+
+    let responseMsg = '';
+
+    if (text.includes('لسه') || text.includes('قيد العمل')) {
+      const count = statsData?.stats?.myPending ?? 0;
+      const list = (statsData?.pendingTasks || []).map((t: any, i: number) => {
+        return `${i + 1}️⃣ <b>${t.code || t.title}</b>${t.sheet ? `\n📂 ${t.sheet}` : ''}${t.notes ? `\n📝 ${t.notes}` : ''}`;
+      }).join('\n\n');
+
+      responseMsg = [
+        `⏳ <b>مهام قيد العمل (لسه متعملتش):</b> ${count} مهمة`,
+        `━━━━━━━━━━━━━━━━━━━━`,
+        list || (count === 0 ? `🎉 ممتاز! لا توجد مهام قيد العمل حالياً.` : `👉 راجع لوحة التحكم لتفاصيل كافة المهام`),
+        `━━━━━━━━━━━━━━━━━━━━`,
+        `🚀 <i>لوحة تحكم الخطة</i>`
+      ].filter(Boolean).join('\n');
+
+    } else if (text.includes('أولوية') || text.includes('اولوية')) {
+      const count = statsData?.stats?.myPriority ?? 0;
+      const list = (statsData?.priorityTasks || []).map((t: any, i: number) => {
+        return `⚡ <b>${t.code || t.title}</b>${t.sheet ? `\n📂 ${t.sheet}` : ''}${t.notes ? `\n📝 ${t.notes}` : ''}`;
+      }).join('\n\n');
+
+      responseMsg = [
+        `⚡ <b>المهام العاجلة (أولوية):</b> ${count} مهام`,
+        `━━━━━━━━━━━━━━━━━━━━`,
+        list || (count === 0 ? `✅ ممتاز! لا توجد أي مهام عاجلة متأخرة.` : `👉 يرجى إنجاز المهام العاجلة أولاً`),
+        `━━━━━━━━━━━━━━━━━━━━`,
+        `🚀 <i>لوحة تحكم الخطة</i>`
+      ].filter(Boolean).join('\n');
+
+    } else if (text.includes('إيديت') || text.includes('ايديت') || text.includes('تعديل')) {
+      const count = statsData?.stats?.myEdits ?? 0;
+      const list = (statsData?.editTasks || []).map((t: any, i: number) => {
+        return `📝 <b>${t.code || t.title}</b>${t.notes ? `\n⚠️ ملاحظات التعديل: ${t.notes}` : ''}`;
+      }).join('\n\n');
+
+      responseMsg = [
+        `📝 <b>تعديلات وملاحظات مطلوبة (اطلب إيديت):</b> ${count} مهام`,
+        `━━━━━━━━━━━━━━━━━━━━`,
+        list || (count === 0 ? `🎉 رائع! لا توجد أي طلبات تعديل على مهامك حالياً.` : `👉 يرجى مراجعة التعديلات وإنهائها`),
+        `━━━━━━━━━━━━━━━━━━━━`,
+        `🚀 <i>لوحة تحكم الخطة</i>`
+      ].filter(Boolean).join('\n');
+
+    } else if (text.includes('خلصت') || text.includes('منجزة')) {
+      const count = statsData?.stats?.myCompleted ?? 0;
+      responseMsg = [
+        `✅ <b>المهام المنجزة (خلصت):</b> ${count} مهمة`,
+        `━━━━━━━━━━━━━━━━━━━━`,
+        `🎉 عاش يا بطل! تم إنجاز وتسليم <b>${count}</b> مهمة بنجاح 🚀`,
+        `━━━━━━━━━━━━━━━━━━━━`,
+        `🚀 <i>لوحة تحكم الخطة</i>`
+      ].join('\n');
+
+    } else if (text.includes('متاحة') || text.includes('استلام')) {
+      const count = statsData?.stats?.availableUnassigned ?? 0;
+      const list = (statsData?.availableTasks || []).map((t: any, i: number) => {
+        return `📥 <b>${t.code || t.title}</b>${t.sheet ? ` (${t.sheet})` : ''}`;
+      }).join('\n');
+
+      responseMsg = [
+        `📥 <b>المهام المتاحة للاستلام:</b> ${count} مهمة`,
+        `━━━━━━━━━━━━━━━━━━━━`,
+        `📂 <b>الأقسام:</b> تجميعات • Cuts • Ve ✋`,
+        list ? `\n${list}\n` : '',
+        `👉 يمكنك فتح لوحة التحكم لاختيار واستلام المهام بنقرة واحدة!`,
+        `━━━━━━━━━━━━━━━━━━━━`,
+        `🚀 <i>لوحة تحكم الخطة</i>`
+      ].filter(Boolean).join('\n');
+
+    } else {
+      // Default summary for 'إجمالي مهامي', 'ملخص شامل', or any query
+      const s = statsData?.stats || {};
+      const name = statsData?.userName || targetUserName || 'المحرر';
+      responseMsg = [
+        `📊 <b>ملخص مهامك في لوحة تحكم الخطة</b>`,
+        `👤 <b>المستخدم:</b> ${name}`,
+        `━━━━━━━━━━━━━━━━━━━━`,
+        `⏳ <b>لسه متعملتش:</b> ${s.myPending ?? 0}`,
+        `⚡ <b>أولوية:</b> ${s.myPriority ?? 0}`,
+        `📝 <b>اطلب إيديت:</b> ${s.myEdits ?? 0}`,
+        `✅ <b>خلصت:</b> ${s.myCompleted ?? 0}`,
+        `📥 <b>مهام متاحة:</b> ${s.availableUnassigned ?? 0}`,
+        `━━━━━━━━━━━━━━━━━━━━`,
+        `🎯 <b>إجمالي كافة مهامك:</b> ${s.myTotal ?? 0} مهمة`,
+        `━━━━━━━━━━━━━━━━━━━━`,
+        `🚀 <i>لوحة تحكم الخطة التعليمية</i>`
+      ].join('\n');
+    }
+
+    await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: chatId,
+        text: responseMsg,
+        parse_mode: 'HTML',
+        reply_markup: {
+          keyboard: [
+            [{ text: '⏳ لسه متعملتش' }, { text: '⚡ أولوية' }],
+            [{ text: '📝 اطلب إيديت' }, { text: '✅ خلصت' }],
+            [{ text: '📥 مهام متاحة' }, { text: '👤 إجمالي مهامي' }],
+            [{ text: '📊 ملخص شامل' }]
+          ],
+          resize_keyboard: true,
+          is_persistent: true
+        }
+      })
+    }).catch(() => {});
 
     return res.json({ ok: true });
   }

@@ -363,7 +363,7 @@ type DesignHistoryEntry = {
 };
 
 // Enhanced inline editable Notes Input with Undo/Redo History system and Hover Badge
-const NotesInput = ({ value, onChange, className, itemKey, updatedAt, updatedBy, currentUserName }: any) => {
+const NotesInput = ({ value, onChange, className, itemKey, updatedAt, updatedBy, fallbackAuthor, currentUserName }: any) => {
   const getActiveUserName = () => {
     if (currentUserName && currentUserName.trim() && currentUserName !== 'مستخدم') return currentUserName.trim();
     try {
@@ -378,21 +378,42 @@ const NotesInput = ({ value, onChange, className, itemKey, updatedAt, updatedBy,
     return 'مستخدم';
   };
 
+  const activeUser = getActiveUserName();
+
   const historyKey = `hist_design_notes_${itemKey || 'global'}`;
   const timestampKey = `time_design_notes_${itemKey || 'global'}`;
   const authorKey = `author_design_notes_${itemKey || 'global'}`;
   
+  const getResolvedExistingAuthor = () => {
+    if (updatedBy && String(updatedBy).trim() && String(updatedBy).trim() !== 'غير محدد') {
+      return String(updatedBy).trim();
+    }
+    if (fallbackAuthor && String(fallbackAuthor).trim() && String(fallbackAuthor).trim() !== 'غير محدد') {
+      return String(fallbackAuthor).trim();
+    }
+    try {
+      const savedAuthor = localStorage.getItem(authorKey);
+      if (savedAuthor && savedAuthor.trim() && savedAuthor.trim() !== activeUser && savedAuthor.trim() !== 'غير محدد') {
+        return savedAuthor.trim();
+      }
+    } catch {}
+    return undefined;
+  };
+
   const [history, setHistory] = useState<DesignHistoryEntry[]>(() => {
     const saved = localStorage.getItem(historyKey);
     let entries: DesignHistoryEntry[] = [];
-    const activeAuthor = updatedBy || getActiveUserName();
+    const resolvedAuthor = getResolvedExistingAuthor();
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed) && parsed.length > 0) {
           entries = parsed.map((item: any) => {
             if (typeof item === 'string') {
-              return { text: item, timestamp: updatedAt || new Date().toISOString(), author: activeAuthor };
+              return { text: item, timestamp: updatedAt || new Date().toISOString(), author: resolvedAuthor || '' };
+            }
+            if (resolvedAuthor && item.author === activeUser && resolvedAuthor !== activeUser) {
+              return { ...item, author: resolvedAuthor };
             }
             return item;
           });
@@ -402,7 +423,9 @@ const NotesInput = ({ value, onChange, className, itemKey, updatedAt, updatedBy,
     const currentText = (value || '').trim();
     if (currentText) {
       if (entries.length === 0 || entries[entries.length - 1].text !== currentText) {
-        entries.push({ text: currentText, timestamp: updatedAt || new Date().toISOString(), author: activeAuthor });
+        entries.push({ text: currentText, timestamp: updatedAt || new Date().toISOString(), author: resolvedAuthor || '' });
+      } else if (resolvedAuthor && entries[entries.length - 1].author !== resolvedAuthor) {
+        entries[entries.length - 1].author = resolvedAuthor;
       }
     }
     return entries.slice(-30);
@@ -418,9 +441,13 @@ const NotesInput = ({ value, onChange, className, itemKey, updatedAt, updatedBy,
       : updatedAt || localStorage.getItem(timestampKey) || undefined;
   });
   const [lastEditedBy, setLastEditedBy] = useState<string | undefined>(() => {
-    return (history.length > 0 && currentIndex >= 0 && history[currentIndex]?.author) 
-      ? history[currentIndex].author 
-      : updatedBy || localStorage.getItem(authorKey) || getActiveUserName();
+    const resolved = getResolvedExistingAuthor();
+    if (resolved) return resolved;
+    if (history.length > 0 && currentIndex >= 0 && history[currentIndex]?.author) {
+      const entryAuthor = history[currentIndex].author;
+      if (entryAuthor && entryAuthor !== activeUser) return entryAuthor;
+    }
+    return undefined;
   });
 
   useEffect(() => {
@@ -429,25 +456,39 @@ const NotesInput = ({ value, onChange, className, itemKey, updatedAt, updatedBy,
       return;
     }
     const valStr = value || '';
-    if (valStr === val) return;
+    if (valStr !== val) {
+      setVal(valStr);
+    }
 
-    setVal(valStr);
+    const resolved = getResolvedExistingAuthor();
+    if (resolved) {
+      setLastEditedBy(resolved);
+    }
+    if (updatedAt) {
+      setLastEditedAt(updatedAt);
+    }
+
     const trimmed = valStr.trim();
     if (trimmed) {
-      const activeAuthor = updatedBy || getActiveUserName();
+      const currentAuthor = resolved || '';
       setHistory(prev => {
         const existingIdx = prev.findIndex(e => e.text === trimmed);
         if (existingIdx !== -1) {
           setCurrentIndex(existingIdx);
+          if (resolved && prev[existingIdx].author !== resolved) {
+            const updatedH = [...prev];
+            updatedH[existingIdx] = { ...updatedH[existingIdx], author: resolved };
+            return updatedH;
+          }
           return prev;
         }
-        const newH = [...prev, { text: trimmed, timestamp: updatedAt || new Date().toISOString(), author: activeAuthor }].slice(-30);
+        const newH = [...prev, { text: trimmed, timestamp: updatedAt || new Date().toISOString(), author: currentAuthor }].slice(-30);
         try { localStorage.setItem(historyKey, JSON.stringify(newH)); } catch {}
         setCurrentIndex(newH.length - 1);
         return newH;
       });
     }
-  }, [value]);
+  }, [value, updatedBy, updatedAt, fallbackAuthor]);
 
   const commitValue = (newVal: string) => {
     if (isUndoRedoRef.current) return;
@@ -530,11 +571,11 @@ const NotesInput = ({ value, onChange, className, itemKey, updatedAt, updatedBy,
   return (
     <div className="relative flex items-center justify-center gap-1 group/history w-full max-w-[280px]">
       {/* Floating Hover Tooltip Badge */}
-      {hasValue && timeLabel && (
+      {hasValue && (timeLabel || lastEditedBy) && (
         <div className="absolute bottom-full mb-2 hidden group-hover/history:flex flex-col items-center z-[300] pointer-events-none animate-fadeIn left-1/2 -translate-x-1/2">
           <div className="bg-[#0c121e]/95 border border-emerald-500/40 rounded-xl px-3 py-1.5 shadow-[0_10px_30px_rgba(0,0,0,0.7)] backdrop-blur-md text-[11px] text-white whitespace-nowrap text-right flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shrink-0"></span>
-            <span className="font-mono text-emerald-300 font-bold">{timeLabel}</span>
+            {timeLabel && <span className="font-mono text-emerald-300 font-bold">{timeLabel}</span>}
             {lastEditedBy && (
               <span className="text-muted/90 text-[10px] arabic-text font-bold">👤 {lastEditedBy}</span>
             )}

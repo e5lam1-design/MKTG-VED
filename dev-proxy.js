@@ -191,8 +191,11 @@ app.post('/api/telegram-notify', async (req, res) => {
   }
 });
 
-const supabaseUrl = (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '').trim();
-const supabaseAnonKey = (process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || '').trim();
+const DEFAULT_SUPABASE_URL = 'https://dppdaqmrrjbldcygadpi.supabase.co';
+const DEFAULT_SUPABASE_ANON_KEY = 'sb_publishable_5dbNHxWCrolbJY4j1cYldQ_JRzjs0CG';
+
+const supabaseUrl = (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || DEFAULT_SUPABASE_URL).trim();
+const supabaseAnonKey = (process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || DEFAULT_SUPABASE_ANON_KEY).trim();
 const supabaseServiceRoleKey = (process.env.SUPABASE_SERVICE_ROLE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRwcGRhcW1ycmpibGRjeWdhZHBpIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3OTIzNTIyNSwiZXhwIjoyMDk0ODExMjI1fQ.EBZ2wyV48UA9h9tLM0vUrjovR8xCb8lPLIaVgI9aVwU').trim();
 const supabaseAuthClient = supabaseUrl && supabaseAnonKey
   ? createClient(supabaseUrl, supabaseAnonKey)
@@ -256,15 +259,27 @@ const processTelegramUpdate = async (update, botToken) => {
             ], { onConflict: 'key,field' });
           } catch (e) {}
 
-          await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              chat_id: chatId,
-              text: `🎉 <b>أهلاً بك يا ${user.name}!</b>\n\n✅ تم ربط حسابك بنجاح في <b>لوحة تحكم الخطة</b>.\n🚀 من الآن فصاعداً، ستصلك هنا إشعارات فورية بكل المهام التي تنجزها وروابطها تلقائياً!`,
-              parse_mode: 'HTML'
-            })
-          }).catch(() => {});
+            await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                chat_id: chatId,
+                text: user?.name
+                  ? `أهلاً بك يا ${user.name} 👋\n\nأنت الآن متصل بتاسكات الخطة ✅\n\n👇 يمكنك الآن الاستعلام عن مهامك مباشرة من الأزرار بالأسفل:`
+                  : `أنت الآن متصل بتاسكات الخطة ✅\n\n👇 يمكنك الآن الاستعلام عن مهامك مباشرة من الأزرار بالأسفل:`,
+                parse_mode: 'HTML',
+                reply_markup: {
+                  keyboard: [
+                    [{ text: '⏳ لسه متعملتش' }, { text: '⚡ أولوية' }],
+                    [{ text: '📝 اطلب إيديت' }, { text: '✅ خلصت' }],
+                    [{ text: '📥 مهام متاحة' }, { text: '👤 إجمالي مهامي' }],
+                    [{ text: '📊 ملخص شامل' }]
+                  ],
+                  resize_keyboard: true,
+                  is_persistent: true
+                }
+              })
+            }).catch(() => {});
 
           console.log(`[Telegram] Successfully linked user ${user.name} to chat ID ${chatId}`);
           return;
@@ -276,11 +291,232 @@ const processTelegramUpdate = async (update, botToken) => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           chat_id: chatId,
-          text: `👋 <b>مرحباً بك في بوت لوحة تحكم الخطة!</b>\n\nلربط حسابك تلقائياً، يرجى فتح لوحة التحكم والضغط على زر <b>"ربط تليجرام بنقرة واحدة"</b> في صفحتك الرئيسية.`,
-          parse_mode: 'HTML'
+          text: `أنت الآن متصل بتاسكات الخطة ✅\n\n👇 يمكنك الاستعلام عن مهامك باستخدام الأزرار أدناه:`,
+          parse_mode: 'HTML',
+          reply_markup: {
+            keyboard: [
+              [{ text: '⏳ لسه متعملتش' }, { text: '⚡ أولوية' }],
+              [{ text: '📝 اطلب إيديت' }, { text: '✅ خلصت' }],
+              [{ text: '📥 مهام متاحة' }, { text: '👤 إجمالي مهامي' }],
+              [{ text: '📊 ملخص شامل' }]
+            ],
+            resize_keyboard: true,
+            is_persistent: true
+          }
         })
       }).catch(() => {});
+      return;
     }
+
+    // Handle Query Buttons
+    let targetUserId = '';
+    let targetUserName = '';
+
+    if (supabaseAdminClient) {
+      try {
+        const { data: rows } = await supabaseAdminClient
+          .from('page_announcements')
+          .select('page_key, message')
+          .eq('message', String(chatId));
+
+        if (rows) {
+          for (const r of rows) {
+            if (r.page_key.startsWith('tg_chat_')) {
+              targetUserId = r.page_key.replace('tg_chat_', '');
+            } else if (r.page_key.startsWith('tg_editor_')) {
+              targetUserName = r.page_key.replace('tg_editor_', '');
+            }
+          }
+        }
+      } catch {}
+
+      if (targetUserId && !targetUserName) {
+        try {
+          const { data: p } = await supabaseAdminClient
+            .from('user_profiles')
+            .select('name')
+            .eq('id', targetUserId)
+            .maybeSingle();
+          if (p?.name) targetUserName = p.name;
+        } catch {}
+      }
+    }
+
+    // Fetch cached stats from page_announcements
+    let statsData = null;
+    if (supabaseAdminClient && (targetUserId || targetUserName)) {
+      try {
+        const orFilter = [
+          targetUserId ? `page_key.eq.tg_stats_${targetUserId}` : '',
+          targetUserName ? `page_key.eq.tg_stats_${targetUserName.trim().toLowerCase()}` : ''
+        ].filter(Boolean).join(',');
+
+        if (orFilter) {
+          const { data: sRow } = await supabaseAdminClient
+            .from('page_announcements')
+            .select('message')
+            .or(orFilter)
+            .order('updated_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+          if (sRow?.message) {
+            statsData = JSON.parse(sRow.message);
+          }
+        }
+      } catch {}
+    }
+
+    // Fallback to direct DB query on reels_cuts_26 & reels_ve_26 if statsData not cached
+    if (!statsData && supabaseAdminClient && targetUserName) {
+      try {
+        const cleanU = targetUserName.trim().toLowerCase();
+        const [{ data: cuts }, { data: ve }] = await Promise.all([
+          supabaseAdminClient
+            .from('reels_cuts_26')
+            .select('code, editor, done, missing_details, problem, drive_final, creator, editor_notes')
+            .ilike('editor', `%${cleanU}%`)
+            .limit(100),
+          supabaseAdminClient
+            .from('reels_ve_26')
+            .select('code, editor_col, done, missing_details, edit_check, notes')
+            .ilike('editor_col', `%${cleanU}%`)
+            .limit(100)
+        ]);
+
+        const allTasks = [...(cuts || []), ...(ve || [])];
+        const myPending = allTasks.filter(t => !t.done && !t.problem && !t.edit_check);
+        const myPriority = allTasks.filter(t => (t.missing_details === true) && !t.done);
+        const myEdits = allTasks.filter(t => (t.problem === true || t.edit_check === true) && !t.done);
+        const myCompleted = allTasks.filter(t => t.done === true);
+
+        statsData = {
+          userName: targetUserName,
+          stats: {
+            myPending: myPending.length,
+            myPriority: myPriority.length,
+            myEdits: myEdits.length,
+            myCompleted: myCompleted.length,
+            availableUnassigned: 0,
+            myTotal: allTasks.length
+          },
+          pendingTasks: myPending.slice(0, 5).map(t => ({ code: t.code, notes: t.editor_notes || t.notes })),
+          priorityTasks: myPriority.slice(0, 5).map(t => ({ code: t.code, notes: t.editor_notes || t.notes })),
+          editTasks: myEdits.slice(0, 5).map(t => ({ code: t.code, notes: t.editor_notes || t.notes })),
+          availableTasks: []
+        };
+      } catch {}
+    }
+
+    let responseMsg = '';
+
+    if (text.includes('لسه') || text.includes('قيد العمل')) {
+      const count = statsData?.stats?.myPending ?? 0;
+      const list = (statsData?.pendingTasks || []).map((t, i) => {
+        return `${i + 1}️⃣ <b>${t.code || t.title}</b>${t.sheet ? `\n📂 ${t.sheet}` : ''}${t.notes ? `\n📝 ${t.notes}` : ''}`;
+      }).join('\n\n');
+
+      responseMsg = [
+        `⏳ <b>مهام قيد العمل (لسه متعملتش):</b> ${count} مهمة`,
+        `━━━━━━━━━━━━━━━━━━━━`,
+        list || (count === 0 ? `🎉 ممتاز! لا توجد مهام قيد العمل حالياً.` : `👉 راجع لوحة التحكم لتفاصيل كافة المهام`),
+        `━━━━━━━━━━━━━━━━━━━━`,
+        `🚀 <i>لوحة تحكم الخطة</i>`
+      ].filter(Boolean).join('\n');
+
+    } else if (text.includes('أولوية') || text.includes('اولوية')) {
+      const count = statsData?.stats?.myPriority ?? 0;
+      const list = (statsData?.priorityTasks || []).map((t, i) => {
+        return `⚡ <b>${t.code || t.title}</b>${t.sheet ? `\n📂 ${t.sheet}` : ''}${t.notes ? `\n📝 ${t.notes}` : ''}`;
+      }).join('\n\n');
+
+      responseMsg = [
+        `⚡ <b>المهام العاجلة (أولوية):</b> ${count} مهام`,
+        `━━━━━━━━━━━━━━━━━━━━`,
+        list || (count === 0 ? `✅ ممتاز! لا توجد أي مهام عاجلة متأخرة.` : `👉 يرجى إنجاز المهام العاجلة أولاً`),
+        `━━━━━━━━━━━━━━━━━━━━`,
+        `🚀 <i>لوحة تحكم الخطة</i>`
+      ].filter(Boolean).join('\n');
+
+    } else if (text.includes('إيديت') || text.includes('ايديت') || text.includes('تعديل')) {
+      const count = statsData?.stats?.myEdits ?? 0;
+      const list = (statsData?.editTasks || []).map((t, i) => {
+        return `📝 <b>${t.code || t.title}</b>${t.notes ? `\n⚠️ ملاحظات التعديل: ${t.notes}` : ''}`;
+      }).join('\n\n');
+
+      responseMsg = [
+        `📝 <b>تعديلات وملاحظات مطلوبة (اطلب إيديت):</b> ${count} مهام`,
+        `━━━━━━━━━━━━━━━━━━━━`,
+        list || (count === 0 ? `🎉 رائع! لا توجد أي طلبات تعديل على مهامك حالياً.` : `👉 يرجى مراجعة التعديلات وإنهائها`),
+        `━━━━━━━━━━━━━━━━━━━━`,
+        `🚀 <i>لوحة تحكم الخطة</i>`
+      ].filter(Boolean).join('\n');
+
+    } else if (text.includes('خلصت') || text.includes('منجزة')) {
+      const count = statsData?.stats?.myCompleted ?? 0;
+      responseMsg = [
+        `✅ <b>المهام المنجزة (خلصت):</b> ${count} مهمة`,
+        `━━━━━━━━━━━━━━━━━━━━`,
+        `🎉 عاش يا بطل! تم إنجاز وتسليم <b>${count}</b> مهمة بنجاح 🚀`,
+        `━━━━━━━━━━━━━━━━━━━━`,
+        `🚀 <i>لوحة تحكم الخطة</i>`
+      ].join('\n');
+
+    } else if (text.includes('متاحة') || text.includes('استلام')) {
+      const count = statsData?.stats?.availableUnassigned ?? 0;
+      const list = (statsData?.availableTasks || []).map((t) => {
+        return `📥 <b>${t.code || t.title}</b>${t.sheet ? ` (${t.sheet})` : ''}`;
+      }).join('\n');
+
+      responseMsg = [
+        `📥 <b>المهام المتاحة للاستلام:</b> ${count} مهمة`,
+        `━━━━━━━━━━━━━━━━━━━━`,
+        `📂 <b>الأقسام:</b> تجميعات • Cuts • Ve ✋`,
+        list ? `\n${list}\n` : '',
+        `👉 يمكنك فتح لوحة التحكم لاختيار واستلام المهام بنقرة واحدة!`,
+        `━━━━━━━━━━━━━━━━━━━━`,
+        `🚀 <i>لوحة تحكم الخطة</i>`
+      ].filter(Boolean).join('\n');
+
+    } else {
+      // Default summary for 'إجمالي مهامي', 'ملخص شامل', or any query
+      const s = statsData?.stats || {};
+      const name = statsData?.userName || targetUserName || 'المحرر';
+      responseMsg = [
+        `📊 <b>ملخص مهامك في لوحة تحكم الخطة</b>`,
+        `👤 <b>المستخدم:</b> ${name}`,
+        `━━━━━━━━━━━━━━━━━━━━`,
+        `⏳ <b>لسه متعملتش:</b> ${s.myPending ?? 0}`,
+        `⚡ <b>أولوية:</b> ${s.myPriority ?? 0}`,
+        `📝 <b>اطلب إيديت:</b> ${s.myEdits ?? 0}`,
+        `✅ <b>خلصت:</b> ${s.myCompleted ?? 0}`,
+        `📥 <b>مهام متاحة:</b> ${s.availableUnassigned ?? 0}`,
+        `━━━━━━━━━━━━━━━━━━━━`,
+        `🎯 <b>إجمالي كافة مهامك:</b> ${s.myTotal ?? 0} مهمة`,
+        `━━━━━━━━━━━━━━━━━━━━`,
+        `🚀 <i>لوحة تحكم الخطة التعليمية</i>`
+      ].join('\n');
+    }
+
+    await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: chatId,
+        text: responseMsg,
+        parse_mode: 'HTML',
+        reply_markup: {
+          keyboard: [
+            [{ text: '⏳ لسه متعملتش' }, { text: '⚡ أولوية' }],
+            [{ text: '📝 اطلب إيديت' }, { text: '✅ خلصت' }],
+            [{ text: '📥 مهام متاحة' }, { text: '👤 إجمالي مهامي' }],
+            [{ text: '📊 ملخص شامل' }]
+          ],
+          resize_keyboard: true,
+          is_persistent: true
+        }
+      })
+    }).catch(() => {});
   } catch (err) {
     console.error('[Telegram] Error processing update:', err.message);
   }
@@ -621,15 +857,20 @@ app.get('/api/task-metadata', async (req, res) => {
 
     const { data, error } = await supabaseAdminClient
       .from('dashboard_data')
-      .select('field, value')
-      .eq('key', 'task_metadata');
+      .select('key, field, value')
+      .in('key', ['task_metadata', 'note_authors']);
     if (error) throw error;
     
     const metadata = {};
     if (data) {
       data.forEach(row => {
         try {
-          metadata[row.field] = JSON.parse(row.value);
+          const parsed = JSON.parse(row.value);
+          if (row.key === 'note_authors') {
+            metadata['note_authors'] = parsed;
+          } else {
+            metadata[row.field] = parsed;
+          }
         } catch(e) {}
       });
     }
@@ -714,6 +955,279 @@ app.post('/api/reels/add', async (req, res) => {
     }
 
     res.json({ success: true, message: 'Row added successfully' });
+  } catch (err) {
+    handleApiError(res, err);
+  }
+});
+
+// --- GOOGLE SHEET IMPORT FOR SHOOTING ---
+function parseImportTableText(text) {
+  const isTsv = text.includes('\t') && !text.includes('","');
+  const rows = [];
+  if (isTsv) {
+    const lines = text.split(/\r?\n/);
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      rows.push(line.split('\t').map(c => c.trim()));
+    }
+    return rows;
+  }
+  let currentRow = [];
+  let currentCell = '';
+  let inQuotes = false;
+  for (let i = 0; i < text.length; i++) {
+    const char = text[i];
+    const nextChar = text[i + 1];
+    if (char === '"') {
+      if (inQuotes && nextChar === '"') {
+        currentCell += '"';
+        i++;
+      } else {
+        inQuotes = !inQuotes;
+      }
+    } else if (char === ',' && !inQuotes) {
+      currentRow.push(currentCell.trim());
+      currentCell = '';
+    } else if (char === '\n' && !inQuotes) {
+      currentRow.push(currentCell.trim());
+      if (currentRow.some(c => c.length > 0)) {
+        rows.push(currentRow);
+      }
+      currentRow = [];
+      currentCell = '';
+    } else if (char === '\r' && !inQuotes) {
+      // ignore
+    } else {
+      currentCell += char;
+    }
+  }
+  if (currentCell || currentRow.length > 0) {
+    currentRow.push(currentCell.trim());
+    if (currentRow.some(c => c.length > 0)) {
+      rows.push(currentRow);
+    }
+  }
+  return rows;
+}
+
+function extractImportSheetDetails(urlOrId) {
+  const input = (urlOrId || '').trim();
+  if (!input) return { spreadsheetId: null, gid: null };
+  if (!input.includes('/') && !input.includes('http') && input.length >= 20) {
+    return { spreadsheetId: input, gid: null };
+  }
+  const idMatch = input.match(/\/spreadsheets\/d\/([a-zA-Z0-9-_]+)/);
+  const spreadsheetId = idMatch ? idMatch[1] : null;
+  const gidMatch = input.match(/[#&?]gid=([0-9]+)/);
+  const gid = gidMatch ? gidMatch[1] : null;
+  return { spreadsheetId, gid };
+}
+
+function detectImportColumnMapping(headers) {
+  const mapping = {};
+  const normalizedHeaders = headers.map(h => (h || '').toLowerCase().trim().replace(/[\r\n\t_]/g, ' '));
+  const definitions = {
+    date: ['تاريخ', 'date', 'التاريخ', 'يوم'],
+    branch: ['فرع', 'الفرع', 'branches', 'branch'],
+    year: ['سنة', 'السنة', 'عام', 'grade', 'year', 'stage', 'المرحلة'],
+    teacher: ['مدرس', 'المدرس', 'أستاذ', 'الاستاذ', 'معلم', 'teacher', 'column 4'],
+    extra_name: ['صانع', 'صانع المحتوى', 'اسم إضافي', 'اسم اضافي', 'creator', 'extra', 'column 5', 'المعد'],
+    code: ['كود', 'الكود', 'code', 'id'],
+    script: ['اسكريبت', 'السكريبت', 'سكريبت', 'عنوان', 'رابط', 'script', 'title', 'اسم السكريبت', 'رابط السكريبت'],
+    type: ['نوع', 'النوع', 'type'],
+    format: ['مقاس', 'المقاس', 'format', 'أبعاد', 'ابعاد'],
+    filmed: ['اتصور', 'اتصور؟', 'تم التصوير', 'filmed'],
+    filming_date: ['تاريخ التصوير', 'filming date'],
+    by: ['المصور', 'تصوير', 'by', 'filmed by', 'shooter'],
+    storage: ['كارت', 'مساحة', 'storage', 'الكارت'],
+    notes: ['ملاحظات', 'ملاحظة', 'notes', 'تعليق'],
+    drive_raw: ['خام', 'raw', 'drive raw', 'ماتريال', 'درايف الخام', 'لينك الخام', 'drive link (raw)']
+  };
+
+  for (const [field, keywords] of Object.entries(definitions)) {
+    let foundIdx = normalizedHeaders.findIndex(header => 
+      keywords.some(kw => header === kw || header.startsWith(kw + ' ') || header.includes(kw))
+    );
+    if (foundIdx !== -1) {
+      mapping[field] = foundIdx;
+    }
+  }
+  return mapping;
+}
+
+app.post('/api/google-sheet-import', async (req, res) => {
+  try {
+    const { action, url, csvText, tabName, gid: requestedGid, rowsToImport, targetSpreadsheetId } = req.body || {};
+
+    if (action === 'preview') {
+      let rawRows = [];
+      let tabs = [];
+      let activeTabName = tabName || '';
+      let sheetTitle = 'Google Sheet';
+
+      if (csvText && csvText.trim()) {
+        rawRows = parseImportTableText(csvText.trim());
+        sheetTitle = 'بيانات ملصوقة يدوياً (Pasted Data)';
+      } else if (url && url.trim()) {
+        const { spreadsheetId, gid } = extractImportSheetDetails(url.trim());
+        const effectiveGid = requestedGid || gid;
+
+        if (!spreadsheetId) {
+          return res.status(400).json({ error: 'رابط غير صالح: لم يتم العثور على معرّف Google Sheet الصحيح في الرابط المدخل.' });
+        }
+
+        let fetchedViaApi = false;
+
+        // Try Service Account
+        if (credentials && credentials.client_email && credentials.private_key) {
+          try {
+            const auth = new google.auth.GoogleAuth({
+              credentials: {
+                client_email: credentials.client_email,
+                private_key: credentials.private_key,
+              },
+              scopes: ['https://www.googleapis.com/auth/spreadsheets.readonly'],
+            });
+            const sheets = google.sheets({ version: 'v4', auth });
+
+            const meta = await sheets.spreadsheets.get({ spreadsheetId });
+            sheetTitle = meta.data.properties?.title || 'Google Sheet';
+            tabs = (meta.data.sheets || []).map(s => ({
+              title: s.properties?.title || 'Sheet',
+              sheetId: s.properties?.sheetId ?? 0,
+            }));
+
+            let targetTab = tabs[0]?.title || '';
+            if (activeTabName) {
+              const found = tabs.find(t => t.title.toLowerCase() === activeTabName.toLowerCase());
+              if (found) targetTab = found.title;
+            } else if (effectiveGid) {
+              const found = tabs.find(t => String(t.sheetId) === String(effectiveGid));
+              if (found) targetTab = found.title;
+            }
+
+            activeTabName = targetTab;
+
+            const sheetDataRes = await sheets.spreadsheets.get({
+              spreadsheetId,
+              ranges: [targetTab],
+              fields: 'sheets/data/rowData/values(formattedValue,hyperlink,chipRuns,textFormatRuns)',
+            });
+
+            const rowData = sheetDataRes.data.sheets?.[0]?.data?.[0]?.rowData || [];
+            rawRows = rowData.map(r => (r.values || []).map(c => {
+              const text = (c.formattedValue || '').trim();
+              const chipUri = c.chipRuns?.[0]?.chip?.richLinkProperties?.uri || '';
+              const textRunUri = c.textFormatRuns?.[0]?.format?.link?.uri || '';
+              const link = (c.hyperlink || chipUri || textRunUri || '').trim();
+
+              if (link && text && link !== text) {
+                return `=HYPERLINK("${link}", "${text}")`;
+              }
+              if (link) return link;
+              if (text.includes('document/d/')) {
+                const idx = text.indexOf('document/d/');
+                return 'https://docs.google.com/' + text.substring(idx);
+              }
+              return text;
+            }));
+            fetchedViaApi = true;
+          } catch (apiErr) {
+            console.warn('[Google Sheet Import Proxy] SA fetch warning:', apiErr?.message);
+          }
+        }
+
+        if (!fetchedViaApi) {
+          const exportUrl = effectiveGid
+            ? `https://docs.google.com/spreadsheets/d/${spreadsheetId}/export?format=csv&gid=${effectiveGid}`
+            : `https://docs.google.com/spreadsheets/d/${spreadsheetId}/export?format=csv`;
+
+          const csvRes = await fetch(exportUrl);
+          if (csvRes.ok) {
+            const text = await csvRes.text();
+            rawRows = parseImportTableText(text);
+          } else {
+            const gvizUrl = effectiveGid
+              ? `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:csv&gid=${effectiveGid}`
+              : `https://docs.google.com/spreadsheets/d/${spreadsheetId}/gviz/tq?tqx=out:csv`;
+
+            const gvizRes = await fetch(gvizUrl);
+            if (gvizRes.ok) {
+              const text = await gvizRes.text();
+              rawRows = parseImportTableText(text);
+            } else {
+              return res.status(403).json({
+                error: 'تعذر الوصول إلى الشيت. تأكد من أن الرابط متاح لأي شخص لديه الرابط (Public Link) أو قم بمشاركة الشيت مع إيميل الخدمة: ' + (credentials?.client_email || 'Google Service Account') + ' أو استخدم خيار لصق البيانات مباشرة.',
+                needsShare: true,
+                serviceEmail: credentials?.client_email
+              });
+            }
+          }
+        }
+      } else {
+        return res.status(400).json({ error: 'يرجى إدخال رابط الشيت أو لصق بيانات الجدول' });
+      }
+
+      const nonEmptyRows = rawRows.filter(row => row.some(cell => cell && cell.trim() !== ''));
+
+      if (nonEmptyRows.length === 0) {
+        return res.status(400).json({ error: 'الشيت المحدد فارغ أو لا يحتوي على صفوف بيانات صالحة' });
+      }
+
+      const headers = nonEmptyRows[0].map((h, i) => (h && h.trim()) ? h.trim() : `عمود ${i + 1}`);
+      const dataRows = nonEmptyRows.slice(1);
+      const detectedMapping = detectImportColumnMapping(headers);
+
+      return res.status(200).json({
+        success: true,
+        sheetTitle,
+        tabs,
+        selectedTab: activeTabName,
+        headers,
+        detectedMapping,
+        totalRows: dataRows.length,
+        previewRows: dataRows.slice(0, 100),
+        allRows: dataRows
+      });
+    }
+
+    if (action === 'append_to_sheet') {
+      if (!rowsToImport || !Array.isArray(rowsToImport) || rowsToImport.length === 0) {
+        return res.status(400).json({ error: 'Missing rowsToImport' });
+      }
+
+      const targetId = targetSpreadsheetId || '1GYrPRyPda-w1fGCxFOkieSHT7X5kK5TbikQZuZ-oe1k';
+
+      if (credentials && credentials.client_email && credentials.private_key) {
+        try {
+          const auth = new google.auth.GoogleAuth({
+            credentials: {
+              client_email: credentials.client_email,
+              private_key: credentials.private_key,
+            },
+            scopes: ['https://www.googleapis.com/auth/spreadsheets'],
+          });
+          const sheets = google.sheets({ version: 'v4', auth });
+
+          await sheets.spreadsheets.values.append({
+            spreadsheetId: targetId,
+            range: 'Shooting!A:R',
+            valueInputOption: 'USER_ENTERED',
+            insertDataOption: 'INSERT_ROWS',
+            requestBody: {
+              values: rowsToImport
+            }
+          });
+          return res.status(200).json({ success: true, count: rowsToImport.length });
+        } catch (appendErr) {
+          console.error('[Google Sheet Import Proxy] Append failed:', appendErr);
+          return res.status(200).json({ success: false, warning: appendErr?.message });
+        }
+      }
+      return res.status(200).json({ success: true, note: 'No service account credentials' });
+    }
+
+    return res.status(400).json({ error: 'Invalid action' });
   } catch (err) {
     handleApiError(res, err);
   }
@@ -1664,13 +2178,28 @@ app.put('/api/task-metadata', async (req, res) => {
     }
     
     const value = JSON.stringify(metadata || {});
-    
-    const { error } = await supabaseAdminClient
+    const targetKey = field === 'note_authors' ? 'note_authors' : 'task_metadata';
+    const targetField = field === 'note_authors' ? 'authors' : field;
+
+    const { data: existing } = await supabaseAdminClient
       .from('dashboard_data')
-      .upsert(
-        { key: 'task_metadata', field, value, updated_by: requester.id },
-        { onConflict: 'key,field' }
-      );
+      .select('key, field')
+      .eq('key', targetKey)
+      .maybeSingle();
+
+    let error;
+    if (existing) {
+      const res = await supabaseAdminClient
+        .from('dashboard_data')
+        .update({ value, updated_by: requester.id, updated_at: new Date().toISOString() })
+        .eq('key', targetKey);
+      error = res.error;
+    } else {
+      const res = await supabaseAdminClient
+        .from('dashboard_data')
+        .insert({ key: targetKey, field: targetField, value, updated_by: requester.id });
+      error = res.error;
+    }
       
     if (error) throw error;
     res.json({ ok: true });
@@ -2639,6 +3168,81 @@ app.all('/api/sync-op27', async (req, res) => {
     console.error('[Proxy /api/sync-op27 error]:', err);
     res.status(500).json({ error: err.message || 'Internal error during sync' });
   }
+});
+
+app.all('/api/telegram', async (req, res) => {
+  const botToken = process.env.TELEGRAM_BOT_TOKEN || '8995125962:AAFtthDhRXtVxnpf5TEpfhynx1XLl07X6tA';
+
+  // GET: Health or lookup
+  if (req.method === 'GET') {
+    const { userId, userName } = req.query;
+    if (userId && supabaseAdminClient) {
+      try {
+        const { data } = await supabaseAdminClient
+          .from('page_announcements')
+          .select('message')
+          .eq('page_key', `tg_chat_${userId}`)
+          .maybeSingle();
+        if (data?.message) return res.json({ ok: true, chatId: String(data.message).trim() });
+      } catch {}
+    }
+    if (userName && supabaseAdminClient) {
+      try {
+        const clean = String(userName).trim().toLowerCase();
+        const { data } = await supabaseAdminClient
+          .from('page_announcements')
+          .select('message')
+          .eq('page_key', `tg_editor_${clean}`)
+          .maybeSingle();
+        if (data?.message) return res.json({ ok: true, chatId: String(data.message).trim() });
+      } catch {}
+    }
+    return res.json({ ok: true, service: 'dev-telegram-api', status: 'ready' });
+  }
+
+  // POST: Unlink, Notify, or Webhook
+  const body = req.body || {};
+
+  if (body.action === 'unlink') {
+    const targetId = body.userId;
+    const targetName = body.userName ? String(body.userName).trim().toLowerCase() : '';
+
+    if (supabaseAdminClient) {
+      if (targetId) {
+        try { await supabaseAdminClient.from('page_announcements').delete().eq('page_key', `tg_chat_${targetId}`); } catch {}
+        try { await supabaseAdminClient.from('dashboard_data').delete().eq('key', `tg_chat_${targetId}`); } catch {}
+        try { await supabaseAdminClient.from('user_profiles').update({ telegram_chat_id: null }).eq('id', targetId); } catch {}
+      }
+      if (targetName) {
+        try { await supabaseAdminClient.from('page_announcements').delete().eq('page_key', `tg_editor_${targetName}`); } catch {}
+        try { await supabaseAdminClient.from('dashboard_data').delete().eq('key', `tg_editor_${targetName}`); } catch {}
+      }
+    }
+    return res.json({ ok: true, unlinked: true });
+  }
+
+  if (body.chatId && body.text) {
+    const activeToken = body.token || botToken;
+    try {
+      const tgRes = await fetch(`https://api.telegram.org/bot${activeToken}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: body.chatId,
+          text: body.text,
+          parse_mode: 'HTML',
+          disable_web_page_preview: false
+        })
+      });
+      const data = await tgRes.json();
+      if (!tgRes.ok || !data.ok) return res.status(tgRes.status).json({ ok: false, error: data.description || 'Telegram API error' });
+      return res.json({ ok: true, result: data.result });
+    } catch (err) {
+      return res.status(500).json({ ok: false, error: err.message || 'Internal error' });
+    }
+  }
+
+  return res.json({ ok: true });
 });
 
 app.listen(3001, () => console.log('✅ Dev API proxy running on http://localhost:3001'));

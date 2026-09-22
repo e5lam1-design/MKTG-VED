@@ -203,8 +203,8 @@ export const EditorsManagement: React.FC<EditorsManagementProps> = ({ toast }) =
               />
             </div>
 
-            {/* Color selection for editors */}
-            {activeCategory === 'editor' && (
+            {/* Color selection for editors and creators */}
+            {(activeCategory === 'editor' || activeCategory === 'creator') && (
               <div className="flex items-center gap-2 bg-black/40 border border-white/10 rounded-2xl px-3 py-2 shrink-0">
                 <span className="text-[11px] font-bold text-white/50">اللون:</span>
                 <div className="flex items-center gap-1.5 overflow-x-auto max-w-[200px] scrollbar-hide py-0.5">
@@ -339,8 +339,8 @@ export const EditorsManagement: React.FC<EditorsManagementProps> = ({ toast }) =
                         </div>
                       ) : (
                         <div className="flex items-center gap-2.5">
-                          {/* Colored badge preview for Editor */}
-                          {activeCategory === 'editor' ? (
+                          {/* Colored badge preview for Editor or Creator */}
+                          {(activeCategory === 'editor' || activeCategory === 'creator') ? (
                             <div className="relative inline-flex items-center">
                               <span 
                                 className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-black border transition-all shadow-sm"
@@ -362,7 +362,7 @@ export const EditorsManagement: React.FC<EditorsManagementProps> = ({ toast }) =
                                 type="button"
                                 onClick={() => setColorPickerOpenId(isPickerOpen ? null : item.id!)}
                                 className="mr-1.5 p-1 rounded-full hover:bg-white/10 text-white/40 hover:text-white transition-all cursor-pointer"
-                                title="تغيير لون المحرر"
+                                title="تغيير اللون"
                               >
                                 <Palette size={12} style={{ color: itemColor }} />
                               </button>

@@ -514,7 +514,7 @@ export async function sendTelegramMessage(
 
   // 1. Try local proxy / serverless
   try {
-    const apiRes = await fetch('/api/telegram-notify', {
+    const apiRes = await fetch('/api/telegram', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ token, chatId, text: htmlText })

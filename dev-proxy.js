@@ -156,6 +156,41 @@ app.get('/api/duration', async (req, res) => {
   res.json({ duration: null, status: 'queued' });
 });
 
+app.post('/api/telegram-notify', async (req, res) => {
+  const { token, chatId, text } = req.body || {};
+  const botToken = token || process.env.TELEGRAM_BOT_TOKEN;
+
+  if (!botToken) {
+    return res.status(400).json({ ok: false, error: 'Missing Telegram bot token' });
+  }
+  if (!chatId || !text) {
+    return res.status(400).json({ ok: false, error: 'Missing chatId or text' });
+  }
+
+  try {
+    const telegramRes = await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: chatId,
+        text: text,
+        parse_mode: 'HTML',
+        disable_web_page_preview: false
+      })
+    });
+
+    const data = await telegramRes.json();
+    if (!telegramRes.ok || !data.ok) {
+      return res.status(telegramRes.status).json({ ok: false, error: data.description || 'Telegram API error' });
+    }
+
+    return res.json({ ok: true, result: data.result });
+  } catch (err) {
+    console.error('[Proxy telegram-notify] Error:', err);
+    return res.status(500).json({ ok: false, error: err.message || 'Internal server error' });
+  }
+});
+
 const supabaseUrl = (process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '').trim();
 const supabaseAnonKey = (process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || '').trim();
 const supabaseServiceRoleKey = (process.env.SUPABASE_SERVICE_ROLE_KEY || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRwcGRhcW1ycmpibGRjeWdhZHBpIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3OTIzNTIyNSwiZXhwIjoyMDk0ODExMjI1fQ.EBZ2wyV48UA9h9tLM0vUrjovR8xCb8lPLIaVgI9aVwU').trim();
@@ -167,6 +202,142 @@ const supabaseAdminClient = supabaseUrl && supabaseServiceRoleKey
       auth: { autoRefreshToken: false, persistSession: false },
     })
   : null;
+
+// ==================== Telegram Automatic Link Polling & Webhook ====================
+let telegramOffset = 0;
+
+const processTelegramUpdate = async (update, botToken) => {
+  try {
+    const msg = update.message;
+    if (!msg || !msg.text) return;
+
+    const chatId = msg.chat?.id;
+    const text = msg.text.trim();
+    if (!chatId || !text) return;
+
+    if (text.startsWith('/start')) {
+      const parts = text.split(/\s+/);
+      const startPayload = parts[1] ? parts[1].trim() : '';
+
+      if (startPayload && supabaseAdminClient) {
+        const { data: user } = await supabaseAdminClient
+          .from('user_profiles')
+          .select('*')
+          .or(`id.eq.${startPayload},username.eq.${startPayload},name.ilike.${startPayload},email.ilike.${startPayload}`)
+          .maybeSingle();
+
+        if (user) {
+          try {
+            await supabaseAdminClient
+              .from('user_profiles')
+              .update({
+                telegram_chat_id: String(chatId),
+                updated_at: new Date().toISOString()
+              })
+              .eq('id', user.id);
+          } catch (e) {}
+
+          try {
+            await supabaseAdminClient.from('dashboard_data').upsert([
+              {
+                key: 'telegram_chat_ids',
+                field: user.id,
+                value: String(chatId),
+                updated_by: user.name,
+                updated_at: new Date().toISOString()
+              },
+              {
+                key: 'telegram_editor_map',
+                field: user.name.trim().toLowerCase(),
+                value: String(chatId),
+                updated_by: user.name,
+                updated_at: new Date().toISOString()
+              }
+            ], { onConflict: 'key,field' });
+          } catch (e) {}
+
+          await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              chat_id: chatId,
+              text: `🎉 <b>أهلاً بك يا ${user.name}!</b>\n\n✅ تم ربط حسابك بنجاح في <b>لوحة تحكم الخطة</b>.\n🚀 من الآن فصاعداً، ستصلك هنا إشعارات فورية بكل المهام التي تنجزها وروابطها تلقائياً!`,
+              parse_mode: 'HTML'
+            })
+          }).catch(() => {});
+
+          console.log(`[Telegram] Successfully linked user ${user.name} to chat ID ${chatId}`);
+          return;
+        }
+      }
+
+      await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          chat_id: chatId,
+          text: `👋 <b>مرحباً بك في بوت لوحة تحكم الخطة!</b>\n\nلربط حسابك تلقائياً، يرجى فتح لوحة التحكم والضغط على زر <b>"ربط تليجرام بنقرة واحدة"</b> في صفحتك الرئيسية.`,
+          parse_mode: 'HTML'
+        })
+      }).catch(() => {});
+    }
+  } catch (err) {
+    console.error('[Telegram] Error processing update:', err.message);
+  }
+};
+
+app.post('/api/telegram-webhook', async (req, res) => {
+  const update = req.body;
+  let botToken = process.env.TELEGRAM_BOT_TOKEN || '8995125962:AAFtthDhRXtVxnpf5TEpfhynx1XLl07X6tA';
+  if (supabaseAdminClient) {
+    try {
+      const { data } = await supabaseAdminClient
+        .from('dashboard_data')
+        .select('value')
+        .eq('key', 'telegram_bot_token')
+        .maybeSingle();
+      if (data?.value) botToken = data.value.trim();
+    } catch (e) {}
+  }
+
+  if (update && botToken) {
+    await processTelegramUpdate(update, botToken);
+  }
+  res.json({ ok: true });
+});
+
+const pollTelegramUpdates = async () => {
+  let botToken = process.env.TELEGRAM_BOT_TOKEN || '8995125962:AAFtthDhRXtVxnpf5TEpfhynx1XLl07X6tA';
+  if (supabaseAdminClient) {
+    try {
+      const { data } = await supabaseAdminClient
+        .from('dashboard_data')
+        .select('value')
+        .eq('key', 'telegram_bot_token')
+        .maybeSingle();
+      if (data?.value) botToken = data.value.trim();
+    } catch (e) {}
+  }
+
+  try {
+    const res = await fetch(`https://api.telegram.org/bot${botToken}/getUpdates?offset=${telegramOffset}&timeout=5`, {
+      signal: AbortSignal.timeout(10000)
+    });
+    if (res.ok) {
+      const json = await res.json();
+      if (json.ok && Array.isArray(json.result)) {
+        for (const upd of json.result) {
+          telegramOffset = Math.max(telegramOffset, upd.update_id + 1);
+          await processTelegramUpdate(upd, botToken);
+        }
+      }
+    }
+  } catch (e) {}
+
+  setTimeout(pollTelegramUpdates, 2500);
+};
+
+pollTelegramUpdates();
 
 const allowedRoles = new Set(['admin', 'manager', 'supervisor', 'junior']);
 

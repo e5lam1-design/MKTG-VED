@@ -75,7 +75,7 @@ import { InteractiveTour } from './components/InteractiveTour';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { sortTasksByChunkAscending, sortMultiLineLessonName, sortCombinedFilingName } from './lib/chunkSort';
 import { supabase, PERMISSIONS, ROLE_LABELS, ROLE_COLORS, DEFAULT_ROLE_PERMISSIONS, setRuntimeRolePermissions } from './lib/supabase';
-
+import { notifyTaskCompleted, notifyTaskEditRequested, getUserTelegramChatId } from './lib/telegram';
 
 
 const yearLabels: Record<string, string> = {
@@ -6530,6 +6530,34 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
         syncState('task_priorities', n, itemKey, taskName, 'unpriority', '➖ تم إزالة الأولوية القصوى عن التجميعة لاكتمالها');
         return n;
       });
+
+      // Telegram notification for Tagme3at task completion
+      getUserTelegramChatId(profile?.id, profile?.name).then(async (myChatId) => {
+        if (myChatId) {
+          notifyTaskCompleted({
+            chatId: myChatId,
+            taskTitle: taskName || 'تجميعة جديدة',
+            taskCode: itemKey,
+            sourceSheet: 'التجميعات (Tagme3at)',
+            editorName: editorName || profile?.name || 'غير محدد',
+          }).then(res => {
+            if (res.ok) toast.success('✈️ تم إرسال إشعار إنجاز التجميعة إلى تليجرام!');
+          }).catch(console.error);
+        }
+
+        if (editorName && editorName !== profile?.name && editorName !== 'غير محدد' && editorName !== '---') {
+          const otherChatId = await getUserTelegramChatId(undefined, editorName);
+          if (otherChatId && otherChatId !== myChatId) {
+            notifyTaskCompleted({
+              chatId: otherChatId,
+              taskTitle: taskName || 'تجميعة جديدة',
+              taskCode: itemKey,
+              sourceSheet: 'التجميعات (Tagme3at)',
+              editorName: editorName,
+            }).catch(console.error);
+          }
+        }
+      }).catch(console.error);
     }
 
     if (type === 'priority' || type === 'unpriority') {
@@ -7703,6 +7731,90 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
           toast.success("تم تحديث الصف بنجاح في Supabase! 🚀");
         }
 
+        // Telegram Notifications Trigger (Done / Edits)
+        const currentEditor = updatedItem.editorCol || updatedItem.editor || '';
+        const taskTitle = updatedItem.script || updatedItem.extraName || updatedItem.code || 'مهمة بدون عنوان';
+        const taskCode = updatedItem.code || updatedItem.id || '';
+        const sourceSheet = activeGid === '1939073164' ? 'Reels (Ve)' : activeGid === '0' ? 'Cuts' : activeGid === '1436746012' ? 'Shooting' : 'Dashboard';
+        const taskDriveLink = updatedItem.driveFinal || updatedItem.driveRaw || '';
+        const taskNotes = updatedItem.notes || '';
+
+        // 1. Task Completed Notification
+        if (updatedItem.done === true && prevItem?.done !== true) {
+          // Always notify the current logged-in user who just marked it Done (so they receive instant confirmation/testing alert!)
+          getUserTelegramChatId(profile?.id, profile?.name).then(async (myChatId) => {
+            if (myChatId) {
+              const res = await notifyTaskCompleted({
+                chatId: myChatId,
+                taskTitle,
+                taskCode,
+                sourceSheet,
+                branch: updatedItem.branch,
+                editorName: currentEditor || profile?.name || 'غير محدد',
+                driveLink: taskDriveLink,
+                notes: taskNotes
+              });
+              if (res.ok) toast.success('✈️ تم إرسال إشعار إنجاز المهمة إلى تليجرام!');
+            }
+
+            // Also notify the assigned editor if they are a different user and have Telegram linked
+            if (currentEditor && currentEditor !== 'غير محدد' && currentEditor !== '---' && currentEditor !== profile?.name) {
+              const editorChatId = await getUserTelegramChatId(undefined, currentEditor);
+              if (editorChatId && editorChatId !== myChatId) {
+                notifyTaskCompleted({
+                  chatId: editorChatId,
+                  taskTitle,
+                  taskCode,
+                  sourceSheet,
+                  branch: updatedItem.branch,
+                  editorName: currentEditor,
+                  driveLink: taskDriveLink,
+                  notes: taskNotes
+                }).catch(console.error);
+              }
+            }
+          }).catch(console.error);
+        }
+        // 2. Task Has Edits / Problem Notification
+        else if (
+          (updatedItem.problem === true && prevItem?.problem !== true) ||
+          (updatedItem.canceled === true && prevItem?.canceled !== true) ||
+          (updatedItem.editCheck === true && prevItem?.editCheck !== true)
+        ) {
+          const editNotes = updatedItem.creatorNotes || updatedItem.editorNotes || updatedItem.notes || 'مطلوب مراجعة وتعديل المهمة 📝';
+          getUserTelegramChatId(undefined, currentEditor).then(async (editorChatId) => {
+            if (editorChatId) {
+              const res = await notifyTaskEditRequested({
+                chatId: editorChatId,
+                taskTitle,
+                taskCode,
+                sourceSheet,
+                branch: updatedItem.branch,
+                editorName: currentEditor || 'محرر المهمة',
+                driveLink: taskDriveLink,
+                notes: editNotes
+              });
+              if (res.ok) toast.success('✈️ تم إرسال إشعار التعديل للمحرر على تليجرام!');
+            }
+
+            // Also notify the actor if they have Telegram linked
+            if (profile?.id) {
+              const myChatId = await getUserTelegramChatId(profile.id, profile.name);
+              if (myChatId && myChatId !== editorChatId) {
+                notifyTaskEditRequested({
+                  chatId: myChatId,
+                  taskTitle,
+                  taskCode,
+                  sourceSheet,
+                  branch: updatedItem.branch,
+                  editorName: currentEditor || profile.name || 'محرر المهمة',
+                  driveLink: taskDriveLink,
+                  notes: editNotes
+                }).catch(console.error);
+              }
+            }
+          }).catch(console.error);
+        }
 
         // Automatic copy / sync to Ve table (reels_ve_26) when filmed in Shooting tab
         if (activeGid === '1436746012') {

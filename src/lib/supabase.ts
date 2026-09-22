@@ -32,6 +32,8 @@ export type UserProfile = {
   team?: 'marketing' | 'video' | '';
   default_mode?: 'operations' | 'reels' | 'designers';
   daily_priority_limit?: number;
+  phone?: string;
+  telegram_chat_id?: string;
   last_login_at?: string;
   last_logout_at?: string;
   created_at: string;

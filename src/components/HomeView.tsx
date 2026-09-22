@@ -11,18 +11,34 @@ import {
   Layers, 
   Sparkles, 
   User, 
-  FileText,
-  Briefcase,
-  Zap,
-  Edit3,
-  HandMetal,
-  Check,
-  CheckCheck,
-  Play
+  FileText, 
+  Briefcase, 
+  Zap, 
+  Edit3, 
+  HandMetal, 
+  Check, 
+  CheckCheck, 
+  Play,
+  Send,
+  Bot,
+  Settings,
+  HelpCircle,
+  ChevronDown,
+  ChevronUp
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import type { UserProfile } from '../lib/supabase';
 import { toast } from '../lib/toast';
+import {
+  getTelegramBotToken,
+  saveTelegramBotToken,
+  getTelegramBotUsername,
+  saveTelegramBotUsername,
+  getUserTelegramChatId,
+  saveUserTelegramChatId,
+  sendTestTelegramMessage,
+  notifyTaskCompleted
+} from '../lib/telegram';
 
 export interface UnifiedTask {
   id: string;
@@ -44,6 +60,7 @@ export interface UnifiedTask {
   isClaimable: boolean;
   isPriority: boolean;
   isEdit: boolean;
+  branch?: string;
   createdAt?: string;
 }
 
@@ -52,6 +69,9 @@ interface HomeViewProps {
   onNavigateToStage: (gid: string, label: string, uniqueKey?: string) => void;
   isDemo?: boolean;
 }
+
+// Strictly allowed sources for "المهام المتاحة للاستلام": تجميعات (1535230545) + Ve (1939073164) + Cuts (0)
+const CLAIMABLE_ALLOWED_GIDS = ['1535230545', '1939073164', '0'];
 
 const STAGE_CONFIGS: { gid: string; label: string; table: string }[] = [
   { gid: '497207661', label: 'Junior 4', table: 'stage_j4_26' },
@@ -109,7 +129,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
   const [togglingDoneId, setTogglingDoneId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>('');
   
-  // Category tabs exactly as requested by user
+  // Category tabs
   type CategoryFilter = 
     | 'my_pending' 
     | 'my_priority' 
@@ -158,6 +178,126 @@ export const HomeView: React.FC<HomeViewProps> = ({
     return currentUser?.name?.trim().toUpperCase() || 'ESLAM';
   }, [currentUser]);
 
+  // Telegram Integration State (Experimental)
+  // Telegram Integration State (Experimental - 1-Click Auto Link)
+  const [telegramChatId, setTelegramChatId] = useState<string>('');
+  const [botUsername, setBotUsername] = useState<string>('');
+  const [inputBotUsername, setInputBotUsername] = useState<string>('');
+  const [telegramBotToken, setTelegramBotToken] = useState<string>('');
+  const [inputBotToken, setInputBotToken] = useState<string>('');
+  const [showBotSettings, setShowBotSettings] = useState<boolean>(false);
+  const [savingBotSettings, setSavingBotSettings] = useState<boolean>(false);
+  const [testingTelegram, setTestingTelegram] = useState<boolean>(false);
+
+  // Load user's saved Chat ID and system Bot info
+  useEffect(() => {
+    if (currentUser?.id) {
+      getUserTelegramChatId(currentUser.id, currentUser.name).then(id => {
+        if (id) setTelegramChatId(id);
+      });
+    }
+    getTelegramBotToken().then(token => {
+      if (token) {
+        setTelegramBotToken(token);
+        setInputBotToken(token);
+      }
+    });
+    getTelegramBotUsername().then(uname => {
+      if (uname) {
+        setBotUsername(uname);
+        setInputBotUsername(uname);
+      }
+    });
+  }, [currentUser]);
+
+  // Real-time Auto-Detection: Polls every 3s while user is not connected yet
+  // As soon as the user taps "Start" in Telegram, the bot links it and the dashboard turns green automatically!
+  useEffect(() => {
+    if (!currentUser?.id || telegramChatId) return;
+
+    const interval = setInterval(async () => {
+      const id = await getUserTelegramChatId(currentUser.id, currentUser.name);
+      if (id && id !== telegramChatId) {
+        setTelegramChatId(id);
+        toast.success('🎉 رائع! تم ربط حسابك بتليجرام بنجاح!');
+      }
+    }, 3000);
+
+    return () => clearInterval(interval);
+  }, [currentUser, telegramChatId]);
+
+  // Save Bot Settings (Token + Username for System)
+  const handleSaveBotSettings = async () => {
+    const cleanToken = inputBotToken.trim();
+    const cleanUname = inputBotUsername.trim().replace(/^@/, '');
+
+    if (!cleanToken) {
+      toast.error('يرجى إدخال توكن البوت');
+      return;
+    }
+    setSavingBotSettings(true);
+    try {
+      await saveTelegramBotToken(cleanToken, currentUser?.name);
+      setTelegramBotToken(cleanToken);
+
+      if (cleanUname) {
+        await saveTelegramBotUsername(cleanUname, currentUser?.name);
+        setBotUsername(cleanUname);
+      }
+
+      setShowBotSettings(false);
+      toast.success('✅ تم حفظ إعدادات بوت تليجرام بنجاح!');
+    } catch {
+      toast.error('حدث خطأ أثناء حفظ إعدادات البوت');
+    } finally {
+      setSavingBotSettings(false);
+    }
+  };
+
+  // Unlink Telegram Handler
+  const handleUnlinkTelegram = async () => {
+    if (!currentUser?.id) return;
+    setTelegramChatId('');
+    localStorage.removeItem(`tg_chat_${currentUser.id}`);
+    try {
+      await supabase.from('user_profiles').update({ telegram_chat_id: null as any }).eq('id', currentUser.id);
+      await supabase.from('dashboard_data').delete().eq('key', 'telegram_chat_ids').eq('field', currentUser.id);
+      toast.info('تم إلغاء ربط حساب تليجرام');
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  // Test Message Handler
+  const handleSendTestMessage = async () => {
+    const activeToken = telegramBotToken || (await getTelegramBotToken());
+    const activeChatId = telegramChatId || inputChatId.trim();
+
+    if (!activeToken) {
+      toast.error('⚠️ يرجى ضبط توكن البوت (Bot Token) أولاً من إعدادات البوت');
+      setShowBotSettings(true);
+      return;
+    }
+    if (!activeChatId) {
+      toast.error('⚠️ يرجى إدخال وحفظ معرف تليجرام (Chat ID) أولاً');
+      return;
+    }
+
+    setTestingTelegram(true);
+    try {
+      const res = await sendTestTelegramMessage(activeToken, activeChatId, currentUser?.name);
+      if (res.ok) {
+        toast.success('🎉 وصلت رسالة التجربة إلى حسابك في تليجرام بنجاح!');
+      } else {
+        toast.error(`❌ تعذر الإرسال: ${res.error || 'تأكد من بدء المحادثة مع البوت بالضغط على Start'}`);
+      }
+    } catch (e: any) {
+      toast.error(e.message || 'خطأ في الاتصال بالبوت');
+    } finally {
+      setTestingTelegram(false);
+    }
+  };
+
   // Main task fetching function
   const fetchUserTasks = async (targetName: string) => {
     setLoading(true);
@@ -188,7 +328,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
     };
 
     try {
-      // 1. Fetch from tagme3at_26 & tagme3at_items
+      // 1. Fetch from tagme3at_26 & tagme3at_items (Allowed for claiming)
       try {
         const [t26Res, tItemsRes] = await Promise.all([
           supabase.from('tagme3at_26').select('*').order('updated_at', { ascending: false }).limit(200),
@@ -203,6 +343,15 @@ export const HomeView: React.FC<HomeViewProps> = ({
           if (seenKeys.has(key)) return;
           seenKeys.add(key);
 
+          // Discard empty/ghost rows where name is blank or 'بدون اسم' and filing_name is empty
+          const validTitle = (item.filing_name && item.filing_name !== '---' && item.filing_name.trim() !== '')
+            ? item.filing_name.trim()
+            : (item.name && item.name !== 'بدون اسم' && item.name.trim() !== '')
+            ? item.name.trim()
+            : '';
+
+          if (!validTitle) return;
+
           const assigned = item.editor || '';
           const notesText = `${item.notes_marketing || ''} ${item.notes_editors || ''}`.trim();
           const isDone = item.done === true || item.uploaded === true;
@@ -211,7 +360,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
           const isAssigned = checkIsAssigned(assigned, notesText);
           const isClaimable = checkIsClaimable(assigned, isDone);
 
-          if (!isAssigned && !isClaimable && !isPriority && !isEdit && !canSwitchUsers) return;
+          if (!isAssigned && !isClaimable && !canSwitchUsers) return;
 
           let status: UnifiedTask['status'] = 'in_progress';
           let statusLabel = 'قيد العمل ⏳';
@@ -219,15 +368,15 @@ export const HomeView: React.FC<HomeViewProps> = ({
           if (isDone) {
             status = 'completed';
             statusLabel = 'تم الإنجاز ✅';
-          } else if (isEdit || notesText.length > 0) {
+          } else if (isEdit) {
             status = 'has_edits';
-            statusLabel = 'تعديلات وملاحظات 📝';
+            statusLabel = 'مطلوب تعديل 📝';
           }
 
           collected.push({
             id: key,
             uniqueKey: key,
-            title: item.filing_name || item.name || 'تجميعة يوتيوب',
+            title: validTitle,
             code: key,
             sourceSheet: item.op_sheet ? `تجميعات (${item.op_sheet})` : 'تجميعات',
             sourceGid: '1535230545',
@@ -240,9 +389,10 @@ export const HomeView: React.FC<HomeViewProps> = ({
             done: isDone,
             link: item.youtube_link || item.thumbnail_link,
             isAssignedToMe: isAssigned,
-            isClaimable,
+            isClaimable, // Tagme3at is allowed
             isPriority: isPriority,
             isEdit: isEdit,
+            branch: (item.branch && !item.branch.includes('يوتيوب') && !item.branch.includes('تجميعة')) ? item.branch : undefined,
             createdAt: item.created_at || item.updated_at,
             details: item
           });
@@ -251,7 +401,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
         console.error('Error fetching tagme3at tasks:', e);
       }
 
-      // 2. Fetch from reels_ve_26
+      // 2. Fetch from reels_ve_26 (Allowed for claiming)
       try {
         const { data: reelsData } = await supabase
           .from('reels_ve_26')
@@ -261,15 +411,16 @@ export const HomeView: React.FC<HomeViewProps> = ({
 
         if (reelsData) {
           reelsData.forEach((item: any) => {
-            const assigned = item.editor_col || item.by || '';
+            const editorAssigned = item.editor_col && item.editor_col !== '---' && item.editor_col !== 'غير محدد' ? item.editor_col.trim() : '';
+            const byPerson = item.by && item.by !== '---' && item.by !== 'غير محدد' ? item.by.trim() : '';
             const notesText = `${item.notes || ''} ${item.editor_notes || ''}`.trim();
             const isDone = item.done === true;
             const isEdit = item.edit_check === true || item.canceled === true || notesText.includes('تعديل') || notesText.includes('edit');
-            const isAssigned = checkIsAssigned(assigned, notesText);
-            const isClaimable = checkIsClaimable(assigned, isDone);
+            const isAssigned = checkIsAssigned(editorAssigned, notesText) || checkIsAssigned(byPerson, notesText);
+            const isClaimable = checkIsClaimable(editorAssigned, isDone) && !item.canceled;
             const isPriority = item.missing_details === true;
 
-            if (!isAssigned && !isClaimable && !isPriority && !isEdit && !canSwitchUsers) return;
+            if (!isAssigned && !isClaimable && !canSwitchUsers) return;
 
             let status: UnifiedTask['status'] = 'in_progress';
             let statusLabel = 'قيد المونتاج ⏳';
@@ -282,24 +433,28 @@ export const HomeView: React.FC<HomeViewProps> = ({
               statusLabel = 'مطلوب تعديلات 📝';
             }
 
+            const rawTitle = item.code || item.extra_name || '';
+            if (!rawTitle) return;
+
             collected.push({
               id: String(item.id || item.code),
               uniqueKey: item.code || String(item.id),
-              title: item.code || item.extra_name || 'فيديو ريلز',
+              title: rawTitle,
               code: item.code,
               sourceSheet: 'Reels (Ve)',
               sourceGid: '1939073164',
               status,
               statusLabel,
-              assignedTo: assigned || 'غير محدد',
-              notes: notesText || undefined,
+              assignedTo: editorAssigned || 'غير محدد',
+              notes: [byPerson ? `المصور/السكريبت: ${byPerson}` : '', notesText].filter(Boolean).join(' | ') || undefined,
               date: item.date || item.filming_date,
               done: isDone,
               link: item.drive_final || item.drive_raw,
               isAssignedToMe: isAssigned,
-              isClaimable,
+              isClaimable, // Ve is allowed
               isPriority: isPriority,
               isEdit: isEdit,
+              branch: item.branch || undefined,
               createdAt: item.created_at || item.updated_at,
               details: item
             });
@@ -309,25 +464,26 @@ export const HomeView: React.FC<HomeViewProps> = ({
         console.error('Error fetching reels_ve tasks:', e);
       }
 
-      // 3. Fetch from reels_cuts_26
+      // 3. Fetch from reels_cuts_26 (Allowed for claiming)
       try {
         const { data: cutsData } = await supabase
           .from('reels_cuts_26')
           .select('*')
           .order('updated_at', { ascending: false })
-          .limit(100);
+          .limit(300);
 
         if (cutsData) {
           cutsData.forEach((item: any) => {
-            const assigned = item.editor || item.creator || '';
+            const editorAssigned = item.editor && item.editor !== '---' && item.editor !== 'غير محدد' ? item.editor.trim() : '';
+            const creator = item.creator && item.creator !== '---' && item.creator !== 'غير محدد' ? item.creator.trim() : '';
             const notesText = `${item.creator_notes || ''} ${item.editor_notes || ''}`.trim();
             const isDone = item.done === true;
             const isEdit = item.problem === true || item.canceled === true || notesText.includes('تعديل') || notesText.includes('edit');
-            const isAssigned = checkIsAssigned(assigned, notesText);
-            const isClaimable = checkIsClaimable(assigned, isDone);
+            const isAssigned = checkIsAssigned(editorAssigned, notesText) || checkIsAssigned(creator, notesText);
+            const isClaimable = checkIsClaimable(editorAssigned, isDone) && !item.canceled;
             const isPriority = item.problem === true || item.missing_details === true;
 
-            if (!isAssigned && !isClaimable && !isPriority && !isEdit && !canSwitchUsers) return;
+            if (!isAssigned && !isClaimable && !canSwitchUsers) return;
 
             let status: UnifiedTask['status'] = 'in_progress';
             let statusLabel = 'قطع ومونتاج ⏳';
@@ -340,24 +496,41 @@ export const HomeView: React.FC<HomeViewProps> = ({
               statusLabel = 'مشكلة / تعديل 📝';
             }
 
+            let scriptLabel = '';
+            if (item.script) {
+              const m = String(item.script).match(/=HYPERLINK\s*\(\s*["'].*?["']\s*,\s*["'](.*?)["']\s*\)/i);
+              if (m && m[1]) {
+                scriptLabel = m[1].trim();
+              } else if (!String(item.script).startsWith('http')) {
+                scriptLabel = String(item.script).trim();
+              }
+            }
+
+            const rawTitle = item.code 
+              ? (scriptLabel ? `[CUT] ${item.code} (${scriptLabel})` : `[CUT] ${item.code}`)
+              : (creator ? `[CUT] ${creator}` : '');
+
+            if (!rawTitle) return;
+
             collected.push({
               id: String(item.id || item.code),
               uniqueKey: item.code || String(item.id),
-              title: `[CUT] ${item.code || item.creator || 'مهمة قطع'}`,
+              title: rawTitle,
               code: item.code,
               sourceSheet: 'Cuts (ريلز القطع)',
               sourceGid: '0',
               status,
               statusLabel,
-              assignedTo: assigned || 'غير محدد',
-              notes: notesText || undefined,
+              assignedTo: editorAssigned || 'غير محدد',
+              notes: [creator ? `المبتكر: ${creator}` : '', notesText].filter(Boolean).join(' | ') || undefined,
               date: item.date,
               done: isDone,
               link: item.drive_final,
               isAssignedToMe: isAssigned,
-              isClaimable,
+              isClaimable, // Cuts is allowed
               isPriority: isPriority,
               isEdit: isEdit,
+              branch: item.branch || undefined,
               createdAt: item.created_at || item.updated_at,
               details: item
             });
@@ -367,7 +540,54 @@ export const HomeView: React.FC<HomeViewProps> = ({
         console.error('Error fetching reels_cuts tasks:', e);
       }
 
-      // 4. Fetch from Stage Tables
+      // 4. Fetch Shooting tasks (1436746012) for Marketing & Media Team Members (Assigned only, not claimable)
+      try {
+        const reelsDocId = '2PACX-1vTvcQ3v1JOzacx9tcsYrbriofFyHlu7rOKKlsobvpP9vjnbHGcg_Qn9TLlbkgB2YsGiX0GO1U4wlZjd';
+        const shootingCsvUrl = `https://docs.google.com/spreadsheets/d/e/${reelsDocId}/pub?gid=1436746012&output=csv&single=true`;
+        const res = await fetch(shootingCsvUrl);
+        if (res.ok) {
+          const text = await res.text();
+          const lines = text.split('\n');
+          lines.slice(1).forEach((line, idx) => {
+            if (!line.trim()) return;
+            const cols = line.split(',').map(c => c.replace(/^"|"$/g, '').trim());
+            const byPerson = cols[11] || '';
+            const notes = cols[13] || '';
+            const isFilmed = cols[9]?.toUpperCase() === 'TRUE';
+            const isAssigned = checkIsAssigned(byPerson, notes);
+            if (!isAssigned && !canSwitchUsers) return;
+
+            const code = cols[5] || `shooting-${idx}`;
+            const title = cols[4] ? `${cols[4]} (${cols[3] || 'تصوير'})` : cols[3] ? `تصوير: ${cols[3]}` : code;
+
+            collected.push({
+              id: `shooting-${code}`,
+              uniqueKey: code,
+              title,
+              code,
+              sourceSheet: 'Shooting (تصوير)',
+              sourceGid: '1436746012',
+              status: isFilmed ? 'completed' : 'in_progress',
+              statusLabel: isFilmed ? 'تم التصوير ✅' : 'قيد التصوير ⏳',
+              assignedTo: byPerson || 'غير محدد',
+              notes: notes || undefined,
+              date: cols[10] || cols[0],
+              done: isFilmed,
+              link: cols[14] || undefined,
+              isAssignedToMe: isAssigned,
+              isClaimable: false, // NOT claimable
+              isPriority: false,
+              isEdit: false,
+              createdAt: cols[0],
+              details: cols
+            });
+          });
+        }
+      } catch (e) {
+        console.warn('Could not fetch shooting sheet for user tasks:', e);
+      }
+
+      // 5. Fetch from Stage Tables (Assigned only, not claimable)
       try {
         await Promise.all(
           STAGE_CONFIGS.map(async (stg) => {
@@ -376,7 +596,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
                 .from(stg.table)
                 .select('*')
                 .order('updated_at', { ascending: false })
-                .limit(40);
+                .limit(30);
 
               if (data && data.length > 0) {
                 data.forEach((item: any) => {
@@ -384,11 +604,8 @@ export const HomeView: React.FC<HomeViewProps> = ({
                   const notesText = `${item.subject || ''} ${item.branch || ''}`.trim();
                   const isDone = item.delivered === true || item.uploaded === true;
                   const isAssigned = checkIsAssigned(assigned, notesText);
-                  const isClaimable = checkIsClaimable(assigned, isDone);
-                  const isPriority = item.is_tagme3a !== true && !isDone;
-                  const isEdit = false;
 
-                  if (!isAssigned && !isClaimable && !isPriority && !canSwitchUsers) return;
+                  if (!isAssigned && !canSwitchUsers) return;
 
                   collected.push({
                     id: String(item.unique_key || item.id),
@@ -405,9 +622,9 @@ export const HomeView: React.FC<HomeViewProps> = ({
                     done: isDone,
                     link: item.youtube_link || item.thumbnail_link,
                     isAssignedToMe: isAssigned,
-                    isClaimable,
-                    isPriority: isPriority,
-                    isEdit: isEdit,
+                    isClaimable: false, // NOT claimable
+                    isPriority: false,
+                    isEdit: false,
                     createdAt: item.created_at || item.updated_at,
                     details: item
                   });
@@ -420,13 +637,13 @@ export const HomeView: React.FC<HomeViewProps> = ({
         console.error('Error fetching stage tasks:', e);
       }
 
-      // 5. Fetch from design_tasks
+      // 6. Fetch from design_tasks (Assigned only, not claimable)
       try {
         const { data: designData } = await supabase
           .from('design_tasks')
           .select('*')
           .order('updated_at', { ascending: false })
-          .limit(60);
+          .limit(40);
 
         if (designData) {
           designData.forEach((item: any) => {
@@ -436,9 +653,8 @@ export const HomeView: React.FC<HomeViewProps> = ({
             const isPriority = item.priority === 'عاجل' || item.priority === 'high' || item.priority === true;
             const isEdit = notesText.includes('تعديل') || notesText.includes('edit');
             const isAssigned = checkIsAssigned(assigned, notesText);
-            const isClaimable = checkIsClaimable(assigned, isDone);
 
-            if (!isAssigned && !isClaimable && !isPriority && !isEdit && !canSwitchUsers) return;
+            if (!isAssigned && !canSwitchUsers) return;
 
             let status: UnifiedTask['status'] = 'in_progress';
             let statusLabel = 'قيد التصميم ⏳';
@@ -466,7 +682,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
               done: isDone,
               link: item.reference_link,
               isAssignedToMe: isAssigned,
-              isClaimable,
+              isClaimable: false, // NOT claimable (Only Tagme3at, Ve, Cuts allowed)
               isPriority: isPriority,
               isEdit: isEdit,
               createdAt: item.created_at || item.updated_at,
@@ -478,7 +694,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
         console.error('Error fetching design tasks:', e);
       }
 
-      // Sort tasks: Assigned first, then Priority, then Edits, then newest
+      // Sort tasks: Assigned to Me always on top, then Priority, then Edits, then newest
       collected.sort((a, b) => {
         if (a.isAssignedToMe && !b.isAssignedToMe) return -1;
         if (!a.isAssignedToMe && b.isAssignedToMe) return 1;
@@ -504,7 +720,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
     fetchUserTasks(selectedUserName);
   }, [selectedUserName]);
 
-  // Statistics calculation across the 4 requested states + claimable tasks
+  // Statistics: Available unassigned is strictly from Tagme3at (1535230545), Ve (1939073164), Cuts (0)
   const stats = useMemo(() => {
     const myTasks = tasks.filter(t => t.isAssignedToMe);
     const myPending = myTasks.filter(t => !t.done && !t.isEdit).length;
@@ -513,7 +729,8 @@ export const HomeView: React.FC<HomeViewProps> = ({
     const myCompleted = myTasks.filter(t => t.done).length;
     const myTotal = myTasks.length;
     
-    const availableUnassigned = tasks.filter(t => t.isClaimable).length;
+    // Only Tagme3at, Ve, and Cuts can be counted as available unassigned tasks
+    const availableUnassigned = tasks.filter(t => t.isClaimable && CLAIMABLE_ALLOWED_GIDS.includes(t.sourceGid)).length;
     const totalSystem = tasks.length;
 
     return { 
@@ -527,20 +744,22 @@ export const HomeView: React.FC<HomeViewProps> = ({
     };
   }, [tasks]);
 
-  // Adjust default category based on user tasks availability on initial load
+  // Adjust default category: ALWAYS focus on the user's own tasks first
   useEffect(() => {
-    if (!loading && tasks.length > 0) {
+    if (!loading) {
       if (stats.myPending > 0) {
         setCategoryFilter('my_pending');
       } else if (stats.myEdits > 0) {
         setCategoryFilter('my_edits');
+      } else if (stats.myPriority > 0) {
+        setCategoryFilter('my_priority');
       } else if (stats.myTotal > 0) {
         setCategoryFilter('my_all');
-      } else if (stats.availableUnassigned > 0) {
-        setCategoryFilter('available_unassigned');
+      } else {
+        setCategoryFilter('my_pending');
       }
     }
-  }, [loading]);
+  }, [loading, selectedUserName]);
 
   // Claim Task Handler
   const handleClaimTask = async (task: UnifiedTask) => {
@@ -549,7 +768,6 @@ export const HomeView: React.FC<HomeViewProps> = ({
       const now = new Date().toISOString();
       const editorNameToAssign = claimEditorName;
 
-      // Update Supabase based on source table
       if (task.sourceGid === '1535230545') {
         // Tagme3at
         await Promise.all([
@@ -557,20 +775,18 @@ export const HomeView: React.FC<HomeViewProps> = ({
           supabase.from('tagme3at_items').update({ editor: editorNameToAssign, updated_at: now }).eq('unique_key', task.uniqueKey)
         ]);
       } else if (task.sourceGid === '1939073164') {
-        // Reels Ve
+        // Ve
         await supabase.from('reels_ve_26').update({ editor_col: editorNameToAssign, updated_at: now }).eq('code', task.code || task.uniqueKey);
       } else if (task.sourceGid === '0') {
-        // Reels Cuts
+        // Cuts
         await supabase.from('reels_cuts_26').update({ editor: editorNameToAssign, updated_at: now }).eq('code', task.code || task.uniqueKey);
       } else {
-        // Stage table
         const stg = STAGE_CONFIGS.find(s => s.gid === task.sourceGid);
         if (stg) {
           await supabase.from(stg.table).update({ name: `${task.title} - ${editorNameToAssign}`, updated_at: now }).eq('unique_key', task.uniqueKey);
         }
       }
 
-      // Update local state immediately
       setTasks(prev => prev.map(t => {
         if (t.id === task.id || t.uniqueKey === task.uniqueKey) {
           return {
@@ -631,6 +847,51 @@ export const HomeView: React.FC<HomeViewProps> = ({
       }));
 
       toast.success(newDone ? `✅ رائع! تم إنجاز المهمة وإغلاقها` : `تمت إعادة المهمة كقيد العمل ⏳`);
+
+      // Telegram Notification Trigger (Experimental)
+      if (newDone) {
+        // 1. Send to the current user who marked it Done (so you receive the test alert immediately!)
+        getUserTelegramChatId(currentUser?.id, currentUser?.name).then(async (myChatId) => {
+          const finalChatId = telegramChatId || myChatId;
+          const taskDriveLink = task.link || task.details?.drive_final || task.details?.drive_raw || task.details?.youtube_link || task.details?.thumbnail_link || '';
+          const editorDisplayName = task.assignedTo && task.assignedTo !== 'غير محدد' ? task.assignedTo : (currentUser?.name || 'أنا');
+
+          if (finalChatId) {
+            const res = await notifyTaskCompleted({
+              chatId: finalChatId,
+              taskTitle: task.title,
+              taskCode: task.code,
+              driveLink: taskDriveLink,
+              editorName: editorDisplayName,
+              sourceSheet: task.sourceSheet,
+              branch: task.branch,
+              notes: task.notes,
+              completedAt: now
+            });
+            if (res.ok) {
+              toast.success('✈️ تم إرسال إشعار المهمة إلى تليجرام بنجاح!');
+            }
+          }
+
+          // 2. Also notify the assigned editor if they are a different user and have a linked Telegram
+          if (task.assignedTo && task.assignedTo !== currentUser?.name && task.assignedTo !== 'غير محدد') {
+            const otherChatId = await getUserTelegramChatId(undefined, task.assignedTo);
+            if (otherChatId && otherChatId !== finalChatId) {
+              notifyTaskCompleted({
+                chatId: otherChatId,
+                taskTitle: task.title,
+                taskCode: task.code,
+                driveLink: taskDriveLink,
+                editorName: editorDisplayName,
+                sourceSheet: task.sourceSheet,
+                branch: task.branch,
+                notes: task.notes,
+                completedAt: now
+              }).catch(console.error);
+            }
+          }
+        }).catch(err => console.warn('[Telegram] Notification trigger error:', err));
+      }
     } catch (err) {
       console.error('Error toggling done:', err);
       toast.error('حدث خطأ أثناء تحديث حالة المهمة');
@@ -642,11 +903,11 @@ export const HomeView: React.FC<HomeViewProps> = ({
   // Unique source sheets for filter dropdown
   const sourceSheets = useMemo(() => {
     const set = new Set<string>();
-    tasks.forEach(t => set.add(t.sourceSheet));
+    tasks.filter(t => t.isAssignedToMe || (t.isClaimable && CLAIMABLE_ALLOWED_GIDS.includes(t.sourceGid))).forEach(t => set.add(t.sourceSheet));
     return Array.from(set);
   }, [tasks]);
 
-  // Filtered tasks logic
+  // Filtered tasks logic: Strictly shows user tasks for personal tabs, or open tasks from (تجميعات - Ve - Cuts) for available tab
   const filteredTasks = useMemo(() => {
     return tasks.filter(task => {
       // 1. Search Query
@@ -659,7 +920,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
         if (!matchesTitle && !matchesNotes && !matchesCode && !matchesAssigned) return false;
       }
 
-      // 2. Category Filter (Exact User Structure)
+      // 2. Category Filter
       if (categoryFilter === 'my_pending') {
         if (!task.isAssignedToMe || task.done || task.isEdit) return false;
       } else if (categoryFilter === 'my_priority') {
@@ -671,9 +932,9 @@ export const HomeView: React.FC<HomeViewProps> = ({
       } else if (categoryFilter === 'my_all') {
         if (!task.isAssignedToMe) return false;
       } else if (categoryFilter === 'available_unassigned') {
-        if (!task.isClaimable) return false;
+        // STRICT: Only Tagme3at (1535230545), Ve (1939073164), and Cuts (0)
+        if (!task.isClaimable || !CLAIMABLE_ALLOWED_GIDS.includes(task.sourceGid)) return false;
       }
-      // 'all_system' includes everything
 
       // 3. Sheet filter
       if (sheetFilter !== 'all' && task.sourceSheet !== sheetFilter) {
@@ -690,6 +951,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
   };
 
   const isViewingSelf = !selectedUserName || selectedUserName === currentUser?.name || selectedUserName === currentUser?.email;
+  const activeDisplayName = isViewingSelf ? (currentUser?.name || 'يا بطل') : selectedUserName;
 
   return (
     <div className="space-y-6 animate-fadeIn" dir="rtl">
@@ -703,11 +965,11 @@ export const HomeView: React.FC<HomeViewProps> = ({
               </div>
               <div>
                 <h1 className="text-2xl md:text-3xl font-black text-white font-tajawal flex items-center gap-2">
-                  <span>مرحباً بك، {isViewingSelf ? (currentUser?.name || 'يا بطل') : selectedUserName}</span>
+                  <span>مرحباً بك، {activeDisplayName}</span>
                   <span className="text-xl">👋</span>
                 </h1>
                 <p className="text-xs md:text-sm text-purple-200/80 font-medium mt-0.5 flex items-center gap-2 flex-wrap">
-                  <span>لوحة المهام الشخصية — متابعة دقيقة لتاسكاتك المسندة والتعديلات والمهام المتاحة للاستلام</span>
+                  <span>لوحة المهام الشخصية — متابعة مهامك المسندة والتعديلات واستلام المهام الجديدة من (تجميعات - Ve - Cuts)</span>
                   <span className="px-2 py-0.5 rounded-md bg-purple-500/20 border border-purple-400/30 text-[10px] font-mono text-purple-200">
                     محرر: {claimEditorName}
                   </span>
@@ -752,7 +1014,187 @@ export const HomeView: React.FC<HomeViewProps> = ({
         </div>
       </div>
 
-      {/* KPI Metric Cards strictly following user's 4 criteria + available tasks */}
+      {/* Telegram Notifications Banner (1-Click Auto Link) */}
+      <motion.div
+        initial={{ opacity: 0, y: -8 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="rounded-3xl bg-gradient-to-r from-sky-950/40 via-blue-950/30 to-indigo-950/40 border border-sky-500/25 p-5 md:p-6 shadow-xl backdrop-blur-xl relative overflow-hidden"
+      >
+        <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+          <div className="flex items-center gap-3.5">
+            <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-sky-500 to-blue-600 flex items-center justify-center text-white shadow-lg shadow-sky-500/25 flex-shrink-0">
+              <Send size={22} className="translate-x-[-1px] translate-y-[1px]" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h2 className="text-base md:text-lg font-black text-white font-tajawal flex items-center gap-2">
+                  <span>إشعارات تليجرام التلقائية</span>
+                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-sky-500/20 border border-sky-400/30 text-sky-300">
+                    ميزة تجريبية 🧪
+                  </span>
+                </h2>
+              </div>
+              <p className="text-xs text-sky-200/80 font-medium mt-0.5">
+                {telegramChatId ? (
+                  <span className="flex items-center gap-1.5 text-emerald-400 font-semibold">
+                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse inline-block" />
+                    حسابك متصل وجاهز! ستصلك رسالة بالكود ولينك الدرايف فور إنجاز أي مهمة تلقائياً.
+                  </span>
+                ) : (
+                  <span>اضغط الزر أدناه لبدء المحادثة مع البوت — وسيتم ربط حسابك أوتوماتيكياً بدون الحاجة لكتابة أي كود أو رقم!</span>
+                )}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 flex-wrap w-full md:w-auto justify-end">
+            {canSwitchUsers && (
+              <button
+                onClick={() => setShowBotSettings(prev => !prev)}
+                className="px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-bold text-muted hover:text-white transition-all flex items-center gap-1.5 cursor-pointer"
+                title="إعدادات توكن واسم البوت"
+              >
+                <Settings size={14} className="text-purple-400" />
+                <span>إعدادات البوت ⚙️</span>
+                {showBotSettings ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* Action Controls */}
+        <div className="mt-4 pt-4 border-t border-sky-500/15">
+          {!telegramChatId ? (
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 bg-sky-500/10 border border-sky-400/20 rounded-2xl p-4">
+              <div className="space-y-1">
+                <div className="text-xs font-bold text-sky-200 flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-amber-400 animate-ping inline-block" />
+                  <span>لم يتم تفعيل البوت بعد على هذا الحساب</span>
+                </div>
+                <p className="text-[11px] text-slate-300">
+                  اضغط على الزر واضغط <b className="text-white">Start</b> في تليجرام لمرة واحدة فقط — البوت سيتعرف عليك ويربطك أوتوماتيكياً!
+                </p>
+              </div>
+
+              <a
+                href={botUsername ? `https://t.me/${botUsername}?start=${currentUser?.id || currentUser?.username || 'user'}` : '#'}
+                target="_blank"
+                rel="noreferrer"
+                onClick={(e) => {
+                  if (!botUsername) {
+                    e.preventDefault();
+                    toast.error('يرجى كتابة اسم مستخدم البوت (Bot Username) من زر إعدادات البوت أولاً ⚙️');
+                    setShowBotSettings(true);
+                  }
+                }}
+                className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-sky-500 via-blue-600 to-indigo-600 hover:from-sky-400 hover:to-blue-500 text-white font-bold text-xs shadow-lg shadow-sky-500/30 flex items-center gap-2 transition-all transform hover:scale-[1.02] cursor-pointer whitespace-nowrap"
+              >
+                <Send size={15} />
+                <span>ربط حسابي بتليجرام بنقرة واحدة ✈️</span>
+              </a>
+            </div>
+          ) : (
+            <div className="flex flex-1 items-center justify-between gap-3 flex-wrap bg-emerald-950/30 border border-emerald-500/20 rounded-2xl p-3.5">
+              <div className="flex items-center gap-2.5">
+                <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 inline-block" />
+                <span className="text-xs font-bold text-emerald-300">متصل بالتليجرام:</span>
+                <span className="px-2 py-0.5 rounded-md bg-emerald-500/20 border border-emerald-400/30 text-[11px] font-mono text-emerald-200">
+                  Chat ID: {telegramChatId}
+                </span>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleSendTestMessage}
+                  disabled={testingTelegram}
+                  className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-sky-600/80 to-blue-600/80 hover:from-sky-500 hover:to-blue-500 disabled:opacity-50 text-white text-xs font-bold transition-all shadow-sm flex items-center gap-1.5 cursor-pointer"
+                >
+                  {testingTelegram ? (
+                    <RefreshCw size={13} className="animate-spin" />
+                  ) : (
+                    <Send size={13} />
+                  )}
+                  <span>إرسال رسالة تجريبية 🧪</span>
+                </button>
+
+                <button
+                  onClick={handleUnlinkTelegram}
+                  className="px-3 py-1.5 rounded-xl bg-white/5 hover:bg-rose-500/20 hover:text-rose-300 border border-white/10 text-xs font-bold text-muted transition-all cursor-pointer"
+                  title="إلغاء الربط"
+                >
+                  إلغاء الربط 🔄
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Collapsible Bot Settings for Admins */}
+        {showBotSettings && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            className="mt-4 p-4 rounded-2xl bg-purple-950/40 border border-purple-500/30 text-xs space-y-3"
+          >
+            <div className="flex items-center justify-between">
+              <div className="font-bold text-purple-200 flex items-center gap-1.5">
+                <Bot size={16} className="text-purple-400" />
+                <span>إعدادات بوت تليجرام للنظام (System Bot Setup)</span>
+              </div>
+              <span className="text-[10px] text-purple-300/80 font-mono">
+                {telegramBotToken && botUsername ? '✅ البوت مضبوط' : '⚠️ يلزم إدخال التوكن واليوزر نيم'}
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-[11px] font-bold text-purple-200/80 mb-1">
+                  1. اسم مستخدم البوت (Bot Username بدون @):
+                </label>
+                <input
+                  type="text"
+                  value={inputBotUsername}
+                  onChange={(e) => setInputBotUsername(e.target.value)}
+                  placeholder="مثال: ElkhettaTasksBot"
+                  className="w-full px-3.5 py-2 rounded-xl bg-black/50 border border-purple-500/30 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-purple-400 transition-all font-mono"
+                  dir="ltr"
+                />
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-purple-200/80 mb-1">
+                  2. توكن البوت (HTTP API Token من @BotFather):
+                </label>
+                <input
+                  type="text"
+                  value={inputBotToken}
+                  onChange={(e) => setInputBotToken(e.target.value)}
+                  placeholder="مثال: 7123456789:AAHkL..."
+                  className="w-full px-3.5 py-2 rounded-xl bg-black/50 border border-purple-500/30 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-purple-400 transition-all font-mono"
+                  dir="ltr"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between pt-1">
+              <p className="text-[11px] text-purple-200/60">
+                بمجرد حفظ اليوزر نيم والتوكن، سيعمل رابط "ربط حسابي بتليجرام بنقرة واحدة" لكل المستخدمين تلقائياً.
+              </p>
+              <button
+                onClick={handleSaveBotSettings}
+                disabled={savingBotSettings || !inputBotToken.trim()}
+                className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 disabled:opacity-50 text-white text-xs font-bold transition-all shadow-md shadow-purple-600/30 flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
+              >
+                {savingBotSettings ? <RefreshCw size={14} className="animate-spin" /> : <Check size={14} />}
+                <span>حفظ إعدادات البوت 💾</span>
+              </button>
+            </div>
+          </motion.div>
+        )}
+      </motion.div>
+
+      {/* KPI Metric Cards: User's 5 Core States + Claimable Tasks Card (تجميعات - Ve - Cuts) */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
         {/* 1. لسه متعملتش (Pending) */}
         <motion.div
@@ -771,7 +1213,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
             </div>
           </div>
           <div className="text-2xl font-black text-blue-400 font-mono">{stats.myPending}</div>
-          <p className="text-[10px] text-blue-200/70 font-medium mt-1">مهام قيد العمل والتنفيذ</p>
+          <p className="text-[10px] text-blue-200/70 font-medium mt-1">مهام قيد العمل باسمك</p>
         </motion.div>
 
         {/* 2. خلصت (Completed) */}
@@ -811,7 +1253,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
             </div>
           </div>
           <div className="text-2xl font-black text-amber-400 font-mono">{stats.myPriority}</div>
-          <p className="text-[10px] text-amber-200/70 font-medium mt-1">مهام عاجلة تتطلب سرعة</p>
+          <p className="text-[10px] text-amber-200/70 font-medium mt-1">مهام عاجلة مسندة إليك</p>
         </motion.div>
 
         {/* 4. اطلب ايديت (Edits / Revisions) */}
@@ -834,7 +1276,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
           <p className="text-[10px] text-rose-200/70 font-medium mt-1">تعديلات وملاحظات مطلوبة</p>
         </motion.div>
 
-        {/* 5. مهام متاحة للاستلام (ممكن تاخدها) */}
+        {/* 5. مهام متاحة للاستلام (تجميعات • Ve • Cuts فقط) */}
         <motion.div
           whileHover={{ y: -3 }}
           onClick={() => setCategoryFilter('available_unassigned')}
@@ -853,7 +1295,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
             </div>
           </div>
           <div className="text-2xl font-black text-cyan-400 font-mono">{stats.availableUnassigned}</div>
-          <p className="text-[10px] text-cyan-200/70 font-medium mt-1 font-bold text-cyan-300">ممكن تاخدها الآن ✋</p>
+          <p className="text-[10px] text-cyan-200/70 font-medium mt-1 font-bold text-cyan-300">تجميعات • Ve • Cuts ✋</p>
         </motion.div>
 
         {/* 6. كل مهامي المسندة */}
@@ -873,7 +1315,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
             </div>
           </div>
           <div className="text-2xl font-black text-purple-300 font-mono">{stats.myTotal}</div>
-          <p className="text-[10px] text-purple-200/70 font-medium mt-1">كافة مهامك المسندة</p>
+          <p className="text-[10px] text-purple-200/70 font-medium mt-1">كافة المهام المرتبطة باسمك</p>
         </motion.div>
       </div>
 
@@ -908,26 +1350,26 @@ export const HomeView: React.FC<HomeViewProps> = ({
             </div>
           )}
 
-          {/* User Requested Tabs */}
+          {/* Tabs Navigation */}
           <div className="flex items-center gap-1 bg-[#090d16] p-1 rounded-2xl border border-white/10 flex-wrap">
             {[
               { id: 'my_pending', label: '⏳ لسه متعملتش', count: stats.myPending },
               { id: 'my_priority', label: '⚡ أولوية', count: stats.myPriority },
               { id: 'my_edits', label: '📝 اطلب إيديت', count: stats.myEdits },
               { id: 'my_completed', label: '✅ خلصت', count: stats.myCompleted },
-              { id: 'available_unassigned', label: '📥 متاحة للاستلام (ممكن تاخدها)', count: stats.availableUnassigned, highlight: true },
+              { id: 'available_unassigned', label: '📥 متاحة للاستلام (تجميعات • Ve • Cuts)', count: stats.availableUnassigned, highlight: true },
               { id: 'my_all', label: '👤 كل مهامي', count: stats.myTotal },
-              { id: 'all_system', label: '🌐 مهام النظام', count: stats.totalSystem },
+              ...(canSwitchUsers ? [{ id: 'all_system', label: '🌐 مهام النظام', count: stats.totalSystem }] : []),
             ].map((st) => (
               <button
                 key={st.id}
                 onClick={() => setCategoryFilter(st.id as CategoryFilter)}
                 className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
                   categoryFilter === st.id
-                    ? st.highlight
+                    ? (st as any).highlight
                       ? 'bg-gradient-to-r from-cyan-600 to-blue-600 text-white shadow-lg shadow-cyan-500/20 ring-1 ring-cyan-400'
                       : 'bg-purple-600 text-white shadow-md'
-                    : st.highlight
+                    : (st as any).highlight
                     ? 'text-cyan-300 hover:text-white hover:bg-cyan-500/10'
                     : 'text-muted hover:text-white'
                 }`}
@@ -950,13 +1392,13 @@ export const HomeView: React.FC<HomeViewProps> = ({
           <div className="flex items-center gap-2">
             <FileText size={18} className="text-purple-400" />
             <h3 className="text-sm font-black text-white">
-              {categoryFilter === 'my_pending' && 'مهامي المسندة: لسه متعملتش (قيد العمل)'}
-              {categoryFilter === 'my_priority' && 'مهامي المسندة: ذات أولوية قصوى ⚡'}
-              {categoryFilter === 'my_edits' && 'مهامي المسندة: مطلوب تعديل أو إيديت 📝'}
-              {categoryFilter === 'my_completed' && 'مهامي المسندة: تم الإنجاز والتسليم ✅'}
-              {categoryFilter === 'my_all' && 'كافة المهام المسندة باسمك 👤'}
-              {categoryFilter === 'available_unassigned' && 'مهام مفتوحة ومتاحة للاستلام (ممكن تاخدها) 📥'}
-              {categoryFilter === 'all_system' && 'كافة مهام النظام (شامل)'}
+              {categoryFilter === 'my_pending' && `مهام ${activeDisplayName}: لسه متعملتش (قيد العمل)`}
+              {categoryFilter === 'my_priority' && `مهام ${activeDisplayName}: ذات أولوية ⚡`}
+              {categoryFilter === 'my_edits' && `مهام ${activeDisplayName}: مطلوب تعديل أو إيديت 📝`}
+              {categoryFilter === 'my_completed' && `مهام ${activeDisplayName}: تم الإنجاز والتسليم ✅`}
+              {categoryFilter === 'my_all' && `كافة المهام المرتبطة باسم (${activeDisplayName}) 👤`}
+              {categoryFilter === 'available_unassigned' && 'المهام المتاحة للاستلام (تجميعات، Ve، Cuts) 📥'}
+              {categoryFilter === 'all_system' && 'كافة مهام النظام (شامل للمدراء)'}
             </h3>
             <span className="px-2.5 py-0.5 rounded-full bg-white/5 border border-white/10 text-[11px] font-mono text-purple-300 font-bold">
               {filteredTasks.length} مهمة
@@ -966,7 +1408,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
           {categoryFilter === 'available_unassigned' && (
             <div className="text-xs text-cyan-300/80 font-bold hidden sm:flex items-center gap-1.5">
               <Sparkles size={14} className="text-cyan-400" />
-              <span>اضغط "استلام المهمة" لإسنادها إليك فوراً</span>
+              <span>مهام مفتوحة من (تجميعات - Ve - Cuts) — اضغط "استلام المهمة ✋" لإسنادها إليك فوراً</span>
             </div>
           )}
         </div>
@@ -974,34 +1416,38 @@ export const HomeView: React.FC<HomeViewProps> = ({
         {loading ? (
           <div className="py-24 text-center">
             <div className="w-12 h-12 border-4 border-purple-500/20 border-t-purple-500 rounded-full animate-spin mx-auto shadow-lg shadow-purple-500/20" />
-            <p className="mt-4 text-xs font-bold text-purple-300 animate-pulse">جاري جلب مهامك والتعديلات والمهام المتاحة...</p>
+            <p className="mt-4 text-xs font-bold text-purple-300 animate-pulse">جاري جلب المهام المرتبطة باسمك والمهام المتاحة...</p>
           </div>
         ) : filteredTasks.length === 0 ? (
           <div className="py-24 text-center text-muted flex flex-col items-center justify-center gap-3">
             <CheckCircle2 size={42} className="opacity-20 text-emerald-400" />
             <div className="text-base font-bold text-white">
-              {categoryFilter === 'my_pending' && 'رائع! لا توجد أي مهام قيد العمل مسندة إليك حالياً 🎉'}
+              {categoryFilter === 'my_pending' && `لا توجد مهام قيد العمل مسندة باسم (${activeDisplayName}) حالياً 🎉`}
               {categoryFilter === 'my_edits' && 'ممتاز! لا توجد تعديلات أو ملاحظات مفتوحة على مهامك 🎉'}
-              {categoryFilter === 'my_priority' && 'لا توجد مهام أولوية قصوى مسندة إليك حالياً.'}
-              {categoryFilter === 'my_completed' && 'لم يتم تسليم أي مهام حتى الآن.'}
-              {categoryFilter === 'available_unassigned' && 'لا توجد مهام متاحة للاستلام حالياً. كل المهام مسندة للمحررين.'}
-              {categoryFilter === 'my_all' && 'لم يتم العثور على أي مهام مسندة بهذا الاسم في النظام.'}
+              {categoryFilter === 'my_priority' && 'لا توجد مهام أولوية مسندة إليك حالياً.'}
+              {categoryFilter === 'my_completed' && 'لم يتم تسجيل مهام منجزة بعد.'}
+              {categoryFilter === 'available_unassigned' && 'لا توجد مهام متاحة للاستلام حالياً في شيتات (تجميعات - Ve - Cuts).'}
+              {categoryFilter === 'my_all' && `لا توجد مهام مسجلة باسم (${activeDisplayName}) في النظام.`}
               {categoryFilter === 'all_system' && 'لا توجد مهام مسجلة في النظام.'}
             </div>
             <p className="text-xs text-muted/70 max-w-md leading-relaxed">
               {categoryFilter === 'my_pending' && (
                 <span>
-                  ليس لديك مهام قيد التنفيذ حالياً. تفقد قسم{' '}
-                  <button 
-                    onClick={() => setCategoryFilter('available_unassigned')}
-                    className="text-cyan-400 underline font-bold hover:text-cyan-300 cursor-pointer"
-                  >
-                    المهام المتاحة للاستلام
-                  </button>
-                  {' '}لاستلام مهام جديدة والبدء في مونتاجها فوراً!
+                  كل أعمالك منجزة أو لم يتم إسناد مهام جديدة بعد.
+                  {stats.availableUnassigned > 0 && (
+                    <span>
+                      {' '}يمكنك تصفح كارت{' '}
+                      <button 
+                        onClick={() => setCategoryFilter('available_unassigned')}
+                        className="text-cyan-400 underline font-bold hover:text-cyan-300 cursor-pointer"
+                      >
+                        المهام المتاحة للاستلام ({stats.availableUnassigned})
+                      </button>
+                      {' '}لاستلام مهام والبدء فيها!
+                    </span>
+                  )}
                 </span>
               )}
-              {categoryFilter === 'my_edits' && 'كل أعمالك المنجزة متوافقة وخالية من طلبات التعديل.'}
             </p>
             {categoryFilter === 'my_pending' && stats.availableUnassigned > 0 && (
               <button
@@ -1009,7 +1455,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
                 className="mt-3 px-5 py-2.5 rounded-2xl bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-500 hover:to-blue-500 text-white font-bold text-xs shadow-lg shadow-cyan-500/20 flex items-center gap-2 cursor-pointer transition-all"
               >
                 <HandMetal size={15} />
-                <span>استعراض المهام المتاحة للاستلام ({stats.availableUnassigned})</span>
+                <span>استعراض المهام المتاحة (تجميعات • Ve • Cuts) ({stats.availableUnassigned})</span>
               </button>
             )}
           </div>
@@ -1039,6 +1485,35 @@ export const HomeView: React.FC<HomeViewProps> = ({
                       <Layers size={12} />
                       <span>{task.sourceSheet}</span>
                     </span>
+
+                    {/* Branch badge if present */}
+                    {task.branch && (
+                      (() => {
+                        const bUpper = String(task.branch).toUpperCase();
+                        const isAlex = bUpper.includes('ALEX') || bUpper.includes('اسكندر') || bUpper.includes('إسكندر');
+                        const isCairo = bUpper.includes('CAIRO') || bUpper.includes('قاهر');
+                        const isDesouk = bUpper.includes('DESOUK') || bUpper.includes('دسوق') || bUpper.includes('دسور');
+                        return (
+                          <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border flex items-center gap-1.5 transition-all shadow-sm ${
+                            isAlex
+                              ? 'bg-blue-500/15 border-blue-500/40 text-blue-300 shadow-[0_0_8px_rgba(59,130,246,0.15)]'
+                              : isCairo
+                              ? 'bg-rose-500/15 border-rose-500/40 text-rose-300 shadow-[0_0_8px_rgba(244,63,94,0.15)]'
+                              : isDesouk
+                              ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300 shadow-[0_0_8px_rgba(16,185,129,0.15)]'
+                              : 'bg-white/5 border-white/10 text-white/70'
+                          }`}>
+                            <span className={`w-2 h-2 rounded-full shrink-0 ${
+                              isAlex ? 'bg-blue-400 shadow-[0_0_6px_#3b82f6]' :
+                              isCairo ? 'bg-rose-500 shadow-[0_0_6px_#f43f5e]' :
+                              isDesouk ? 'bg-emerald-500 shadow-[0_0_6px_#10b981]' :
+                              'bg-white/40'
+                            }`} />
+                            <span>{task.branch}</span>
+                          </span>
+                        );
+                      })()
+                    )}
 
                     {/* Assigned user badge */}
                     {task.isAssignedToMe ? (
@@ -1111,7 +1586,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
                     <div className="p-3 rounded-2xl bg-amber-500/[0.06] border border-amber-500/30 text-amber-200 text-xs flex items-start gap-2 max-w-2xl leading-relaxed">
                       <AlertCircle size={15} className="text-amber-400 shrink-0 mt-0.5" />
                       <div className="flex-1">
-                        <span className="font-bold text-amber-300">ملاحظات وتفاصيل التعديل: </span>
+                        <span className="font-bold text-amber-300">ملاحظات وتفاصيل: </span>
                         <span>{task.notes}</span>
                       </div>
                     </div>
@@ -1120,7 +1595,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
 
                 {/* Left: Action Buttons */}
                 <div className="flex items-center gap-2 shrink-0 self-end md:self-center flex-wrap">
-                  {/* Claim Button (For available tasks) */}
+                  {/* Claim Button (For available tasks in Tagme3at, Ve, Cuts) */}
                   {task.isClaimable && (
                     <button
                       onClick={() => handleClaimTask(task)}

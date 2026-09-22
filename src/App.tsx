@@ -58,6 +58,7 @@ import {
 } from 'lucide-react';
 import { useGoogleSheets } from './hooks/useGoogleSheets';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { PresenceProvider, usePresence } from './contexts/PresenceContext';
 import { LoginPage } from './pages/LoginPage';
 import { UserManagement, ChangePasswordModal } from './components/UserManagement';
 import { ReelsAnalytics } from './components/ReelsAnalytics';
@@ -968,8 +969,22 @@ const STAGE_WITH_BADGE_MAP: Record<string, boolean> = {
   '1535230545': true, // تجميعات
 };
 
+// Stages where completing all tasks turns the red badge into a rewarding glowing green done circle (CUTS, Ve, تجميعات)
+const GREEN_DONE_BADGE_GIDS = new Set<string>(['0', '1939073164', '1535230545']);
+
 // ─── Sidebar Item ─────────────────────────────────────────────────────────────
-const SidebarItem = ({ icon: Icon, label, active, onClick, colorHex, colorful, isPinned, onTogglePin, badgeCount }: any) => {
+const SidebarItem = ({ 
+  icon: Icon, 
+  label, 
+  active, 
+  onClick, 
+  colorHex, 
+  colorful, 
+  isPinned, 
+  onTogglePin, 
+  badgeCount, 
+  showDoneGreenBadge 
+}: any) => {
   const cHex = colorHex || '#3b82f6';
 
   const bgStyle = colorful
@@ -988,6 +1003,9 @@ const SidebarItem = ({ icon: Icon, label, active, onClick, colorHex, colorful, i
         ? { backgroundColor: `#3b82f6`, color: '#ffffff', boxShadow: `0 0 20px rgba(59,130,246,0.5)` }
         : { backgroundColor: `rgba(255,255,255,0.05)`, color: '#94a3b8' });
 
+  const hasPending = typeof badgeCount === 'number' && badgeCount > 0;
+  const isAllDone = showDoneGreenBadge && typeof badgeCount === 'number' && badgeCount === 0;
+
   return (
     <button
       onClick={onClick}
@@ -1002,11 +1020,49 @@ const SidebarItem = ({ icon: Icon, label, active, onClick, colorHex, colorful, i
         <Icon size={20} />
       </div>
       <span className="font-bold text-sm tracking-tight truncate text-left text-white flex-1">{label}</span>
-      {typeof badgeCount === 'number' && badgeCount > 0 && (
-        <span className="px-2 py-0.5 min-w-[22px] h-[22px] rounded-full bg-rose-500 text-white text-[11px] font-mono font-black flex items-center justify-center shadow-md shadow-rose-500/40 shrink-0">
-          {badgeCount}
-        </span>
-      )}
+      
+      {/* Dynamic Task Badge: Red count for pending, Glowing Green Check for 100% Done */}
+      <AnimatePresence mode="wait">
+        {hasPending ? (
+          <motion.span 
+            key="badge-pending"
+            initial={{ scale: 0.6, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            exit={{ scale: 0.5, opacity: 0 }}
+            transition={{ type: 'spring', stiffness: 500, damping: 25 }}
+            className="px-2 py-0.5 min-w-[22px] h-[22px] rounded-full bg-rose-500 text-white text-[11px] font-mono font-black flex items-center justify-center shadow-[0_0_12px_rgba(244,63,94,0.7)] border border-rose-400/40 shrink-0"
+            title={`${badgeCount} مهام متبقية`}
+          >
+            {badgeCount}
+          </motion.span>
+        ) : isAllDone ? (
+          <motion.span
+            key="badge-done"
+            initial={{ scale: 0, rotate: -25, opacity: 0 }}
+            animate={{ 
+              scale: [0, 1.35, 0.9, 1.08, 1], 
+              rotate: [-25, 8, -4, 0],
+              opacity: 1
+            }}
+            exit={{ scale: 0.5, opacity: 0 }}
+            transition={{ duration: 0.55, ease: 'easeOut' }}
+            className="relative flex items-center justify-center shrink-0"
+            title="اكتملت جميع المهام (All Done)! 🎉"
+          >
+            {/* Celebratory Reward Ripple Ring */}
+            <motion.span
+              initial={{ scale: 0.8, opacity: 0.8 }}
+              animate={{ scale: [1, 1.85, 2.3], opacity: [0.8, 0.35, 0] }}
+              transition={{ duration: 0.8, ease: 'easeOut' }}
+              className="absolute inset-0 rounded-full bg-emerald-400 pointer-events-none"
+            />
+            <span className="w-[22px] h-[22px] rounded-full bg-gradient-to-tr from-emerald-600 to-emerald-400 text-white flex items-center justify-center shadow-[0_0_14px_rgba(16,185,129,0.85)] border border-emerald-300/50 relative z-10">
+              <Check size={12} strokeWidth={3.5} className="text-white drop-shadow-sm" />
+            </span>
+          </motion.span>
+        ) : null}
+      </AnimatePresence>
+
       {onTogglePin && (
         <span
           onClick={(e) => {
@@ -1081,6 +1137,7 @@ const SidebarGroup = ({ title, iconEmoji, colorHex, stagesList, activeGid, onSel
                 colorful={colorful}
                 active={activeGid === stage.gid}
                 badgeCount={STAGE_WITH_BADGE_MAP[stage.gid] ? stageUncompletedCounts?.[stage.gid] : undefined}
+                showDoneGreenBadge={GREEN_DONE_BADGE_GIDS.has(stage.gid)}
                 isPinned={pinnedTabs.includes(stage.gid)}
                 onTogglePin={() => togglePinTab(stage.gid)}
                 onClick={() => onSelectStage(stage.gid, stage.label)}
@@ -5098,6 +5155,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
   const [showChangePasswordModal, setShowChangePasswordModal] = useState(false);
   const [showTour, setShowTour] = useState(false);
   const unreadCount = myNotifs.filter(n => !n.read).length;
+  const { onlineCount } = usePresence();
 
   const pushNotification = (notif: PersonalNotif) => {
     setMyNotifs(prev => {
@@ -5535,6 +5593,31 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
       supabase.removeChannel(channel);
     };
   }, [isDemo, fetchStageUncompletedCounts]);
+
+  // Reward celebration toast when all tasks in CUTS, Ve, or تجميعات are completed (transitions >0 down to 0)
+  const prevStageCountsRef = useRef<Record<string, number>>({});
+  useEffect(() => {
+    const prev = prevStageCountsRef.current;
+    const current = stageUncompletedCounts;
+
+    const monitoredStages: Record<string, string> = {
+      '0': 'CUTS',
+      '1939073164': 'Ve',
+      '1535230545': 'تجميعات'
+    };
+
+    Object.entries(monitoredStages).forEach(([gid, stageName]) => {
+      const prevCount = prev[gid];
+      const curCount = current[gid];
+      if (typeof prevCount === 'number' && prevCount > 0 && typeof curCount === 'number' && curCount === 0) {
+        toast.success(`🎉 عاش يا وحش! اكتملت كل مهام (${stageName}) بنجاح وتحولت للدائرة الخضراء! 🚀✨`, {
+          id: `done-reward-${gid}`
+        });
+      }
+    });
+
+    prevStageCountsRef.current = { ...current };
+  }, [stageUncompletedCounts, toast]);
 
   // Background periodic auto-refresh for OP 26/27 tasks every 15 minutes
   useEffect(() => {
@@ -9902,6 +9985,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
               colorful={colorfulTabs}
               active={activeGid === stage.gid}
               badgeCount={STAGE_WITH_BADGE_MAP[stage.gid] ? stageUncompletedCounts[stage.gid] : undefined}
+              showDoneGreenBadge={GREEN_DONE_BADGE_GIDS.has(stage.gid)}
               isPinned={pinnedTabs.includes(stage.gid)}
               onTogglePin={() => togglePinTab(stage.gid)}
               onClick={() => {
@@ -9999,6 +10083,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
                 colorful={colorfulTabs}
                 active={activeGid === stage.gid}
                 badgeCount={STAGE_WITH_BADGE_MAP[stage.gid] ? stageUncompletedCounts[stage.gid] : undefined}
+                showDoneGreenBadge={GREEN_DONE_BADGE_GIDS.has(stage.gid)}
                 isPinned={pinnedTabs.includes(stage.gid)}
                 onTogglePin={() => togglePinTab(stage.gid)}
                 onClick={() => {
@@ -10118,6 +10203,20 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
           </motion.div>
 
           <div className="flex items-center gap-3">
+            {/* Online Users Live Indicator */}
+            <button
+              onClick={() => {
+                const usersTab = tabs.find(t => t.id === 'users');
+                if (usersTab) handleTabSelect(usersTab);
+              }}
+              className="px-3.5 py-2.5 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 font-bold text-xs transition-all flex items-center gap-2 shadow-sm cursor-pointer active:scale-95 group"
+              title={`${onlineCount} مستخدم فاتح الموقع في هذه اللحظة — اضغط لعرض إدارة المستخدمين`}
+            >
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_8px_rgba(52,211,153,0.8)]" />
+              <span className="font-mono font-black text-white">{onlineCount}</span>
+              <span className="hidden md:inline text-[11px] text-emerald-300/80 group-hover:text-emerald-200">متصل الآن 🟢</span>
+            </button>
+
             {/* Telegram Bot Button */}
             <button
               onClick={() => setShowTelegramModal(true)}
@@ -10866,11 +10965,21 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
                   >
                     <span className="w-2 h-2 rounded-full" style={{ backgroundColor: stage.colorHex || '#8b5cf6' }} />
                     <span>{stage.label}</span>
-                    {typeof pinBadge === 'number' && pinBadge > 0 && (
-                      <span className="px-1.5 py-0.2 min-w-[18px] h-4 rounded-full bg-rose-500 text-white text-[10px] font-mono font-black flex items-center justify-center shadow-sm">
+                    {typeof pinBadge === 'number' && pinBadge > 0 ? (
+                      <span className="px-1.5 py-0.2 min-w-[18px] h-4 rounded-full bg-rose-500 text-white text-[10px] font-mono font-black flex items-center justify-center shadow-[0_0_8px_rgba(244,63,94,0.6)]">
                         {pinBadge}
                       </span>
-                    )}
+                    ) : GREEN_DONE_BADGE_GIDS.has(gid) && typeof pinBadge === 'number' && pinBadge === 0 ? (
+                      <motion.span
+                        key={`pin-done-${gid}`}
+                        initial={{ scale: 0 }}
+                        animate={{ scale: [0, 1.25, 1] }}
+                        className="w-4 h-4 rounded-full bg-gradient-to-tr from-emerald-600 to-emerald-400 text-white flex items-center justify-center shadow-[0_0_8px_rgba(16,185,129,0.7)] border border-emerald-300/40 shrink-0"
+                        title="كل المهام مكتملة! 🎉"
+                      >
+                        <Check size={10} strokeWidth={3.5} className="text-white" />
+                      </motion.span>
+                    ) : null}
                     <span
                       onClick={(e) => {
                         e.stopPropagation();
@@ -12439,22 +12548,24 @@ function RootApp({ isDemoMode = false }: { isDemoMode?: boolean }) {
 
   return (
     <AuthProvider>
-      <div className="w-full h-full relative">
-        <AppWithAuth isDemoMode={isDemoMode} />
-        <AnimatePresence>
-          {showSplash && (
-            <motion.div
-              key="splash-overlay"
-              initial={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.5, ease: "easeInOut" }}
-              className="fixed inset-0 z-[9999] pointer-events-none"
-            >
-              <SplashScreen onComplete={() => setShowSplash(false)} />
-            </motion.div>
-          )}
-        </AnimatePresence>
-      </div>
+      <PresenceProvider>
+        <div className="w-full h-full relative">
+          <AppWithAuth isDemoMode={isDemoMode} />
+          <AnimatePresence>
+            {showSplash && (
+              <motion.div
+                key="splash-overlay"
+                initial={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.5, ease: "easeInOut" }}
+                className="fixed inset-0 z-[9999] pointer-events-none"
+              >
+                <SplashScreen onComplete={() => setShowSplash(false)} />
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+      </PresenceProvider>
     </AuthProvider>
   );
 }

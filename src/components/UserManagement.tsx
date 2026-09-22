@@ -10,6 +10,7 @@ import {
 } from 'lucide-react';
 import { TelegramQrModal } from './TelegramQrModal';
 import { getAllTelegramActivations, type TelegramActivationRecord } from '../lib/telegram';
+import { usePresence } from '../contexts/PresenceContext';
 
 const MARKETING_TABS = [
   'OP 25/26', 'OP 26/27', 'تجميعات', 'إحصائيات التجميعات 📊',
@@ -756,6 +757,8 @@ export const UserManagement = () => {
   const [telegramModalTab, setTelegramModalTab] = useState<'my_qr' | 'team_tracker'>('my_qr');
   const [telegramActivations, setTelegramActivations] = useState<Record<string, TelegramActivationRecord>>({});
   const [filterTelegram, setFilterTelegram] = useState<'all' | 'connected' | 'not_connected'>('all');
+  const { isUserOnline, onlineCount } = usePresence();
+  const [filterOnline, setFilterOnline] = useState<'all' | 'online' | 'offline'>('all');
   const [showInvite, setShowInvite] = useState(false);
   const [filterRole, setFilterRole] = useState<Role | 'all'>('all');
   const [rolePermissions, setRolePermissions] = useState(DEFAULT_ROLE_PERMISSIONS);
@@ -1114,7 +1117,12 @@ const DEFAULT_SYSTEM_USERS: UserProfile[] = [
     if (filterTelegram === 'connected') matchTg = isConnected;
     if (filterTelegram === 'not_connected') matchTg = !isConnected;
 
-    return matchSearch && matchRole && matchTg;
+    const isOnline = isUserOnline(u.id, u.name);
+    let matchOnline = true;
+    if (filterOnline === 'online') matchOnline = isOnline;
+    if (filterOnline === 'offline') matchOnline = !isOnline;
+
+    return matchSearch && matchRole && matchTg && matchOnline;
   });
 
   const roleCounts = users.reduce((acc, u) => {
@@ -1140,13 +1148,43 @@ const DEFAULT_SYSTEM_USERS: UserProfile[] = [
       </div>
 
       {/* Stats Row */}
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
         {(['admin', 'manager', 'supervisor', 'junior'] as Role[]).map(r => (
           <div key={r} className={`p-4 rounded-2xl border ${ROLE_COLORS[r].replace('text-', 'border-').split(' ')[2]} bg-white/[0.02]`}>
             <p className={`text-2xl font-black ${ROLE_COLORS[r].split(' ')[1]}`}>{roleCounts[r] || 0}</p>
             <p className="text-xs text-white/40 font-bold mt-0.5 arabic-text">{ROLE_LABELS[r]}</p>
           </div>
         ))}
+
+        {/* Live Online Users Metric Card */}
+        <div 
+          onClick={() => setFilterOnline(prev => prev === 'online' ? 'all' : 'online')}
+          className={`p-4 rounded-2xl border transition-all cursor-pointer group shadow-sm flex flex-col justify-between ${
+            filterOnline === 'online'
+              ? 'bg-emerald-950/50 border-emerald-400 ring-2 ring-emerald-500/30 shadow-[0_0_20px_rgba(16,185,129,0.2)]'
+              : 'border-emerald-500/30 bg-emerald-950/20 hover:bg-emerald-950/30 hover:shadow-emerald-500/10'
+          }`}
+          title="عرض المستخدمين المتواجدين على الموقع في هذه اللحظة"
+        >
+          <div className="flex items-center justify-between">
+            <p className="text-2xl font-black text-emerald-400">
+              {onlineCount} <span className="text-xs text-white/40 font-bold">/ {users.length}</span>
+            </p>
+            <div className="w-8 h-8 rounded-xl bg-emerald-500/20 text-emerald-300 flex items-center justify-center text-sm group-hover:scale-110 transition-transform">
+              🟢
+            </div>
+          </div>
+          <div className="flex items-center justify-between mt-1">
+            <p className="text-xs text-emerald-300/90 font-bold arabic-text flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_8px_#10b981]" />
+              <span>أونلاين الآن</span>
+            </p>
+            <span className="text-[10px] text-emerald-400 font-bold">
+              فاتح الموقع
+            </span>
+          </div>
+        </div>
+
         {/* Telegram Tracker Metric Card */}
         <div 
           onClick={() => {
@@ -1201,6 +1239,36 @@ const DEFAULT_SYSTEM_USERS: UserProfile[] = [
               {r === 'all' ? 'الكل' : ROLE_LABELS[r as Role]}
             </button>
           ))}
+        </div>
+
+        {/* Online Status Filter Pills */}
+        <div className="flex items-center gap-1 bg-white/[0.03] p-1 rounded-xl border border-white/10 shrink-0">
+          <button
+            onClick={() => setFilterOnline('all')}
+            className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+              filterOnline === 'all' ? 'bg-white/20 text-white shadow' : 'text-white/50 hover:text-white'
+            }`}
+          >
+            التواجد: الكل
+          </button>
+          <button
+            onClick={() => setFilterOnline('online')}
+            className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+              filterOnline === 'online' ? 'bg-emerald-600 text-white shadow' : 'text-emerald-400/80 hover:text-emerald-300'
+            }`}
+          >
+            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_6px_#10b981]" />
+            <span>أونلاين الآن ({onlineCount})</span>
+          </button>
+          <button
+            onClick={() => setFilterOnline('offline')}
+            className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1 ${
+              filterOnline === 'offline' ? 'bg-zinc-700 text-white shadow' : 'text-white/40 hover:text-white/70'
+            }`}
+          >
+            <span className="w-1.5 h-1.5 rounded-full bg-white/30" />
+            <span>أوفلاين ({Math.max(0, users.length - onlineCount)})</span>
+          </button>
         </div>
 
         {/* Telegram Filter Pills */}
@@ -1353,6 +1421,7 @@ const DEFAULT_SYSTEM_USERS: UserProfile[] = [
               const tgRecord = telegramActivations[u.id] || (uClean ? telegramActivations[uClean] : undefined);
               const isTgConnected = !!(tgRecord?.chatId || u.telegram_chat_id);
               const tgChatId = tgRecord?.chatId || u.telegram_chat_id || '';
+              const isOnline = isUserOnline(u.id, u.name);
 
               return (
               <motion.div
@@ -1360,12 +1429,31 @@ const DEFAULT_SYSTEM_USERS: UserProfile[] = [
                 layout
                 className={`grid grid-cols-[auto_1fr_auto_auto_auto_auto_auto] gap-4 px-6 py-4 items-center hover:bg-white/[0.02] transition-all ${!u.is_active ? 'opacity-50' : ''}`}
               >
-                <AvatarInitials name={u.name} role={u.role} team={userTeams[u.id]} />
+                <div className="relative">
+                  <AvatarInitials name={u.name} role={u.role} team={userTeams[u.id]} />
+                  {isOnline && (
+                    <span 
+                      className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-emerald-500 border-2 border-[#0c1017] shadow-[0_0_8px_#10b981] animate-pulse z-10"
+                      title="فاتح الموقع في هذه اللحظة 🟢"
+                    />
+                  )}
+                </div>
                 <div>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <p className="text-sm font-bold text-white arabic-text">{u.name}</p>
                     {u.id === profile?.id && (
                       <span className="text-[9px] font-black px-1.5 py-0.5 rounded-full bg-purple-500/20 text-purple-400 border border-purple-500/30">أنت</span>
+                    )}
+                    {isOnline ? (
+                      <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-500/20 border border-emerald-400/40 text-emerald-300 shadow-[0_0_10px_rgba(16,185,129,0.25)]">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_6px_#10b981]" />
+                        <span>أونلاين الآن 🟢</span>
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1 text-[10px] font-medium text-white/30">
+                        <span className="w-1.5 h-1.5 rounded-full bg-white/20" />
+                        <span>أوفلاين ⚪</span>
+                      </span>
                     )}
                   </div>
                   {u.allowed_tabs && u.allowed_tabs.length > 0 && (

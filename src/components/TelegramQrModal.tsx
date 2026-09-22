@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { toast } from '../lib/toast';
 import { supabase } from '../lib/supabase';
+import { usePresence } from '../contexts/PresenceContext';
 import { 
   getUserTelegramChatId, 
   sendTestTelegramMessage, 
@@ -74,8 +75,9 @@ export const TelegramQrModal: React.FC<TelegramQrModalProps> = ({
 
   // Tracker Tab state
   const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState<'all' | 'connected' | 'not_connected'>('all');
+  const [statusFilter, setStatusFilter] = useState<'all' | 'connected' | 'not_connected' | 'online'>('all');
   const [copiedUserId, setCopiedUserId] = useState<string | null>(null);
+  const { isUserOnline, onlineCount } = usePresence();
 
   // Sync selected user and initial tab when opened
   useEffect(() => {
@@ -243,11 +245,13 @@ export const TelegramQrModal: React.FC<TelegramQrModalProps> = ({
       if (!matchSearch) return false;
 
       const { isConnected } = getUserStatus(u);
+      const isOnline = isUserOnline(u.id, u.name);
       if (statusFilter === 'connected') return isConnected;
       if (statusFilter === 'not_connected') return !isConnected;
+      if (statusFilter === 'online') return isOnline;
       return true;
     });
-  }, [teamUsers, searchQuery, statusFilter, activations]);
+  }, [teamUsers, searchQuery, statusFilter, activations, isUserOnline]);
 
   if (!isOpen) return null;
 
@@ -559,26 +563,56 @@ export const TelegramQrModal: React.FC<TelegramQrModalProps> = ({
               className="space-y-4"
             >
               {/* Summary Stats Cards */}
-              <div className="grid grid-cols-3 gap-2.5">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
                 <div className="p-3 rounded-2xl bg-white/[0.03] border border-white/10 flex flex-col items-center text-center">
                   <span className="text-[11px] font-bold text-white/50">إجمالي الفريق</span>
                   <span className="text-xl font-black text-white mt-0.5">{stats.total}</span>
                   <span className="text-[10px] text-white/40">عضو مسجل</span>
                 </div>
 
-                <div className="p-3 rounded-2xl bg-emerald-950/30 border border-emerald-500/30 flex flex-col items-center text-center">
+                <div 
+                  onClick={() => setStatusFilter(prev => prev === 'online' ? 'all' : 'online')}
+                  className={`p-3 rounded-2xl border flex flex-col items-center text-center cursor-pointer transition-all ${
+                    statusFilter === 'online'
+                      ? 'bg-emerald-950/60 border-emerald-400 ring-2 ring-emerald-500/40'
+                      : 'bg-emerald-950/30 border-emerald-500/30 hover:border-emerald-400/50'
+                  }`}
+                >
                   <div className="flex items-center gap-1">
-                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                    <span className="text-[11px] font-bold text-emerald-300">مفعل ومتصل</span>
+                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shadow-[0_0_8px_#10b981]" />
+                    <span className="text-[11px] font-bold text-emerald-300">أونلاين الآن</span>
                   </div>
-                  <span className="text-xl font-black text-emerald-400 mt-0.5">{stats.connected}</span>
-                  <span className="text-[10px] font-bold text-emerald-300/70">{stats.percentage}% من الفريق</span>
+                  <span className="text-xl font-black text-emerald-400 mt-0.5">{onlineCount}</span>
+                  <span className="text-[10px] font-bold text-emerald-300/80">فاتح الموقع الآن</span>
                 </div>
 
-                <div className="p-3 rounded-2xl bg-amber-950/20 border border-amber-500/30 flex flex-col items-center text-center">
+                <div 
+                  onClick={() => setStatusFilter(prev => prev === 'connected' ? 'all' : 'connected')}
+                  className={`p-3 rounded-2xl border flex flex-col items-center text-center cursor-pointer transition-all ${
+                    statusFilter === 'connected'
+                      ? 'bg-sky-950/60 border-sky-400 ring-2 ring-sky-500/40'
+                      : 'bg-sky-950/20 border-sky-500/30 hover:border-sky-400/50'
+                  }`}
+                >
+                  <div className="flex items-center gap-1">
+                    <Send size={11} className="text-sky-400" />
+                    <span className="text-[11px] font-bold text-sky-300">مفعل بالتليجرام</span>
+                  </div>
+                  <span className="text-xl font-black text-sky-400 mt-0.5">{stats.connected}</span>
+                  <span className="text-[10px] font-bold text-sky-300/70">{stats.percentage}% من الفريق</span>
+                </div>
+
+                <div 
+                  onClick={() => setStatusFilter(prev => prev === 'not_connected' ? 'all' : 'not_connected')}
+                  className={`p-3 rounded-2xl border flex flex-col items-center text-center cursor-pointer transition-all ${
+                    statusFilter === 'not_connected'
+                      ? 'bg-amber-950/50 border-amber-400 ring-2 ring-amber-500/40'
+                      : 'bg-amber-950/20 border-amber-500/30 hover:border-amber-400/50'
+                  }`}
+                >
                   <div className="flex items-center gap-1">
                     <span className="w-2 h-2 rounded-full bg-amber-400" />
-                    <span className="text-[11px] font-bold text-amber-300">غير مفعل بعد</span>
+                    <span className="text-[11px] font-bold text-amber-300">غير مفعل</span>
                   </div>
                   <span className="text-xl font-black text-amber-400 mt-0.5">{stats.notConnected}</span>
                   <span className="text-[10px] font-bold text-amber-300/70">{100 - stats.percentage}% متبقي</span>
@@ -587,7 +621,7 @@ export const TelegramQrModal: React.FC<TelegramQrModalProps> = ({
 
               {/* Search & Filter Bar */}
               <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
-                <div className="relative flex-1 min-w-[200px]">
+                <div className="relative flex-1 min-w-[180px]">
                   <Search size={14} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-white/30" />
                   <input
                     type="text"
@@ -607,19 +641,28 @@ export const TelegramQrModal: React.FC<TelegramQrModalProps> = ({
                 </div>
 
                 {/* Filter Pills */}
-                <div className="flex items-center gap-1 bg-white/[0.03] p-1 rounded-xl border border-white/10 shrink-0">
+                <div className="flex items-center gap-1 bg-white/[0.03] p-1 rounded-xl border border-white/10 shrink-0 flex-wrap sm:flex-nowrap">
                   <button
                     onClick={() => setStatusFilter('all')}
-                    className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
                       statusFilter === 'all' ? 'bg-sky-500 text-white shadow' : 'text-white/50 hover:text-white'
                     }`}
                   >
                     الكل ({stats.total})
                   </button>
                   <button
+                    onClick={() => setStatusFilter('online')}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1 ${
+                      statusFilter === 'online' ? 'bg-emerald-600 text-white shadow' : 'text-emerald-400/80 hover:text-emerald-300'
+                    }`}
+                  >
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                    <span>أونلاين ({onlineCount})</span>
+                  </button>
+                  <button
                     onClick={() => setStatusFilter('connected')}
-                    className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1 ${
-                      statusFilter === 'connected' ? 'bg-emerald-600 text-white shadow' : 'text-emerald-400/70 hover:text-emerald-300'
+                    className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1 ${
+                      statusFilter === 'connected' ? 'bg-sky-600 text-white shadow' : 'text-sky-400/80 hover:text-sky-300'
                     }`}
                   >
                     <CheckCircle2 size={12} />
@@ -627,7 +670,7 @@ export const TelegramQrModal: React.FC<TelegramQrModalProps> = ({
                   </button>
                   <button
                     onClick={() => setStatusFilter('not_connected')}
-                    className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1 ${
+                    className={`px-2.5 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1 ${
                       statusFilter === 'not_connected' ? 'bg-amber-600 text-white shadow' : 'text-amber-400/70 hover:text-amber-300'
                     }`}
                   >
@@ -661,6 +704,7 @@ export const TelegramQrModal: React.FC<TelegramQrModalProps> = ({
                     const { isConnected, chatId: uChatId } = getUserStatus(u);
                     const isSelected = selectedUser?.id === u.id;
                     const isCurrent = initialUser?.id === u.id;
+                    const isOnline = isUserOnline(u.id, u.name);
                     const roleLabel = u.role || 'junior';
 
                     return (
@@ -674,20 +718,34 @@ export const TelegramQrModal: React.FC<TelegramQrModalProps> = ({
                       >
                         {/* Member Identity */}
                         <div className="flex items-center gap-3 min-w-[200px]">
-                          <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-xs font-black text-white shrink-0 shadow-md ${
-                            isConnected
-                              ? 'bg-gradient-to-br from-emerald-500 to-teal-700'
-                              : 'bg-gradient-to-br from-slate-700 to-slate-900'
-                          }`}>
-                            {u.name?.slice(0, 2).toUpperCase()}
+                          <div className="relative shrink-0">
+                            <div className={`w-9 h-9 rounded-xl flex items-center justify-center text-xs font-black text-white shadow-md ${
+                              isConnected
+                                ? 'bg-gradient-to-br from-emerald-500 to-teal-700'
+                                : 'bg-gradient-to-br from-slate-700 to-slate-900'
+                            }`}>
+                              {u.name?.slice(0, 2).toUpperCase()}
+                            </div>
+                            {isOnline && (
+                              <span 
+                                className="absolute -bottom-0.5 -right-0.5 w-3 h-3 rounded-full bg-emerald-500 border-2 border-[#0a0e14] shadow-[0_0_8px_#10b981] animate-pulse z-10" 
+                                title="فاتح الموقع في هذه اللحظة 🟢"
+                              />
+                            )}
                           </div>
 
                           <div>
-                            <div className="flex items-center gap-2">
+                            <div className="flex items-center gap-2 flex-wrap">
                               <span className="text-xs font-bold text-white">{u.name}</span>
                               {isCurrent && (
                                 <span className="px-1.5 py-0.2 rounded text-[9px] font-black bg-purple-500/20 text-purple-300 border border-purple-500/30">
                                   أنت
+                                </span>
+                              )}
+                              {isOnline && (
+                                <span className="px-1.5 py-0.2 rounded text-[9px] font-black bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 flex items-center gap-1">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                                  فاتح الموقع
                                 </span>
                               )}
                               <span className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-white/5 text-white/50 border border-white/10">

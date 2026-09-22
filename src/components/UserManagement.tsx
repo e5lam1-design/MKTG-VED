@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { supabase, ROLE_LABELS, ROLE_COLORS, DEFAULT_ROLE_PERMISSIONS, setRuntimeRolePermissions } from '../lib/supabase';
 import type { UserProfile, Role } from '../lib/supabase';
@@ -9,6 +9,7 @@ import {
   Key, Eye, EyeOff, Lock, Send, QrCode
 } from 'lucide-react';
 import { TelegramQrModal } from './TelegramQrModal';
+import { getAllTelegramActivations, type TelegramActivationRecord } from '../lib/telegram';
 
 const MARKETING_TABS = [
   'OP 25/26', 'OP 26/27', 'تجميعات', 'إحصائيات التجميعات 📊',
@@ -752,6 +753,9 @@ export const UserManagement = () => {
   const [passwordUser, setPasswordUser] = useState<UserProfile | null>(null);
   const [passwordToast, setPasswordToast] = useState<string | null>(null);
   const [telegramModalUser, setTelegramModalUser] = useState<UserProfile | null>(null);
+  const [telegramModalTab, setTelegramModalTab] = useState<'my_qr' | 'team_tracker'>('my_qr');
+  const [telegramActivations, setTelegramActivations] = useState<Record<string, TelegramActivationRecord>>({});
+  const [filterTelegram, setFilterTelegram] = useState<'all' | 'connected' | 'not_connected'>('all');
   const [showInvite, setShowInvite] = useState(false);
   const [filterRole, setFilterRole] = useState<Role | 'all'>('all');
   const [rolePermissions, setRolePermissions] = useState(DEFAULT_ROLE_PERMISSIONS);
@@ -759,6 +763,15 @@ export const UserManagement = () => {
   const [tagmePriorityLimit, setTagmePriorityLimit] = useState<number>(10);
   const [priorityLimitToast, setPriorityLimitToast] = useState<string | null>(null);
   const [activityLogs, setActivityLogs] = useState<Array<{ id?: string; user_id?: string; name?: string; email?: string; event_type: string; timestamp: string }>>([]);
+
+  const fetchTelegramActivations = async () => {
+    try {
+      const map = await getAllTelegramActivations();
+      setTelegramActivations(map);
+    } catch (e) {
+      console.warn('[UserManagement] fetchTelegramActivations error:', e);
+    }
+  };
 
   const fetchPriorityLimits = async () => {
     try {
@@ -963,7 +976,28 @@ const DEFAULT_SYSTEM_USERS: UserProfile[] = [
     setTimeout(() => setPermissionsToast(null), 3000);
   };
 
-  useEffect(() => { fetchUsers(); fetchPermissions(); fetchUserTeams(); fetchActivityLogs(); fetchPriorityLimits(); }, [session?.access_token]);
+  useEffect(() => { 
+    fetchUsers(); 
+    fetchPermissions(); 
+    fetchUserTeams(); 
+    fetchActivityLogs(); 
+    fetchPriorityLimits(); 
+    fetchTelegramActivations();
+
+    const channel = supabase
+      .channel('um-tg-activations-live')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'page_announcements' }, () => {
+        fetchTelegramActivations();
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'dashboard_data' }, () => {
+        fetchTelegramActivations();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [session?.access_token]);
 
   const handleUpdateUser = async (id: string, updates: Partial<UserProfile>, team: 'marketing' | 'video' | '') => {
     // 1. Optimistic UI update
@@ -1060,10 +1094,27 @@ const DEFAULT_SYSTEM_USERS: UserProfile[] = [
     return null;
   };
 
+  const telegramConnectedCount = useMemo(() => {
+    return users.filter(u => {
+      const uClean = u.name?.trim().toLowerCase();
+      const rec = telegramActivations[u.id] || (uClean ? telegramActivations[uClean] : undefined);
+      return !!(rec?.chatId || u.telegram_chat_id);
+    }).length;
+  }, [users, telegramActivations]);
+
   const filtered = users.filter(u => {
     const matchSearch = u.name.toLowerCase().includes(search.toLowerCase()) || u.email.toLowerCase().includes(search.toLowerCase());
     const matchRole = filterRole === 'all' || u.role === filterRole;
-    return matchSearch && matchRole;
+
+    const uClean = u.name?.trim().toLowerCase();
+    const rec = telegramActivations[u.id] || (uClean ? telegramActivations[uClean] : undefined);
+    const isConnected = !!(rec?.chatId || u.telegram_chat_id);
+
+    let matchTg = true;
+    if (filterTelegram === 'connected') matchTg = isConnected;
+    if (filterTelegram === 'not_connected') matchTg = !isConnected;
+
+    return matchSearch && matchRole && matchTg;
   });
 
   const roleCounts = users.reduce((acc, u) => {
@@ -1089,18 +1140,45 @@ const DEFAULT_SYSTEM_USERS: UserProfile[] = [
       </div>
 
       {/* Stats Row */}
-      <div className="grid grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
         {(['admin', 'manager', 'supervisor', 'junior'] as Role[]).map(r => (
           <div key={r} className={`p-4 rounded-2xl border ${ROLE_COLORS[r].replace('text-', 'border-').split(' ')[2]} bg-white/[0.02]`}>
             <p className={`text-2xl font-black ${ROLE_COLORS[r].split(' ')[1]}`}>{roleCounts[r] || 0}</p>
             <p className="text-xs text-white/40 font-bold mt-0.5 arabic-text">{ROLE_LABELS[r]}</p>
           </div>
         ))}
+        {/* Telegram Tracker Metric Card */}
+        <div 
+          onClick={() => {
+            setTelegramModalUser(profile as any);
+            setTelegramModalTab('team_tracker');
+          }}
+          className="p-4 rounded-2xl border border-sky-500/30 bg-sky-950/20 hover:bg-sky-950/30 transition-all cursor-pointer group shadow-sm hover:shadow-sky-500/10 flex flex-col justify-between"
+          title="عرض وتتبع تفعيل بوت التليجرام لجميع أعضاء الفريق"
+        >
+          <div className="flex items-center justify-between">
+            <p className="text-2xl font-black text-sky-400">
+              {telegramConnectedCount} <span className="text-xs text-white/40 font-bold">/ {users.length}</span>
+            </p>
+            <div className="w-8 h-8 rounded-xl bg-sky-500/20 text-sky-300 flex items-center justify-center text-sm group-hover:scale-110 transition-transform">
+              ✈️
+            </div>
+          </div>
+          <div className="flex items-center justify-between mt-1">
+            <p className="text-xs text-sky-300/90 font-bold arabic-text flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+              <span>بوت تليجرام</span>
+            </p>
+            <span className="text-[10px] text-emerald-400 font-bold">
+              {users.length > 0 ? Math.round((telegramConnectedCount / users.length) * 100) : 0}% مفعل
+            </span>
+          </div>
+        </div>
       </div>
 
       {/* Filters */}
-      <div className="flex gap-3">
-        <div className="relative flex-1">
+      <div className="flex gap-3 flex-wrap">
+        <div className="relative flex-1 min-w-[220px]">
           <Search size={14} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-white/30" />
           <input
             value={search}
@@ -1109,7 +1187,7 @@ const DEFAULT_SYSTEM_USERS: UserProfile[] = [
             className="w-full pr-10 pl-4 py-2.5 rounded-xl bg-white/[0.05] border border-white/[0.1] text-white text-sm font-medium focus:outline-none focus:border-purple-500/50 transition-all placeholder-white/25"
           />
         </div>
-        <div className="flex gap-1.5">
+        <div className="flex gap-1.5 flex-wrap">
           {(['all', 'admin', 'manager', 'supervisor', 'junior'] as const).map(r => (
             <button
               key={r}
@@ -1123,6 +1201,36 @@ const DEFAULT_SYSTEM_USERS: UserProfile[] = [
               {r === 'all' ? 'الكل' : ROLE_LABELS[r as Role]}
             </button>
           ))}
+        </div>
+
+        {/* Telegram Filter Pills */}
+        <div className="flex items-center gap-1 bg-white/[0.03] p-1 rounded-xl border border-white/10 shrink-0">
+          <button
+            onClick={() => setFilterTelegram('all')}
+            className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+              filterTelegram === 'all' ? 'bg-sky-500 text-white shadow' : 'text-white/50 hover:text-white'
+            }`}
+          >
+            تليجرام: الكل
+          </button>
+          <button
+            onClick={() => setFilterTelegram('connected')}
+            className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1 ${
+              filterTelegram === 'connected' ? 'bg-emerald-600 text-white shadow' : 'text-emerald-400/70 hover:text-emerald-300'
+            }`}
+          >
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+            <span>متصل ({telegramConnectedCount})</span>
+          </button>
+          <button
+            onClick={() => setFilterTelegram('not_connected')}
+            className={`px-2.5 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1 ${
+              filterTelegram === 'not_connected' ? 'bg-amber-600 text-white shadow' : 'text-amber-400/70 hover:text-amber-300'
+            }`}
+          >
+            <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+            <span>غير مفعل ({Math.max(0, users.length - telegramConnectedCount)})</span>
+          </button>
         </div>
       </div>
 
@@ -1231,19 +1339,26 @@ const DEFAULT_SYSTEM_USERS: UserProfile[] = [
         ) : (
           <div className="divide-y divide-white/[0.04]">
             {/* Table Header */}
-            <div className="grid grid-cols-[auto_1fr_auto_auto_auto_auto] gap-4 px-6 py-3 text-[10px] font-black text-white/30 uppercase tracking-widest">
+            <div className="grid grid-cols-[auto_1fr_auto_auto_auto_auto_auto] gap-4 px-6 py-3 text-[10px] font-black text-white/30 uppercase tracking-widest">
               <div />
               <div>المستخدم</div>
               <div className="text-center">فريق العمل</div>
               <div className="text-center">الصلاحية</div>
+              <div className="text-center">بوت تليجرام ✈️</div>
               <div className="text-center">الحالة</div>
               <div className="text-center">تعديل</div>
             </div>
-            {filtered.map(u => (
+            {filtered.map(u => {
+              const uClean = u.name?.trim().toLowerCase();
+              const tgRecord = telegramActivations[u.id] || (uClean ? telegramActivations[uClean] : undefined);
+              const isTgConnected = !!(tgRecord?.chatId || u.telegram_chat_id);
+              const tgChatId = tgRecord?.chatId || u.telegram_chat_id || '';
+
+              return (
               <motion.div
                 key={u.id}
                 layout
-                className={`grid grid-cols-[auto_1fr_auto_auto_auto_auto] gap-4 px-6 py-4 items-center hover:bg-white/[0.02] transition-all ${!u.is_active ? 'opacity-50' : ''}`}
+                className={`grid grid-cols-[auto_1fr_auto_auto_auto_auto_auto] gap-4 px-6 py-4 items-center hover:bg-white/[0.02] transition-all ${!u.is_active ? 'opacity-50' : ''}`}
               >
                 <AvatarInitials name={u.name} role={u.role} team={userTeams[u.id]} />
                 <div>
@@ -1277,6 +1392,36 @@ const DEFAULT_SYSTEM_USERS: UserProfile[] = [
                     {ROLE_LABELS[u.role]}
                   </span>
                 </div>
+
+                {/* Telegram Status Column */}
+                <div className="flex justify-center">
+                  {isTgConnected ? (
+                    <button
+                      onClick={() => {
+                        setTelegramModalUser(u);
+                        setTelegramModalTab('my_qr');
+                      }}
+                      className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/25 transition-all text-xs font-bold cursor-pointer"
+                      title={`متصل بتليجرام (Chat ID: ${tgChatId}) - اضغط لعرض التفاصيل`}
+                    >
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                      <span>متصل 🟢</span>
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => {
+                        setTelegramModalUser(u);
+                        setTelegramModalTab('my_qr');
+                      }}
+                      className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-white/[0.04] border border-white/10 text-white/40 hover:text-white/80 hover:bg-white/10 transition-all text-xs font-bold cursor-pointer"
+                      title="لم يتم التفعيل بعد — اضغط لعرض كود QR ورابط التفعيل"
+                    >
+                      <span className="w-1.5 h-1.5 rounded-full bg-amber-400" />
+                      <span>غير مفعل ⚪</span>
+                    </button>
+                  )}
+                </div>
+
                 <div className="flex justify-center">
                   <button
                     onClick={() => handleToggleActive(u)}
@@ -1297,7 +1442,10 @@ const DEFAULT_SYSTEM_USERS: UserProfile[] = [
                 </div>
                 <div className="flex items-center justify-center gap-2">
                   <button
-                    onClick={() => setTelegramModalUser(u)}
+                    onClick={() => {
+                      setTelegramModalUser(u);
+                      setTelegramModalTab('my_qr');
+                    }}
                     className="w-8 h-8 rounded-xl bg-sky-500/10 hover:bg-sky-500/25 hover:text-sky-300 text-sky-400 flex items-center justify-center transition-all cursor-pointer shadow-sm hover:scale-105 active:scale-95"
                     title="رابط تليجرام المخصص وكود QR لهذا المستخدم ✈️"
                   >
@@ -1320,7 +1468,8 @@ const DEFAULT_SYSTEM_USERS: UserProfile[] = [
                   </button>
                 </div>
               </motion.div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
@@ -1464,6 +1613,8 @@ const DEFAULT_SYSTEM_USERS: UserProfile[] = [
         isOpen={!!telegramModalUser}
         onClose={() => setTelegramModalUser(null)}
         user={telegramModalUser}
+        initialTab={telegramModalTab}
+        allUsers={users}
       />
     </div>
   );

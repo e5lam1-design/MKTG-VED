@@ -17,7 +17,57 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   // 1. GET: Health check or Chat ID query
   if (req.method === 'GET') {
-    const { userId, userName } = req.query;
+    const { userId, userName, action } = req.query;
+
+    if (action === 'activations' || action === 'all') {
+      const activations: Record<string, { chatId: string; updatedAt?: string }> = {};
+
+      if (supabaseAdminClient) {
+        try {
+          const { data: dd } = await supabaseAdminClient
+            .from('dashboard_data')
+            .select('key, field, value, updated_at')
+            .in('key', ['telegram_chat_ids', 'telegram_editor_map']);
+
+          if (dd && Array.isArray(dd)) {
+            for (const row of dd) {
+              if (row.field && row.value) {
+                const val = String(row.value).trim();
+                activations[row.field] = { chatId: val, updatedAt: row.updated_at };
+                activations[row.field.toLowerCase()] = { chatId: val, updatedAt: row.updated_at };
+              }
+            }
+          }
+        } catch {}
+
+        try {
+          const { data: pa } = await supabaseAdminClient
+            .from('page_announcements')
+            .select('page_key, message, updated_at')
+            .like('page_key', 'tg_%');
+
+          if (pa && Array.isArray(pa)) {
+            for (const row of pa) {
+              if (!row.message) continue;
+              const msg = String(row.message).trim();
+              if (row.page_key.startsWith('tg_chat_')) {
+                const uId = row.page_key.replace('tg_chat_', '');
+                if (uId && msg) {
+                  activations[uId] = { chatId: msg, updatedAt: row.updated_at };
+                }
+              } else if (row.page_key.startsWith('tg_editor_')) {
+                const eName = row.page_key.replace('tg_editor_', '').toLowerCase();
+                if (eName && msg) {
+                  activations[eName] = { chatId: msg, updatedAt: row.updated_at };
+                }
+              }
+            }
+          }
+        } catch {}
+      }
+
+      return res.json({ ok: true, activations });
+    }
 
     if (userId && supabaseAdminClient) {
       const { data } = await supabaseAdminClient
@@ -69,6 +119,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
         try {
           await supabaseAdminClient
+            .from('page_announcements')
+            .delete()
+            .eq('page_key', `tg_stats_${targetId}`);
+        } catch {}
+
+        try {
+          await supabaseAdminClient
+            .from('dashboard_data')
+            .delete()
+            .eq('key', 'telegram_chat_ids')
+            .eq('field', targetId);
+        } catch {}
+
+        try {
+          await supabaseAdminClient
             .from('dashboard_data')
             .delete()
             .eq('key', `tg_chat_${targetId}`);
@@ -88,6 +153,21 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             .from('page_announcements')
             .delete()
             .eq('page_key', `tg_editor_${targetName}`);
+        } catch {}
+
+        try {
+          await supabaseAdminClient
+            .from('page_announcements')
+            .delete()
+            .eq('page_key', `tg_stats_${targetName}`);
+        } catch {}
+
+        try {
+          await supabaseAdminClient
+            .from('dashboard_data')
+            .delete()
+            .eq('key', 'telegram_editor_map')
+            .eq('field', targetName);
         } catch {}
 
         try {
@@ -180,20 +260,27 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             try {
               await supabaseAdminClient.from('dashboard_data').upsert([
                 {
-                  key: `tg_chat_${user.id}`,
-                  field: 'chat_id',
+                  key: 'telegram_chat_ids',
+                  field: user.id,
                   value: String(chatId),
                   updated_by: user.name,
                   updated_at: new Date().toISOString()
                 },
                 {
-                  key: `tg_editor_${user.name.trim().toLowerCase()}`,
+                  key: 'telegram_editor_map',
                   field: user.name.trim().toLowerCase(),
                   value: String(chatId),
                   updated_by: user.name,
                   updated_at: new Date().toISOString()
+                },
+                {
+                  key: `tg_chat_${user.id}`,
+                  field: 'chat_id',
+                  value: String(chatId),
+                  updated_by: user.name,
+                  updated_at: new Date().toISOString()
                 }
-              ], { onConflict: 'key' });
+              ], { onConflict: 'key,field' });
             } catch {}
 
             // Try user_profiles

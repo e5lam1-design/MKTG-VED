@@ -382,6 +382,86 @@ export async function getUserTelegramChatId(userId?: string, userName?: string):
   return '';
 }
 
+export interface TelegramActivationRecord {
+  chatId: string;
+  updatedAt?: string;
+}
+
+/**
+ * Get all team members' Telegram activations map
+ * Returns mapping keyed by userId and by lowercase userName
+ */
+export async function getAllTelegramActivations(): Promise<Record<string, TelegramActivationRecord>> {
+  const map: Record<string, TelegramActivationRecord> = {};
+
+  // 1. Try server API endpoint (bypasses RLS)
+  try {
+    const res = await fetch('/api/telegram?action=activations').catch(() => null);
+    if (res && res.ok) {
+      const data = await res.json().catch(() => null);
+      if (data && data.activations) {
+        Object.assign(map, data.activations);
+      }
+    }
+  } catch {}
+
+  // 2. Direct client query from page_announcements (public read)
+  try {
+    const { data: ann } = await supabase
+      .from('page_announcements')
+      .select('page_key, message, updated_at')
+      .like('page_key', 'tg_%');
+
+    if (ann && Array.isArray(ann)) {
+      for (const item of ann) {
+        if (!item.message) continue;
+        const msg = String(item.message).trim();
+        if (item.page_key.startsWith('tg_chat_')) {
+          const uId = item.page_key.replace('tg_chat_', '');
+          if (uId && msg) {
+            map[uId] = { chatId: msg, updatedAt: item.updated_at };
+          }
+        } else if (item.page_key.startsWith('tg_editor_')) {
+          const eName = item.page_key.replace('tg_editor_', '').toLowerCase();
+          if (eName && msg) {
+            map[eName] = { chatId: msg, updatedAt: item.updated_at };
+          }
+        } else if (item.page_key.startsWith('tg_stats_')) {
+          try {
+            const parsed = JSON.parse(msg);
+            if (parsed.userId && !map[parsed.userId]) {
+              map[parsed.userId] = { chatId: 'متصل بالبوت', updatedAt: item.updated_at };
+            }
+            if (parsed.userName && !map[parsed.userName.toLowerCase()]) {
+              map[parsed.userName.toLowerCase()] = { chatId: 'متصل بالبوت', updatedAt: item.updated_at };
+            }
+          } catch {}
+        }
+      }
+    }
+  } catch {}
+
+  // 3. Direct client query from dashboard_data (for authenticated users)
+  try {
+    const { data: dash } = await supabase
+      .from('dashboard_data')
+      .select('key, field, value, updated_at')
+      .in('key', ['telegram_chat_ids', 'telegram_editor_map']);
+
+    if (dash && Array.isArray(dash)) {
+      for (const row of dash) {
+        if (row.field && row.value) {
+          const val = String(row.value).trim();
+          map[row.field] = { chatId: val, updatedAt: row.updated_at };
+          map[row.field.toLowerCase()] = { chatId: val, updatedAt: row.updated_at };
+        }
+      }
+    }
+  } catch {}
+
+  return map;
+}
+
 /**
  * Unlink Telegram account for a user, completely clear from DB, server & localStorage
  */
@@ -404,6 +484,7 @@ export async function unlinkUserTelegram(userId?: string, userName?: string): Pr
     }
     if (cleanName) {
       await supabase.from('page_announcements').delete().eq('page_key', `tg_editor_${cleanName}`);
+      await supabase.from('page_announcements').delete().eq('page_key', `tg_stats_${cleanName}`);
       const firstName = cleanName.split(/\s+/)[0];
       if (firstName && firstName !== cleanName) {
         await supabase.from('page_announcements').delete().eq('page_key', `tg_editor_${firstName}`);
@@ -414,9 +495,11 @@ export async function unlinkUserTelegram(userId?: string, userName?: string): Pr
   // 2. Direct delete from dashboard_data
   try {
     if (userId) {
+      await supabase.from('dashboard_data').delete().eq('key', 'telegram_chat_ids').eq('field', userId);
       await supabase.from('dashboard_data').delete().eq('key', `tg_chat_${userId}`);
     }
     if (cleanName) {
+      await supabase.from('dashboard_data').delete().eq('key', 'telegram_editor_map').eq('field', cleanName);
       await supabase.from('dashboard_data').delete().eq('key', `tg_editor_${cleanName}`);
     }
   } catch {}

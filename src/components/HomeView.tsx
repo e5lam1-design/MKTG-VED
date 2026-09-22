@@ -26,7 +26,8 @@ import {
   ChevronDown,
   ChevronUp,
   QrCode,
-  Copy
+  Copy,
+  Users
 } from 'lucide-react';
 import { TelegramQrModal } from './TelegramQrModal';
 import { supabase } from '../lib/supabase';
@@ -193,6 +194,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
   const [savingBotSettings, setSavingBotSettings] = useState<boolean>(false);
   const [testingTelegram, setTestingTelegram] = useState<boolean>(false);
   const [showQrModal, setShowQrModal] = useState<boolean>(false);
+  const [qrModalTab, setQrModalTab] = useState<'my_qr' | 'team_tracker'>('my_qr');
 
   // Load user's saved Chat ID and system Bot info
   useEffect(() => {
@@ -1264,6 +1266,17 @@ export const HomeView: React.FC<HomeViewProps> = ({
 
                 <button
                   onClick={() => {
+                    setQrModalTab('team_tracker');
+                    setShowQrModal(true);
+                  }}
+                  className="px-4 py-2.5 rounded-xl bg-sky-500/10 hover:bg-sky-500/20 border border-sky-400/30 text-sky-300 font-bold text-xs flex items-center gap-2 transition-all cursor-pointer shadow-sm hover:scale-[1.02] active:scale-95"
+                >
+                  <Users size={15} className="text-sky-400" />
+                  <span>تتبع تفعيل الفريق 👥</span>
+                </button>
+
+                <button
+                  onClick={() => {
                     const cleanBot = (botUsername || 'Kheta_notify_bot').replace(/^@/, '');
                     const link = `https://t.me/${cleanBot}?start=${currentUser?.id || currentUser?.username || 'user'}`;
                     navigator.clipboard.writeText(link);
@@ -1311,6 +1324,18 @@ export const HomeView: React.FC<HomeViewProps> = ({
                 >
                   <QrCode size={13} className="text-sky-400" />
                   <span>كود QR واللينك 📱</span>
+                </button>
+
+                <button
+                  onClick={() => {
+                    setQrModalTab('team_tracker');
+                    setShowQrModal(true);
+                  }}
+                  className="px-3.5 py-1.5 rounded-xl bg-sky-500/15 hover:bg-sky-500/25 border border-sky-400/30 text-sky-300 text-xs font-bold transition-all shadow-sm flex items-center gap-1.5 cursor-pointer"
+                  title="تتبع تفعيل بوت التليجرام لجميع أعضاء الفريق"
+                >
+                  <Users size={13} className="text-sky-400" />
+                  <span>تتبع الفريق 👥</span>
                 </button>
 
                 <button
@@ -1873,9 +1898,13 @@ export const HomeView: React.FC<HomeViewProps> = ({
 
       <TelegramQrModal
         isOpen={showQrModal}
-        onClose={() => setShowQrModal(false)}
+        onClose={() => {
+          setShowQrModal(false);
+          setQrModalTab('my_qr');
+        }}
         user={currentUser}
         botUsername={botUsername}
+        initialTab={qrModalTab}
       />
     </div>
   );

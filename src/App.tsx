@@ -53,7 +53,8 @@ import {
   Eye,
   EyeOff,
   Home,
-  Calendar
+  Calendar,
+  Send
 } from 'lucide-react';
 import { useGoogleSheets } from './hooks/useGoogleSheets';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
@@ -8500,6 +8501,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
   ];
 
   const reelsStages = [
+    { label: 'الرئيسية', gid: 'home', icon: Home, colorHex: '#6366f1' },
     { label: 'Shooting', gid: '1436746012', icon: Video, colorHex: '#b49fee' },
     { label: 'Ve', gid: '1939073164', icon: Video, colorHex: '#92dcf7' },
     { label: 'CUTS', gid: '0', icon: Video, colorHex: '#ff7843' },
@@ -9422,7 +9424,20 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
             </p>
           </motion.div>
 
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-3">
+            {/* Telegram Bot Button */}
+            <button
+              onClick={() => {
+                setActiveGid('home');
+                setActiveLabel('الرئيسية');
+              }}
+              className="px-3.5 py-2.5 rounded-2xl border border-sky-500/30 bg-sky-500/10 hover:bg-sky-500/20 text-sky-300 font-bold text-xs transition-all flex items-center gap-2 shadow-sm cursor-pointer active:scale-95"
+              title="إشعارات بوت تليجرام التلقائية"
+            >
+              <Send size={15} className="text-sky-400" />
+              <span className="hidden sm:inline">بوت تليجرام ✈️</span>
+            </button>
+
             {/* Personal Notifications Bell */}
             <div className="relative">
               <button

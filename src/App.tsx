@@ -956,6 +956,18 @@ const STAGE_TABLE_MAP: Record<string, string> = {
   '286303232': 'stage_s3_26',
 };
 
+// Reels stage tabs that show uncompleted / available badges
+const REELS_BADGE_TABLE_MAP: Record<string, string> = {
+  '1939073164': 'reels_ve_26', // Ve
+  '0': 'reels_cuts_26',        // CUTS
+};
+
+const STAGE_WITH_BADGE_MAP: Record<string, boolean> = {
+  ...Object.fromEntries(Object.keys(STAGE_TABLE_MAP).map(k => [k, true])),
+  ...Object.fromEntries(Object.keys(REELS_BADGE_TABLE_MAP).map(k => [k, true])),
+  '1535230545': true, // تجميعات
+};
+
 // ─── Sidebar Item ─────────────────────────────────────────────────────────────
 const SidebarItem = ({ icon: Icon, label, active, onClick, colorHex, colorful, isPinned, onTogglePin, badgeCount }: any) => {
   const cHex = colorHex || '#3b82f6';
@@ -1068,7 +1080,7 @@ const SidebarGroup = ({ title, iconEmoji, colorHex, stagesList, activeGid, onSel
                 colorHex={stage.colorHex}
                 colorful={colorful}
                 active={activeGid === stage.gid}
-                badgeCount={STAGE_TABLE_MAP[stage.gid] ? stageUncompletedCounts?.[stage.gid] : undefined}
+                badgeCount={STAGE_WITH_BADGE_MAP[stage.gid] ? stageUncompletedCounts?.[stage.gid] : undefined}
                 isPinned={pinnedTabs.includes(stage.gid)}
                 onTogglePin={() => togglePinTab(stage.gid)}
                 onClick={() => onSelectStage(stage.gid, stage.label)}
@@ -4771,17 +4783,111 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
 
   const [pinnedTabs, setPinnedTabs] = useState<string[]>(() => {
     try {
-      const saved = localStorage.getItem('mktg_pinned_tabs');
+      const userKey = profile?.id ? `mktg_pinned_tabs_${profile.id}` : null;
+      const saved = (userKey ? localStorage.getItem(userKey) : null) || localStorage.getItem('mktg_pinned_tabs');
       return saved ? JSON.parse(saved) : ['1476192399', '1535230545'];
     } catch {
       return ['1476192399', '1535230545'];
     }
   });
 
+  // Automatically load & sync user-specific pinned tabs from LocalStorage and Supabase DB whenever profile loads
+  useEffect(() => {
+    if (!profile?.id) return;
+    const userStorageKey = `mktg_pinned_tabs_${profile.id}`;
+
+    // 1. Instant local load
+    try {
+      const localSaved = localStorage.getItem(userStorageKey);
+      if (localSaved) {
+        const parsed = JSON.parse(localSaved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setPinnedTabs(parsed);
+        }
+      }
+    } catch {}
+
+    // 2. Fetch user's persistent pinned tabs from Supabase DB
+    const fetchUserPinsFromDb = async () => {
+      try {
+        const { data, error } = await supabase
+          .from('page_announcements')
+          .select('message')
+          .eq('page_key', `user_pinned_tabs_${profile.id}`)
+          .maybeSingle();
+
+        if (!error && data?.message) {
+          const cloudPins = JSON.parse(data.message);
+          if (Array.isArray(cloudPins)) {
+            setPinnedTabs(cloudPins);
+            localStorage.setItem(userStorageKey, JSON.stringify(cloudPins));
+          }
+        }
+      } catch (err) {
+        console.error('Error fetching user pinned tabs from DB:', err);
+      }
+    };
+
+    fetchUserPinsFromDb();
+
+    // 3. Realtime subscription for cross-device & cross-tab sync
+    const channel = supabase
+      .channel(`user-pins-${profile.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'page_announcements'
+        },
+        (payload) => {
+          const key = (payload.new as any)?.page_key;
+          if (key === `user_pinned_tabs_${profile.id}`) {
+            try {
+              const newPins = JSON.parse((payload.new as any)?.message);
+              if (Array.isArray(newPins)) {
+                setPinnedTabs(newPins);
+                localStorage.setItem(userStorageKey, JSON.stringify(newPins));
+              }
+            } catch {}
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [profile?.id]);
+
   const togglePinTab = (gid: string) => {
     setPinnedTabs(prev => {
       const updated = prev.includes(gid) ? prev.filter(g => g !== gid) : [...prev, gid];
-      try { localStorage.setItem('mktg_pinned_tabs', JSON.stringify(updated)); } catch {}
+      
+      // Save locally
+      try {
+        if (profile?.id) {
+          localStorage.setItem(`mktg_pinned_tabs_${profile.id}`, JSON.stringify(updated));
+        }
+        localStorage.setItem('mktg_pinned_tabs', JSON.stringify(updated));
+      } catch {}
+
+      // Save to Supabase Cloud DB for persistent cross-device storage
+      if (profile?.id) {
+        supabase
+          .from('page_announcements')
+          .upsert({
+            page_key: `user_pinned_tabs_${profile.id}`,
+            message: JSON.stringify(updated),
+            updated_at: new Date().toISOString(),
+            author: profile.name || 'User'
+          }, { onConflict: 'page_key' })
+          .then(({ error }) => {
+            if (error) console.error('Error saving user pinned tabs to cloud:', error);
+          })
+          .catch(() => {});
+      }
+
       return updated;
     });
   };
@@ -5335,25 +5441,45 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
   const fetchStageUncompletedCounts = useCallback(async () => {
     if (isDemo) return;
     try {
-      const entries = Object.entries(STAGE_TABLE_MAP);
-      const results = await Promise.all(
-        entries.map(async ([gid, tbl]) => {
-          try {
-            const { data, error } = await supabase
-              .from(tbl)
-              .select('unique_key, is_tagme3a, delivered');
-            if (error || !data) return [gid, 0] as const;
-            const count = data.filter((r: any) => r.is_tagme3a !== true && r.delivered !== true).length;
-            return [gid, count] as const;
-          } catch {
-            return [gid, 0] as const;
-          }
-        })
-      );
+      const opEntries = Object.entries(STAGE_TABLE_MAP);
+      const [opResults, veRes, cutsRes, tagmeRes] = await Promise.all([
+        Promise.all(
+          opEntries.map(async ([gid, tbl]) => {
+            try {
+              const { data, error } = await supabase
+                .from(tbl)
+                .select('unique_key, is_tagme3a, delivered');
+              if (error || !data) return [gid, 0] as const;
+              const count = data.filter((r: any) => r.is_tagme3a !== true && r.delivered !== true).length;
+              return [gid, count] as const;
+            } catch {
+              return [gid, 0] as const;
+            }
+          })
+        ),
+        // VE (Reels): Tasks that are not done and not canceled
+        supabase.from('reels_ve_26').select('code, done, canceled'),
+        // CUTS (Reels): Tasks that are not done and not canceled
+        supabase.from('reels_cuts_26').select('code, done, canceled'),
+        // Tagme3at: Tasks that are not done and not canceled
+        supabase.from('tagme3at_26').select('unique_key, done, cancel'),
+      ]);
+
       const map: Record<string, number> = {};
-      results.forEach(([gid, count]) => {
+      opResults.forEach(([gid, count]) => {
         map[gid] = count;
       });
+
+      if (veRes.data && !veRes.error) {
+        map['1939073164'] = veRes.data.filter((r: any) => r.done !== true && r.canceled !== true).length;
+      }
+      if (cutsRes.data && !cutsRes.error) {
+        map['0'] = cutsRes.data.filter((r: any) => r.done !== true && r.canceled !== true).length;
+      }
+      if (tagmeRes.data && !tagmeRes.error) {
+        map['1535230545'] = tagmeRes.data.filter((r: any) => r.done !== true && r.cancel !== true).length;
+      }
+
       setStageUncompletedCounts(prev => ({ ...prev, ...map }));
     } catch (err) {
       console.error('Error fetching stage uncompleted counts:', err);
@@ -5371,7 +5497,18 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
     }
   }, [stageDbRows, isStageTab, activeGid]);
 
-  // Periodic polling & Realtime subscription across all stage tables for badge counts
+  // Keep uncompleted count for active Tagme3at stage in sync with tagmeDbRows immediately
+  useEffect(() => {
+    if (activeGid === '1535230545') {
+      const count = tagmeDbRows.filter(r => r.done !== true && r.cancel !== true).length;
+      setStageUncompletedCounts(prev => {
+        if (prev['1535230545'] === count) return prev;
+        return { ...prev, ['1535230545']: count };
+      });
+    }
+  }, [tagmeDbRows, activeGid]);
+
+  // Periodic polling & Realtime subscription across all stage, reels, and tagme3at tables for badge counts
   useEffect(() => {
     if (isDemo) return;
     fetchStageUncompletedCounts();
@@ -5380,7 +5517,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
       fetchStageUncompletedCounts();
     }, 25000);
 
-    const tables = Object.values(STAGE_TABLE_MAP);
+    const tables = [...Object.values(STAGE_TABLE_MAP), 'reels_ve_26', 'reels_cuts_26', 'tagme3at_26'];
     let channel = supabase.channel('stages_uncompleted_realtime');
     tables.forEach(tbl => {
       channel = channel.on(
@@ -5572,6 +5709,17 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
 
   const reelsTable = REELS_TABLE_MAP[activeGid];
   const isReelsTableTab = !!reelsTable;
+
+  // Keep uncompleted count for active Reels stage (VE / CUTS) in sync with reelsDbRows immediately
+  useEffect(() => {
+    if (activeGid === '1939073164' || activeGid === '0') {
+      const count = reelsDbRows.filter(r => r.done !== true && r.canceled !== true).length;
+      setStageUncompletedCounts(prev => {
+        if (prev[activeGid] === count) return prev;
+        return { ...prev, [activeGid]: count };
+      });
+    }
+  }, [reelsDbRows, activeGid]);
 
   const fetchReelsDb = async (gid: string, isSilent = false) => {
     const tbl = REELS_TABLE_MAP[gid];
@@ -9753,6 +9901,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
               colorHex={stage.colorHex}
               colorful={colorfulTabs}
               active={activeGid === stage.gid}
+              badgeCount={STAGE_WITH_BADGE_MAP[stage.gid] ? stageUncompletedCounts[stage.gid] : undefined}
               isPinned={pinnedTabs.includes(stage.gid)}
               onTogglePin={() => togglePinTab(stage.gid)}
               onClick={() => {
@@ -9849,7 +9998,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
                 colorHex={stage.colorHex}
                 colorful={colorfulTabs}
                 active={activeGid === stage.gid}
-                badgeCount={STAGE_TABLE_MAP[stage.gid] ? stageUncompletedCounts[stage.gid] : undefined}
+                badgeCount={STAGE_WITH_BADGE_MAP[stage.gid] ? stageUncompletedCounts[stage.gid] : undefined}
                 isPinned={pinnedTabs.includes(stage.gid)}
                 onTogglePin={() => togglePinTab(stage.gid)}
                 onClick={() => {
@@ -10701,7 +10850,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
                 const stage = allStagesList.find(s => s.gid === gid);
                 if (!stage) return null;
                 const isActive = activeGid === gid;
-                const pinBadge = STAGE_TABLE_MAP[gid] ? stageUncompletedCounts[gid] : undefined;
+                const pinBadge = STAGE_WITH_BADGE_MAP[gid] ? stageUncompletedCounts[gid] : undefined;
                 return (
                   <button
                     key={gid}

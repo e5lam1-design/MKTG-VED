@@ -270,10 +270,8 @@ const processTelegramUpdate = async (update, botToken) => {
                 parse_mode: 'HTML',
                 reply_markup: {
                   keyboard: [
-                    [{ text: '⏳ لسه متعملتش' }, { text: '⚡ أولوية' }],
-                    [{ text: '📝 اطلب إيديت' }, { text: '✅ خلصت' }],
-                    [{ text: '📥 مهام متاحة' }, { text: '👤 إجمالي مهامي' }],
-                    [{ text: '📊 ملخص شامل' }]
+                    [{ text: 'إجمالي مهامي 👤' }],
+                    [{ text: 'لسه متعملتش ⏳' }, { text: 'خلصت ✅' }]
                   ],
                   resize_keyboard: true,
                   is_persistent: true
@@ -295,10 +293,8 @@ const processTelegramUpdate = async (update, botToken) => {
           parse_mode: 'HTML',
           reply_markup: {
             keyboard: [
-              [{ text: '⏳ لسه متعملتش' }, { text: '⚡ أولوية' }],
-              [{ text: '📝 اطلب إيديت' }, { text: '✅ خلصت' }],
-              [{ text: '📥 مهام متاحة' }, { text: '👤 إجمالي مهامي' }],
-              [{ text: '📊 ملخص شامل' }]
+              [{ text: 'إجمالي مهامي 👤' }],
+              [{ text: 'لسه متعملتش ⏳' }, { text: 'خلصت ✅' }]
             ],
             resize_keyboard: true,
             is_persistent: true
@@ -410,92 +406,65 @@ const processTelegramUpdate = async (update, botToken) => {
 
     let responseMsg = '';
 
-    if (text.includes('لسه') || text.includes('قيد العمل')) {
+    if (text.includes('لسه') || text.includes('متعملتش') || text.includes('قيد العمل')) {
       const count = statsData?.stats?.myPending ?? 0;
-      const list = (statsData?.pendingTasks || []).map((t, i) => {
-        return `${i + 1}️⃣ <b>${t.code || t.title}</b>${t.sheet ? `\n📂 ${t.sheet}` : ''}${t.notes ? `\n📝 ${t.notes}` : ''}`;
-      }).join('\n\n');
+      const pendingList = statsData?.pendingTasks || [];
+      const priorityList = statsData?.priorityTasks || [];
+      const editList = statsData?.editTasks || [];
+      const allActive = [...priorityList, ...editList, ...pendingList];
+
+      let listStr = '';
+      if (allActive.length > 0) {
+        listStr = allActive.slice(0, 15).map((t, i) => {
+          const badge = t.isPriority ? '⚡ ' : t.isEdit ? '📝 ' : '';
+          return `${i + 1}️⃣ ${badge}<b>${t.code || t.title}</b>${t.sheet ? `\n   📂 ${t.sheet}` : ''}${t.notes ? `\n   📝 ${t.notes}` : ''}`;
+        }).join('\n\n');
+
+        if (allActive.length > 15) {
+          listStr += `\n\n... وهناك ${allActive.length - 15} مهام أخرى في لوحة التحكم`;
+        }
+      }
 
       responseMsg = [
         `⏳ <b>مهام قيد العمل (لسه متعملتش):</b> ${count} مهمة`,
+        `<i>(مهام قيد العمل باسمك)</i>`,
         `━━━━━━━━━━━━━━━━━━━━`,
-        list || (count === 0 ? `🎉 ممتاز! لا توجد مهام قيد العمل حالياً.` : `👉 راجع لوحة التحكم لتفاصيل كافة المهام`),
+        listStr || (count === 0 ? `🎉 ممتاز جداً! لا توجد مهام قيد العمل حالياً، كل مهامك منجزة.` : `👉 راجع لوحة التحكم لتفاصيل كافة المهام`),
         `━━━━━━━━━━━━━━━━━━━━`,
-        `🚀 <i>لوحة تحكم الخطة</i>`
+        `💡 <i>هذه القائمة مخصصة للاستفسار والمتابعة فقط</i>`,
+        `🚀 <i>لوحة تحكم الخطة التعليمية</i>`
       ].filter(Boolean).join('\n');
 
-    } else if (text.includes('أولوية') || text.includes('اولوية')) {
-      const count = statsData?.stats?.myPriority ?? 0;
-      const list = (statsData?.priorityTasks || []).map((t, i) => {
-        return `⚡ <b>${t.code || t.title}</b>${t.sheet ? `\n📂 ${t.sheet}` : ''}${t.notes ? `\n📝 ${t.notes}` : ''}`;
-      }).join('\n\n');
-
-      responseMsg = [
-        `⚡ <b>المهام العاجلة (أولوية):</b> ${count} مهام`,
-        `━━━━━━━━━━━━━━━━━━━━`,
-        list || (count === 0 ? `✅ ممتاز! لا توجد أي مهام عاجلة متأخرة.` : `👉 يرجى إنجاز المهام العاجلة أولاً`),
-        `━━━━━━━━━━━━━━━━━━━━`,
-        `🚀 <i>لوحة تحكم الخطة</i>`
-      ].filter(Boolean).join('\n');
-
-    } else if (text.includes('إيديت') || text.includes('ايديت') || text.includes('تعديل')) {
-      const count = statsData?.stats?.myEdits ?? 0;
-      const list = (statsData?.editTasks || []).map((t, i) => {
-        return `📝 <b>${t.code || t.title}</b>${t.notes ? `\n⚠️ ملاحظات التعديل: ${t.notes}` : ''}`;
-      }).join('\n\n');
-
-      responseMsg = [
-        `📝 <b>تعديلات وملاحظات مطلوبة (اطلب إيديت):</b> ${count} مهام`,
-        `━━━━━━━━━━━━━━━━━━━━`,
-        list || (count === 0 ? `🎉 رائع! لا توجد أي طلبات تعديل على مهامك حالياً.` : `👉 يرجى مراجعة التعديلات وإنهائها`),
-        `━━━━━━━━━━━━━━━━━━━━`,
-        `🚀 <i>لوحة تحكم الخطة</i>`
-      ].filter(Boolean).join('\n');
-
-    } else if (text.includes('خلصت') || text.includes('منجزة')) {
+    } else if (text.includes('خلصت') || text.includes('منجزة') || text.includes('تسليم')) {
       const count = statsData?.stats?.myCompleted ?? 0;
       responseMsg = [
         `✅ <b>المهام المنجزة (خلصت):</b> ${count} مهمة`,
+        `<i>(تم إنجازها وتسليمها)</i>`,
         `━━━━━━━━━━━━━━━━━━━━`,
         `🎉 عاش يا بطل! تم إنجاز وتسليم <b>${count}</b> مهمة بنجاح 🚀`,
         `━━━━━━━━━━━━━━━━━━━━`,
-        `🚀 <i>لوحة تحكم الخطة</i>`
-      ].join('\n');
-
-    } else if (text.includes('متاحة') || text.includes('استلام')) {
-      const count = statsData?.stats?.availableUnassigned ?? 0;
-      const list = (statsData?.availableTasks || []).map((t) => {
-        return `📥 <b>${t.code || t.title}</b>${t.sheet ? ` (${t.sheet})` : ''}`;
-      }).join('\n');
-
-      responseMsg = [
-        `📥 <b>المهام المتاحة للاستلام:</b> ${count} مهمة`,
-        `━━━━━━━━━━━━━━━━━━━━`,
-        `📂 <b>الأقسام:</b> تجميعات • Cuts • Ve ✋`,
-        list ? `\n${list}\n` : '',
-        `👉 يمكنك فتح لوحة التحكم لاختيار واستلام المهام بنقرة واحدة!`,
-        `━━━━━━━━━━━━━━━━━━━━`,
-        `🚀 <i>لوحة تحكم الخطة</i>`
-      ].filter(Boolean).join('\n');
-
-    } else {
-      // Default summary for 'إجمالي مهامي', 'ملخص شامل', or any query
-      const s = statsData?.stats || {};
-      const name = statsData?.userName || targetUserName || 'المحرر';
-      responseMsg = [
-        `📊 <b>ملخص مهامك في لوحة تحكم الخطة</b>`,
-        `👤 <b>المستخدم:</b> ${name}`,
-        `━━━━━━━━━━━━━━━━━━━━`,
-        `⏳ <b>لسه متعملتش:</b> ${s.myPending ?? 0}`,
-        `⚡ <b>أولوية:</b> ${s.myPriority ?? 0}`,
-        `📝 <b>اطلب إيديت:</b> ${s.myEdits ?? 0}`,
-        `✅ <b>خلصت:</b> ${s.myCompleted ?? 0}`,
-        `📥 <b>مهام متاحة:</b> ${s.availableUnassigned ?? 0}`,
-        `━━━━━━━━━━━━━━━━━━━━`,
-        `🎯 <b>إجمالي كافة مهامك:</b> ${s.myTotal ?? 0} مهمة`,
-        `━━━━━━━━━━━━━━━━━━━━`,
         `🚀 <i>لوحة تحكم الخطة التعليمية</i>`
       ].join('\n');
+
+    } else {
+      const s = statsData?.stats || {};
+      const name = statsData?.userName || targetUserName || 'المستخدم';
+      const total = s.myTotal ?? ((s.myPending ?? 0) + (s.myCompleted ?? 0));
+      responseMsg = [
+        `👤 <b>إجمالي مهامك في لوحة تحكم الخطة</b>`,
+        `👤 <b>المستخدم:</b> ${name}`,
+        `━━━━━━━━━━━━━━━━━━━━`,
+        `💼 <b>إجمالي مهامي:</b> ${total} مهمة`,
+        `<i>(كافة المهام المرتبطة باسمك)</i>`,
+        `━━━━━━━━━━━━━━━━━━━━`,
+        `⏳ <b>لسه متعملتش:</b> ${s.myPending ?? 0} مهمة`,
+        `✅ <b>خلصت:</b> ${s.myCompleted ?? 0} مهمة`,
+        s.myPriority ? `⚡ <b>أولوية عاجلة:</b> ${s.myPriority} مهمة` : '',
+        s.myEdits ? `📝 <b>مطلوب تعديلات:</b> ${s.myEdits} مهمة` : '',
+        `━━━━━━━━━━━━━━━━━━━━`,
+        `💡 <i>اضغط على [لسه متعملتش ⏳] لعرض تفاصيل مهامك</i>`,
+        `🚀 <i>لوحة تحكم الخطة التعليمية</i>`
+      ].filter(Boolean).join('\n');
     }
 
     await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
@@ -507,10 +476,8 @@ const processTelegramUpdate = async (update, botToken) => {
         parse_mode: 'HTML',
         reply_markup: {
           keyboard: [
-            [{ text: '⏳ لسه متعملتش' }, { text: '⚡ أولوية' }],
-            [{ text: '📝 اطلب إيديت' }, { text: '✅ خلصت' }],
-            [{ text: '📥 مهام متاحة' }, { text: '👤 إجمالي مهامي' }],
-            [{ text: '📊 ملخص شامل' }]
+            [{ text: 'إجمالي مهامي 👤' }],
+            [{ text: 'لسه متعملتش ⏳' }, { text: 'خلصت ✅' }]
           ],
           resize_keyboard: true,
           is_persistent: true

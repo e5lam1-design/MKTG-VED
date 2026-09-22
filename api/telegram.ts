@@ -53,6 +53,55 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const body = req.body || {};
 
+  // 1.5. Unlink Action: { action: 'unlink', userId, userName? }
+  if (body.action === 'unlink') {
+    const targetId = body.userId;
+    const targetName = body.userName ? String(body.userName).trim().toLowerCase() : '';
+
+    if (supabaseAdminClient) {
+      if (targetId) {
+        try {
+          await supabaseAdminClient
+            .from('page_announcements')
+            .delete()
+            .eq('page_key', `tg_chat_${targetId}`);
+        } catch {}
+
+        try {
+          await supabaseAdminClient
+            .from('dashboard_data')
+            .delete()
+            .eq('key', `tg_chat_${targetId}`);
+        } catch {}
+
+        try {
+          await supabaseAdminClient
+            .from('user_profiles')
+            .update({ telegram_chat_id: null, updated_at: new Date().toISOString() })
+            .eq('id', targetId);
+        } catch {}
+      }
+
+      if (targetName) {
+        try {
+          await supabaseAdminClient
+            .from('page_announcements')
+            .delete()
+            .eq('page_key', `tg_editor_${targetName}`);
+        } catch {}
+
+        try {
+          await supabaseAdminClient
+            .from('dashboard_data')
+            .delete()
+            .eq('key', `tg_editor_${targetName}`);
+        } catch {}
+      }
+    }
+
+    return res.json({ ok: true, unlinked: true });
+  }
+
   // 2. Direct Notify Request: { chatId, text, token? }
   if (body.chatId && body.text) {
     const activeToken = body.token || botToken;

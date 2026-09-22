@@ -39,6 +39,7 @@ import {
   saveTelegramBotUsername,
   getUserTelegramChatId,
   saveUserTelegramChatId,
+  unlinkUserTelegram,
   sendTestTelegramMessage,
   notifyTaskCompleted
 } from '../lib/telegram';
@@ -262,13 +263,12 @@ export const HomeView: React.FC<HomeViewProps> = ({
   const handleUnlinkTelegram = async () => {
     if (!currentUser?.id) return;
     setTelegramChatId('');
-    localStorage.removeItem(`tg_chat_${currentUser.id}`);
     try {
-      await supabase.from('user_profiles').update({ telegram_chat_id: null as any }).eq('id', currentUser.id);
-      await supabase.from('dashboard_data').delete().eq('key', 'telegram_chat_ids').eq('field', currentUser.id);
-      toast.info('تم إلغاء ربط حساب تليجرام');
+      await unlinkUserTelegram(currentUser.id, currentUser.name);
+      toast.info('تم إلغاء ربط حساب تليجرام وحفظ التعديل بنجاح 🔄');
     } catch (e) {
       console.error(e);
+      toast.error('حدث خطأ أثناء إلغاء الربط');
     }
   };
 
@@ -884,6 +884,26 @@ export const HomeView: React.FC<HomeViewProps> = ({
               notifyTaskCompleted({
                 chatId: otherChatId,
                 taskTitle: task.title,
+                taskCode: task.code,
+                driveLink: taskDriveLink,
+                editorName: editorDisplayName,
+                sourceSheet: task.sourceSheet,
+                branch: task.branch,
+                notes: task.notes,
+                completedAt: now
+              }).catch(console.error);
+            }
+          }
+
+          // 3. If someone other than Admin marked Done, notify Admin (Eslam) as well!
+          const cleanActor = (currentUser?.name || '').trim().toLowerCase();
+          const isAdminActor = cleanActor === 'admin' || cleanActor === 'eslam' || cleanActor === 'eslam abdalhamid';
+          if (!isAdminActor) {
+            const adminChatId = await getUserTelegramChatId(undefined, 'admin') || await getUserTelegramChatId(undefined, 'eslam');
+            if (adminChatId && adminChatId !== finalChatId) {
+              notifyTaskCompleted({
+                chatId: adminChatId,
+                taskTitle: `🎬 [تسليم]: ${task.title}`,
                 taskCode: task.code,
                 driveLink: taskDriveLink,
                 editorName: editorDisplayName,

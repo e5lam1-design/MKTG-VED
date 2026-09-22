@@ -7776,6 +7776,25 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
                 }).catch(console.error);
               }
             }
+
+            // Also notify Admin (Eslam) if someone other than Admin marked it Done
+            const cleanActor = (profile?.name || '').trim().toLowerCase();
+            const isAdminActor = cleanActor === 'admin' || cleanActor === 'eslam' || cleanActor === 'eslam abdalhamid';
+            if (!isAdminActor) {
+              const adminChatId = await getUserTelegramChatId(undefined, 'admin') || await getUserTelegramChatId(undefined, 'eslam');
+              if (adminChatId && adminChatId !== myChatId) {
+                notifyTaskCompleted({
+                  chatId: adminChatId,
+                  taskTitle: `🎬 [تسليم جديد]: ${taskTitle}`,
+                  taskCode,
+                  sourceSheet,
+                  branch: updatedItem.branch,
+                  editorName: currentEditor || profile?.name || 'محرر',
+                  driveLink: taskDriveLink,
+                  notes: taskNotes
+                }).catch(console.error);
+              }
+            }
           }).catch(console.error);
         }
         // 2. Task Has Edits / Problem Notification

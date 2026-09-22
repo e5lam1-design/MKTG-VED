@@ -284,6 +284,11 @@ export async function saveUserPhone(
 export async function getUserTelegramChatId(userId?: string, userName?: string): Promise<string> {
   if (!userId && !userName) return '';
 
+  // If user explicitly unlinked, respect user action and return empty immediately
+  if (userId && localStorage.getItem(`tg_unlinked_${userId}`) === 'true') {
+    return '';
+  }
+
   const cleanName = userName ? userName.trim().toLowerCase() : '';
 
   // 1. Check localStorage first
@@ -378,21 +383,60 @@ export async function getUserTelegramChatId(userId?: string, userName?: string):
     } catch {}
   }
 
-  // 6. Direct fallback for Eslam / Admin account (verified Telegram chat ID)
-  if (
-    userId === '7e04dea1-ec83-4439-a541-13fc3ce79885' ||
-    cleanName === 'admin' ||
-    cleanName === 'eslam' ||
-    cleanName === 'eslam abdalhamid' ||
-    cleanName.includes('eslam')
-  ) {
-    const verifiedChatId = '1288848720';
-    if (userId) localStorage.setItem(`tg_chat_${userId}`, verifiedChatId);
-    if (cleanName) localStorage.setItem(`tg_chat_name_${cleanName}`, verifiedChatId);
-    return verifiedChatId;
+  return '';
+}
+
+/**
+ * Unlink Telegram account for a user, completely clear from DB, server & localStorage
+ */
+export async function unlinkUserTelegram(userId?: string, userName?: string): Promise<boolean> {
+  const cleanName = userName ? userName.trim().toLowerCase() : '';
+
+  if (userId) {
+    localStorage.setItem(`tg_unlinked_${userId}`, 'true');
+    localStorage.removeItem(`tg_chat_${userId}`);
+  }
+  if (cleanName) {
+    localStorage.removeItem(`tg_chat_name_${cleanName}`);
   }
 
-  return '';
+  // 1. Direct delete from page_announcements (accessible by client)
+  try {
+    if (userId) {
+      await supabase.from('page_announcements').delete().eq('page_key', `tg_chat_${userId}`);
+    }
+    if (cleanName) {
+      await supabase.from('page_announcements').delete().eq('page_key', `tg_editor_${cleanName}`);
+    }
+  } catch {}
+
+  // 2. Direct delete from dashboard_data
+  try {
+    if (userId) {
+      await supabase.from('dashboard_data').delete().eq('key', `tg_chat_${userId}`);
+    }
+    if (cleanName) {
+      await supabase.from('dashboard_data').delete().eq('key', `tg_editor_${cleanName}`);
+    }
+  } catch {}
+
+  // 3. Clear user_profiles
+  try {
+    if (userId) {
+      await supabase.from('user_profiles').update({ telegram_chat_id: null as any }).eq('id', userId);
+    }
+  } catch {}
+
+  // 4. Server API call (Admin Client bypasses RLS and permanently clears all tables on Vercel)
+  try {
+    await fetch('/api/telegram', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ action: 'unlink', userId, userName })
+    });
+  } catch {}
+
+  return true;
 }
 
 /**
@@ -418,6 +462,7 @@ export async function saveUserTelegramChatId(
   const cleanName = userName ? userName.trim().toLowerCase() : '';
 
   localStorage.setItem(`tg_chat_${userId}`, cleanId);
+  localStorage.removeItem(`tg_unlinked_${userId}`);
   if (cleanName) {
     localStorage.setItem(`tg_chat_name_${cleanName}`, cleanId);
   }

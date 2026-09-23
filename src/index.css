@@ -139,8 +139,31 @@ body {
 
 /* Table Enhancements */
 .table-container {
-  @apply rounded-3xl overflow-hidden border border-border shadow-2xl;
+  @apply rounded-3xl border border-border shadow-2xl;
+  overflow-x: auto !important;
   background: linear-gradient(180deg, rgba(255,255,255,0.02) 0%, transparent 100%);
+  scrollbar-width: thin;
+}
+
+.table-container::-webkit-scrollbar {
+  height: 10px;
+}
+.table-container::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 9999px;
+}
+.table-container::-webkit-scrollbar-thumb {
+  background: linear-gradient(90deg, #6366f1, #a855f7);
+  border-radius: 9999px;
+  cursor: grab;
+  box-shadow: 0 0 10px rgba(168, 85, 247, 0.4);
+}
+.table-container::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(90deg, #818cf8, #c084fc);
+  box-shadow: 0 0 16px rgba(168, 85, 247, 0.7);
+}
+.table-container::-webkit-scrollbar-thumb:active {
+  cursor: grabbing;
 }
 
 .row-hover {

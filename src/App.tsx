@@ -5038,29 +5038,87 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
     }
   }, []);
 
+  const isSyncingRef = useRef(false);
+
   const syncScrollFromTop = () => {
-    if (scrollSourceRef.current === 'table' || scrollSourceRef.current === 'button') return;
-    scrollSourceRef.current = 'top';
+    if (isSyncingRef.current) return;
     if (tableScrollRef.current && topScrollRef.current) {
+      isSyncingRef.current = true;
       tableScrollRef.current.scrollLeft = topScrollRef.current.scrollLeft;
+      requestAnimationFrame(() => {
+        isSyncingRef.current = false;
+      });
     }
-    clearTimeout(scrollTimeoutRef.current);
-    scrollTimeoutRef.current = setTimeout(() => {
-      scrollSourceRef.current = null;
-    }, 80);
   };
 
   const syncScrollFromTable = () => {
-    if (scrollSourceRef.current === 'top' || scrollSourceRef.current === 'button') return;
-    scrollSourceRef.current = 'table';
+    if (isSyncingRef.current) return;
     if (topScrollRef.current && tableScrollRef.current) {
+      isSyncingRef.current = true;
       topScrollRef.current.scrollLeft = tableScrollRef.current.scrollLeft;
+      requestAnimationFrame(() => {
+        isSyncingRef.current = false;
+      });
     }
-    clearTimeout(scrollTimeoutRef.current);
-    scrollTimeoutRef.current = setTimeout(() => {
-      scrollSourceRef.current = null;
-    }, 80);
   };
+
+  // Drag-to-scroll inside table container
+  const isTableDraggingRef = useRef(false);
+  const dragStartXRef = useRef(0);
+  const dragScrollLeftRef = useRef(0);
+
+  const handleTableMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+    const target = e.target as HTMLElement;
+    // Don't drag if clicking buttons, inputs, dropdowns, links, or interactive elements
+    if (target.closest('input, select, button, textarea, a, .clickable-cell, [contenteditable="true"]')) {
+      return;
+    }
+    isTableDraggingRef.current = true;
+    dragStartXRef.current = e.pageX;
+    dragScrollLeftRef.current = tableScrollRef.current?.scrollLeft || 0;
+  };
+
+  const handleTableMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!isTableDraggingRef.current || !tableScrollRef.current) return;
+    const deltaX = e.pageX - dragStartXRef.current;
+    if (Math.abs(deltaX) > 3) {
+      tableScrollRef.current.scrollLeft = dragScrollLeftRef.current - deltaX;
+      if (topScrollRef.current) {
+        topScrollRef.current.scrollLeft = tableScrollRef.current.scrollLeft;
+      }
+    }
+  };
+
+  const handleTableMouseUp = () => {
+    isTableDraggingRef.current = false;
+  };
+
+  // Header wheel scroll & Shift+Wheel support
+  useEffect(() => {
+    const tableEl = tableScrollRef.current;
+    if (!tableEl) return;
+
+    const onWheel = (e: WheelEvent) => {
+      const target = e.target as HTMLElement;
+      const isHeader = Boolean(target.closest('thead'));
+      
+      // If hovering over table header or holding Shift, scroll horizontally
+      if (isHeader || e.shiftKey) {
+        if (e.deltaY !== 0 && !e.shiftKey) {
+          e.preventDefault();
+          tableEl.scrollLeft += e.deltaY;
+          if (topScrollRef.current) {
+            topScrollRef.current.scrollLeft = tableEl.scrollLeft;
+          }
+        }
+      }
+    };
+
+    tableEl.addEventListener('wheel', onWheel, { passive: false });
+    return () => {
+      tableEl.removeEventListener('wheel', onWheel);
+    };
+  }, []);
 
   const handleScrollHorizontal = (delta: number) => {
     if (tableScrollRef.current) {
@@ -11760,7 +11818,11 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
               <div 
                 ref={tableScrollRef}
                 onScroll={syncScrollFromTable}
-                className="table-container overflow-x-auto rounded-2xl border border-white/10 shadow-2xl bg-[#0a0f1d]/40 backdrop-blur-sm pb-16"
+                onMouseDown={handleTableMouseDown}
+                onMouseMove={handleTableMouseMove}
+                onMouseUp={handleTableMouseUp}
+                onMouseLeave={handleTableMouseUp}
+                className="table-container overflow-x-auto rounded-2xl border border-white/10 shadow-2xl bg-[#0a0f1d]/40 backdrop-blur-sm pb-16 cursor-grab active:cursor-grabbing"
               >
                 <table className={`text-right border-collapse w-full ${isReelsTableTab ? 'min-w-[2600px]' : isOperations ? 'min-w-[1600px]' : 'min-w-[1400px]'}`}>
                   <thead className="sticky top-0 z-30 bg-[#0c1222] shadow-[0_4px_20px_rgba(0,0,0,0.5)] border-b border-white/10">

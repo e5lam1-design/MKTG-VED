@@ -5038,59 +5038,28 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
     }
   }, []);
 
-  const isSyncingRef = useRef(false);
-
   const syncScrollFromTop = () => {
-    if (isSyncingRef.current) return;
+    if (scrollSourceRef.current === 'table' || scrollSourceRef.current === 'button') return;
+    scrollSourceRef.current = 'top';
     if (tableScrollRef.current && topScrollRef.current) {
-      isSyncingRef.current = true;
       tableScrollRef.current.scrollLeft = topScrollRef.current.scrollLeft;
-      requestAnimationFrame(() => {
-        isSyncingRef.current = false;
-      });
     }
+    clearTimeout(scrollTimeoutRef.current);
+    scrollTimeoutRef.current = setTimeout(() => {
+      scrollSourceRef.current = null;
+    }, 60);
   };
 
   const syncScrollFromTable = () => {
-    if (isSyncingRef.current) return;
+    if (scrollSourceRef.current === 'top' || scrollSourceRef.current === 'button') return;
+    scrollSourceRef.current = 'table';
     if (topScrollRef.current && tableScrollRef.current) {
-      isSyncingRef.current = true;
       topScrollRef.current.scrollLeft = tableScrollRef.current.scrollLeft;
-      requestAnimationFrame(() => {
-        isSyncingRef.current = false;
-      });
     }
-  };
-
-  // Drag-to-scroll inside table container
-  const isTableDraggingRef = useRef(false);
-  const dragStartXRef = useRef(0);
-  const dragScrollLeftRef = useRef(0);
-
-  const handleTableMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
-    const target = e.target as HTMLElement;
-    // Don't drag if clicking buttons, inputs, dropdowns, links, or interactive elements
-    if (target.closest('input, select, button, textarea, a, .clickable-cell, [contenteditable="true"]')) {
-      return;
-    }
-    isTableDraggingRef.current = true;
-    dragStartXRef.current = e.pageX;
-    dragScrollLeftRef.current = tableScrollRef.current?.scrollLeft || 0;
-  };
-
-  const handleTableMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
-    if (!isTableDraggingRef.current || !tableScrollRef.current) return;
-    const deltaX = e.pageX - dragStartXRef.current;
-    if (Math.abs(deltaX) > 3) {
-      tableScrollRef.current.scrollLeft = dragScrollLeftRef.current - deltaX;
-      if (topScrollRef.current) {
-        topScrollRef.current.scrollLeft = tableScrollRef.current.scrollLeft;
-      }
-    }
-  };
-
-  const handleTableMouseUp = () => {
-    isTableDraggingRef.current = false;
+    clearTimeout(scrollTimeoutRef.current);
+    scrollTimeoutRef.current = setTimeout(() => {
+      scrollSourceRef.current = null;
+    }, 60);
   };
 
   // Header wheel scroll & Shift+Wheel support
@@ -5106,10 +5075,15 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
       if (isHeader || e.shiftKey) {
         if (e.deltaY !== 0 && !e.shiftKey) {
           e.preventDefault();
-          tableEl.scrollLeft += e.deltaY;
+          scrollSourceRef.current = 'table';
+          tableEl.scrollLeft += e.deltaY * 1.5;
           if (topScrollRef.current) {
             topScrollRef.current.scrollLeft = tableEl.scrollLeft;
           }
+          clearTimeout(scrollTimeoutRef.current);
+          scrollTimeoutRef.current = setTimeout(() => {
+            scrollSourceRef.current = null;
+          }, 60);
         }
       }
     };
@@ -5121,46 +5095,43 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
   }, []);
 
   const handleScrollHorizontal = (delta: number) => {
-    if (tableScrollRef.current) {
-      scrollSourceRef.current = 'button';
-      tableScrollRef.current.scrollBy({ left: delta, behavior: 'smooth' });
-      if (topScrollRef.current) {
-        topScrollRef.current.scrollBy({ left: delta, behavior: 'smooth' });
-      }
-      clearTimeout(scrollTimeoutRef.current);
-      scrollTimeoutRef.current = setTimeout(() => {
-        scrollSourceRef.current = null;
-      }, 400);
+    if (!tableScrollRef.current) return;
+    scrollSourceRef.current = 'button';
+    tableScrollRef.current.scrollBy({ left: delta, behavior: 'smooth' });
+    if (topScrollRef.current) {
+      topScrollRef.current.scrollBy({ left: delta, behavior: 'smooth' });
     }
+    clearTimeout(scrollTimeoutRef.current);
+    scrollTimeoutRef.current = setTimeout(() => {
+      scrollSourceRef.current = null;
+    }, 350);
   };
 
   const handleScrollToStart = () => {
-    if (tableScrollRef.current) {
-      scrollSourceRef.current = 'button';
-      tableScrollRef.current.scrollTo({ left: 0, behavior: 'smooth' });
-      if (topScrollRef.current) {
-        topScrollRef.current.scrollTo({ left: 0, behavior: 'smooth' });
-      }
-      clearTimeout(scrollTimeoutRef.current);
-      scrollTimeoutRef.current = setTimeout(() => {
-        scrollSourceRef.current = null;
-      }, 400);
+    if (!tableScrollRef.current) return;
+    scrollSourceRef.current = 'button';
+    tableScrollRef.current.scrollTo({ left: 0, behavior: 'smooth' });
+    if (topScrollRef.current) {
+      topScrollRef.current.scrollTo({ left: 0, behavior: 'smooth' });
     }
+    clearTimeout(scrollTimeoutRef.current);
+    scrollTimeoutRef.current = setTimeout(() => {
+      scrollSourceRef.current = null;
+    }, 350);
   };
 
   const handleScrollToEnd = () => {
-    if (tableScrollRef.current) {
-      scrollSourceRef.current = 'button';
-      const maxScroll = tableScrollRef.current.scrollWidth;
-      tableScrollRef.current.scrollTo({ left: maxScroll, behavior: 'smooth' });
-      if (topScrollRef.current) {
-        topScrollRef.current.scrollTo({ left: maxScroll, behavior: 'smooth' });
-      }
-      clearTimeout(scrollTimeoutRef.current);
-      scrollTimeoutRef.current = setTimeout(() => {
-        scrollSourceRef.current = null;
-      }, 400);
+    if (!tableScrollRef.current) return;
+    scrollSourceRef.current = 'button';
+    const maxScroll = tableScrollRef.current.scrollWidth;
+    tableScrollRef.current.scrollTo({ left: maxScroll, behavior: 'smooth' });
+    if (topScrollRef.current) {
+      topScrollRef.current.scrollTo({ left: maxScroll, behavior: 'smooth' });
     }
+    clearTimeout(scrollTimeoutRef.current);
+    scrollTimeoutRef.current = setTimeout(() => {
+      scrollSourceRef.current = null;
+    }, 350);
   };
 
   const handleAdminTermChange = (term: 'T1' | 'T2') => {
@@ -11770,7 +11741,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
                   </button>
                   <button
                     type="button"
-                    onClick={() => handleScrollHorizontal(-400)}
+                    onClick={() => handleScrollHorizontal(-500)}
                     className="px-3 py-1.5 text-xs font-bold rounded-xl bg-white/5 hover:bg-white/15 border border-white/10 text-muted hover:text-white flex items-center gap-1.5 transition-all cursor-pointer active:scale-95 shadow-sm group"
                     title="تمرير خطوة لليسار"
                   >
@@ -11796,7 +11767,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
                 <div className="flex items-center gap-1.5 shrink-0">
                   <button
                     type="button"
-                    onClick={() => handleScrollHorizontal(400)}
+                    onClick={() => handleScrollHorizontal(500)}
                     className="px-3 py-1.5 text-xs font-bold rounded-xl bg-white/5 hover:bg-white/15 border border-white/10 text-muted hover:text-white flex items-center gap-1.5 transition-all cursor-pointer active:scale-95 shadow-sm group"
                     title="تمرير خطوة لليمين"
                   >
@@ -11818,11 +11789,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
               <div 
                 ref={tableScrollRef}
                 onScroll={syncScrollFromTable}
-                onMouseDown={handleTableMouseDown}
-                onMouseMove={handleTableMouseMove}
-                onMouseUp={handleTableMouseUp}
-                onMouseLeave={handleTableMouseUp}
-                className="table-container overflow-x-auto rounded-2xl border border-white/10 shadow-2xl bg-[#0a0f1d]/40 backdrop-blur-sm pb-16 cursor-grab active:cursor-grabbing"
+                className="table-container overflow-x-auto rounded-2xl border border-white/10 shadow-2xl bg-[#0a0f1d]/40 backdrop-blur-sm pb-8"
               >
                 <table className={`text-right border-collapse w-full ${isReelsTableTab ? 'min-w-[2600px]' : isOperations ? 'min-w-[1600px]' : 'min-w-[1400px]'}`}>
                   <thead className="sticky top-0 z-30 bg-[#0c1222] shadow-[0_4px_20px_rgba(0,0,0,0.5)] border-b border-white/10">

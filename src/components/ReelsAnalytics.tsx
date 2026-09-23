@@ -4,7 +4,7 @@ import { supabase } from '../lib/supabase';
 import { 
   BarChart3, Film, CheckCircle2, XCircle, AlertCircle, Clock, 
   Layers, Users, Award, MapPin, PieChart, Search, Calendar, 
-  Play, ArrowLeft, History, TrendingUp, Cpu, Sparkles
+  Play, ArrowLeft, History, TrendingUp, Cpu, Sparkles, Scissors, Video
 } from 'lucide-react';
 
 interface ReelsAnalyticsProps {
@@ -133,6 +133,7 @@ export const ReelsAnalytics = ({ isDemo = false }: ReelsAnalyticsProps) => {
   const rawCutsData = isDemo ? sheetCuts : (dbCuts.length > 0 ? dbCuts : sheetCuts);
 
   const [searchCode, setSearchCode] = useState('');
+  const [trackFilter, setTrackFilter] = useState<'ALL' | 'SHOOTING_VE' | 'CUTS'>('ALL');
 
   const loading = isDemo ? (shootingLoading || veLoading || cutsLoading) : dbLoading;
   const error = isDemo ? (shootingError || veError || cutsError) : null;
@@ -165,6 +166,27 @@ export const ReelsAnalytics = ({ isDemo = false }: ReelsAnalyticsProps) => {
     const veData = rawVeData.filter(isValidRow).map(i => ({ ...i, stage: 'Ve' }));
     const cutsData = rawCutsData.filter(isValidRow).map(i => ({ ...i, stage: 'Cuts' }));
 
+    // ── 1. مسار التصوير والمونتاج المنفصل (Shooting ➔ VE) ──
+    const shootingTotal = shootingData.length;
+    const shootingFilmed = shootingData.filter(i => i.filmed).length;
+    const shootingUnfilmed = Math.max(0, shootingTotal - shootingFilmed);
+
+    const veTotal = veData.length;
+    const veCompleted = veData.filter(i => i.done).length;
+    const vePending = Math.max(0, veTotal - veCompleted);
+    const veCanceled = veData.filter(i => i.canceled).length;
+    const veMissing = veData.filter(i => i.missingDetails).length;
+    const veRate = veTotal > 0 ? Math.round((veCompleted / veTotal) * 100) : 0;
+    const veOverallRate = shootingTotal > 0 ? Math.round((veCompleted / shootingTotal) * 100) : 0;
+
+    // ── 2. مسار التقطيع المنفصل (CUTS) ──
+    const cutsTotal = cutsData.length;
+    const cutsCompleted = cutsData.filter(i => i.done).length;
+    const cutsPending = Math.max(0, cutsTotal - cutsCompleted);
+    const cutsCanceled = cutsData.filter(i => i.canceled).length;
+    const cutsMissing = cutsData.filter(i => i.missingDetails || (i as any).problem).length;
+    const cutsRate = cutsTotal > 0 ? Math.round((cutsCompleted / cutsTotal) * 100) : 0;
+
     // Deduplicate reels by unique code (id or script name)
     const uniqueReelsMap = new Map();
     [...shootingData, ...veData, ...cutsData].forEach(item => {
@@ -190,12 +212,13 @@ export const ReelsAnalytics = ({ isDemo = false }: ReelsAnalyticsProps) => {
     const pending = total - completed;
     const canceled = uniqueAllData.filter(i => i.canceled).length;
     const missing = uniqueAllData.filter(i => i.missingDetails).length;
+    const totalRate = total > 0 ? Math.round((completed / total) * 100) : 0;
 
     // Stage breakdown: total and completed for each of the three stages
-    const stageMap = [
-      ['تصوير (Shooting)', { count: shootingData.length, completed: shootingData.filter(i => i.done).length }],
-      ['مونتاج (Ve)', { count: veData.length, completed: veData.filter(i => i.done).length }],
-      ['تقطيع (Cuts)', { count: cutsData.length, completed: cutsData.filter(i => i.done).length }]
+    const stageMap: [string, { count: number; completed: number; actionLabel?: string }][] = [
+      ['تصوير (Shooting)', { count: shootingData.length, completed: shootingFilmed, actionLabel: 'تم تصويره' }],
+      ['مونتاج (Ve)', { count: veData.length, completed: veCompleted, actionLabel: 'تم مونتاجه' }],
+      ['تقطيع (Cuts)', { count: cutsData.length, completed: cutsCompleted, actionLabel: 'تم تقطيعه' }]
     ];
 
     // Teacher breakdown (exclude 'غير محدد' and empty)
@@ -340,6 +363,29 @@ export const ReelsAnalytics = ({ isDemo = false }: ReelsAnalyticsProps) => {
       pending,
       canceled,
       missing,
+      totalRate,
+      veStats: {
+        total: veTotal,
+        completed: veCompleted,
+        pending: vePending,
+        canceled: veCanceled,
+        missing: veMissing,
+        rate: veRate,
+        overallRate: veOverallRate
+      },
+      shootingStats: {
+        total: shootingTotal,
+        filmed: shootingFilmed,
+        unfilmed: shootingUnfilmed
+      },
+      cutsStats: {
+        total: cutsTotal,
+        completed: cutsCompleted,
+        pending: cutsPending,
+        canceled: cutsCanceled,
+        missing: cutsMissing,
+        rate: cutsRate
+      },
       stageMap,
       teacherMap: Object.entries(teacherMap).sort((a, b) => b[1].count - a[1].count),
       branchMap: Object.entries(branchMap).sort((a, b) => b[1].count - a[1].count),
@@ -350,6 +396,54 @@ export const ReelsAnalytics = ({ isDemo = false }: ReelsAnalyticsProps) => {
       sampleCodes
     };
   }, [rawShootingData, rawVeData, rawCutsData, loading]);
+
+  // Dynamic KPI and progress data based on active track filter
+  const currentKpis = useMemo(() => {
+    if (!stats) return null;
+    if (trackFilter === 'SHOOTING_VE') {
+      return {
+        title: 'مؤشر مسار التصوير والمونتاج (Shooting ➔ VE)',
+        subtitle: `الريلز التي تم تصويرها في الشوتينج ودخلت شيت VE للمونتاج (من أصل ${stats.shootingStats.total} سكريبت)`,
+        total: stats.veStats.total,
+        totalLabel: 'ريلز دخلت VE للمونتاج',
+        totalSub: `تم تصوير ${stats.veStats.total} من أصل ${stats.shootingStats.total} سكريبت`,
+        completed: stats.veStats.completed,
+        pending: stats.veStats.pending,
+        missing: stats.veStats.missing,
+        canceled: stats.veStats.canceled,
+        rate: stats.veStats.rate,
+        rateLabel: 'نسبة إنجاز المونتاج من المصور'
+      };
+    }
+    if (trackFilter === 'CUTS') {
+      return {
+        title: 'مؤشر مسار التقطيع والكتس (CUTS Track)',
+        subtitle: 'متابعة ريلز التقطيع المستقلة المسجلة في شيت Cuts',
+        total: stats.cutsStats.total,
+        totalLabel: 'إجمالي ريلز Cuts',
+        totalSub: 'ريلز التقطيع المستقلة بالكامل',
+        completed: stats.cutsStats.completed,
+        pending: stats.cutsStats.pending,
+        missing: stats.cutsStats.missing,
+        canceled: stats.cutsStats.canceled,
+        rate: stats.cutsStats.rate,
+        rateLabel: 'نسبة إنجاز الكتس'
+      };
+    }
+    return {
+      title: 'مؤشر نسبة الإنجاز والإنتاج الكلية',
+      subtitle: 'متابعة دقيقة لنسب المكتمل، قيد التنفيذ، والتفاصيل الناقصة/الملغية لجميع الريلز',
+      total: stats.total,
+      totalLabel: 'إجمالي الريلز',
+      totalSub: 'تشمل التصوير والمونتاج والتقطيع',
+      completed: stats.completed,
+      pending: stats.pending,
+      missing: stats.missing,
+      canceled: stats.canceled,
+      rate: stats.totalRate,
+      rateLabel: 'نسبة الإنجاز الكلية'
+    };
+  }, [stats, trackFilter]);
 
   // Find timeline details dynamically for the searched code
   const timelineItem = useMemo(() => {
@@ -451,43 +545,283 @@ export const ReelsAnalytics = ({ isDemo = false }: ReelsAnalyticsProps) => {
         </div>
       </div>
 
+      {/* ── TRACK SELECTOR TABS ── */}
+      <div className="flex items-center justify-between flex-wrap gap-3 pb-1">
+        <div className="flex items-center gap-2 bg-white/5 p-1.5 rounded-2xl border border-white/10 shadow-lg">
+          <button
+            onClick={() => setTrackFilter('ALL')}
+            className={`px-4 py-2 rounded-xl text-xs font-black transition-all duration-200 cursor-pointer flex items-center gap-2 ${
+              trackFilter === 'ALL'
+                ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/30'
+                : 'text-white/60 hover:text-white hover:bg-white/5'
+            }`}
+          >
+            <span>📊 شامل كل الريلز</span>
+            <span className="px-2 py-0.5 rounded-lg bg-black/30 text-[10px] font-mono font-bold">
+              {stats.total}
+            </span>
+          </button>
+
+          <button
+            onClick={() => setTrackFilter('SHOOTING_VE')}
+            className={`px-4 py-2 rounded-xl text-xs font-black transition-all duration-200 cursor-pointer flex items-center gap-2 ${
+              trackFilter === 'SHOOTING_VE'
+                ? 'bg-cyan-500 text-white shadow-lg shadow-cyan-500/30'
+                : 'text-white/60 hover:text-white hover:bg-white/5'
+            }`}
+          >
+            <Film size={14} />
+            <span>مسار التصوير والمونتاج (Shooting ➔ VE)</span>
+            <span className="px-2 py-0.5 rounded-lg bg-black/30 text-[10px] font-mono font-bold">
+              {stats.shootingStats.total} سكريبت
+            </span>
+          </button>
+
+          <button
+            onClick={() => setTrackFilter('CUTS')}
+            className={`px-4 py-2 rounded-xl text-xs font-black transition-all duration-200 cursor-pointer flex items-center gap-2 ${
+              trackFilter === 'CUTS'
+                ? 'bg-orange-500 text-white shadow-lg shadow-orange-500/30'
+                : 'text-white/60 hover:text-white hover:bg-white/5'
+            }`}
+          >
+            <Scissors size={14} />
+            <span>مسار التقطيع (CUTS)</span>
+            <span className="px-2 py-0.5 rounded-lg bg-black/30 text-[10px] font-mono font-bold">
+              {stats.cutsStats.total} كتس
+            </span>
+          </button>
+        </div>
+
+        {trackFilter !== 'ALL' && (
+          <button
+            onClick={() => setTrackFilter('ALL')}
+            className="text-xs font-bold text-emerald-400 hover:text-emerald-300 underline cursor-pointer px-2 py-1"
+          >
+            عرض الكل (إلغاء التحديد) ✕
+          </button>
+        )}
+      </div>
+
+      {/* ── THE TWO DEDICATED INDEPENDENT CALCULATION BOXES ── */}
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
+            <h3 className="text-base font-black text-white arabic-text">مسارات العمل المستقلة (حسابات منفصلة لكل مسار)</h3>
+          </div>
+          <span className="text-xs text-white/40 font-bold">اضغط على أي مسار للفلترة السريعة</span>
+        </div>
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Box 1: Shooting ➔ VE */}
+          <div 
+            onClick={() => setTrackFilter(prev => prev === 'SHOOTING_VE' ? 'ALL' : 'SHOOTING_VE')}
+            className={`p-6 rounded-3xl transition-all duration-300 relative overflow-hidden cursor-pointer group shadow-2xl ${
+              trackFilter === 'SHOOTING_VE'
+                ? 'bg-gradient-to-br from-[#0c1628] to-[#080d1a] border-2 border-cyan-400 ring-4 ring-cyan-500/20 shadow-[0_0_35px_rgba(6,182,212,0.25)]'
+                : 'bg-gradient-to-br from-[#0a0e18] to-[#060910] border border-cyan-500/30 hover:border-cyan-500/60 hover:shadow-cyan-500/10'
+            }`}
+          >
+            {/* Top Accent Gradient */}
+            <div className="absolute top-0 right-0 left-0 h-1.5 bg-gradient-to-r from-purple-500 via-cyan-400 to-blue-500" />
+            
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-2xl bg-cyan-500/15 border border-cyan-500/30 text-cyan-300 flex items-center justify-center shadow-lg shadow-cyan-500/20 group-hover:scale-105 transition-transform">
+                  <Film size={22} />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h3 className="text-base font-black text-white arabic-text">مسار التصوير والمونتاج</h3>
+                    <span className="text-[10px] font-mono font-black px-2.5 py-0.5 rounded-full bg-cyan-500/20 border border-cyan-400/40 text-cyan-300">
+                      Shooting ➔ VE
+                    </span>
+                    {trackFilter === 'SHOOTING_VE' && (
+                      <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-cyan-400 text-black">
+                        محدد حالياً ✓
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-white/50 font-medium arabic-text mt-1">
+                    الريلز اللي اتصورت في الشوتينج ودخلت شيت VE للمونتاج
+                  </p>
+                </div>
+              </div>
+
+              <div className="text-left shrink-0">
+                <span className="text-3xl font-black font-mono text-cyan-400">
+                  {stats.veStats.rate}%
+                </span>
+                <span className="text-[10px] text-white/40 block font-bold">نسبة إنجاز المونتاج</span>
+              </div>
+            </div>
+
+            {/* Progress bar */}
+            <div className="w-full h-3 bg-white/5 rounded-full overflow-hidden flex gap-0.5 p-0.5 border border-white/10 mb-4 shadow-inner">
+              <div 
+                style={{ width: `${stats.veStats.rate}%` }}
+                className="bg-gradient-to-r from-cyan-500 to-blue-500 h-full rounded-full transition-all duration-1000 shadow-[0_0_10px_rgba(6,182,212,0.5)]"
+                title={`مكتمل المونتاج: ${stats.veStats.completed}`}
+              />
+              <div 
+                style={{ width: `${100 - stats.veStats.rate}%` }}
+                className="bg-amber-500/70 h-full rounded-full transition-all duration-1000"
+                title={`قيد المونتاج: ${stats.veStats.pending}`}
+              />
+            </div>
+
+            {/* Stats Row */}
+            <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+              <div className="p-2.5 rounded-2xl bg-white/[0.03] border border-white/10 text-center">
+                <span className="text-[10px] text-white/50 font-bold block mb-0.5">إجمالي السكريبتات</span>
+                <span className="text-lg font-black font-mono text-white">{stats.shootingStats.total}</span>
+                <span className="text-[9px] text-white/30 block mt-0.5">في Shooting</span>
+              </div>
+              <div className="p-2.5 rounded-2xl bg-cyan-950/40 border border-cyan-500/30 text-center">
+                <span className="text-[10px] text-cyan-300 font-bold block mb-0.5">اتصور ودخل VE</span>
+                <span className="text-lg font-black font-mono text-cyan-400">{stats.veStats.total}</span>
+                <span className="text-[9px] text-cyan-300/60 block mt-0.5">جاهز للمونتاج</span>
+              </div>
+              <div className="p-2.5 rounded-2xl bg-emerald-950/40 border border-emerald-500/30 text-center">
+                <span className="text-[10px] text-emerald-300 font-bold block mb-0.5">مكتمل (DONE)</span>
+                <span className="text-lg font-black font-mono text-emerald-400">{stats.veStats.completed}</span>
+                <span className="text-[9px] text-emerald-300/60 block mt-0.5">تم تسليمه</span>
+              </div>
+              <div className="p-2.5 rounded-2xl bg-amber-950/40 border border-amber-500/30 text-center">
+                <span className="text-[10px] text-amber-300 font-bold block mb-0.5">قيد المونتاج</span>
+                <span className="text-lg font-black font-mono text-amber-400">{stats.veStats.pending}</span>
+                <span className="text-[9px] text-amber-300/60 block mt-0.5">متبقي في VE</span>
+              </div>
+              <div className="p-2.5 rounded-2xl bg-white/[0.03] border border-white/10 text-center">
+                <span className="text-[10px] text-purple-300 font-bold block mb-0.5">قيد التصوير</span>
+                <span className="text-lg font-black font-mono text-purple-400">{stats.shootingStats.unfilmed}</span>
+                <span className="text-[9px] text-purple-300/60 block mt-0.5">لم يُصوّر بعد</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Box 2: Cuts */}
+          <div 
+            onClick={() => setTrackFilter(prev => prev === 'CUTS' ? 'ALL' : 'CUTS')}
+            className={`p-6 rounded-3xl transition-all duration-300 relative overflow-hidden cursor-pointer group shadow-2xl ${
+              trackFilter === 'CUTS'
+                ? 'bg-gradient-to-br from-[#1d120a] to-[#120a05] border-2 border-orange-400 ring-4 ring-orange-500/20 shadow-[0_0_35px_rgba(249,115,22,0.25)]'
+                : 'bg-gradient-to-br from-[#120c06] to-[#0a0603] border border-orange-500/30 hover:border-orange-500/60 hover:shadow-orange-500/10'
+            }`}
+          >
+            {/* Top Accent Gradient */}
+            <div className="absolute top-0 right-0 left-0 h-1.5 bg-gradient-to-r from-orange-500 via-amber-400 to-yellow-500" />
+            
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-3">
+                <div className="w-12 h-12 rounded-2xl bg-orange-500/15 border border-orange-500/30 text-orange-300 flex items-center justify-center shadow-lg shadow-orange-500/20 group-hover:scale-105 transition-transform">
+                  <Scissors size={22} />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h3 className="text-base font-black text-white arabic-text">مسار التقطيع (CUTS)</h3>
+                    <span className="text-[10px] font-mono font-black px-2.5 py-0.5 rounded-full bg-orange-500/20 border border-orange-400/40 text-orange-300">
+                      CUTS Track
+                    </span>
+                    {trackFilter === 'CUTS' && (
+                      <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-orange-400 text-black">
+                        محدد حالياً ✓
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-xs text-white/50 font-medium arabic-text mt-1">
+                    ريلز التقطيع المستقلة المسجلة في شيت Cuts
+                  </p>
+                </div>
+              </div>
+
+              <div className="text-left shrink-0">
+                <span className="text-3xl font-black font-mono text-orange-400">
+                  {stats.cutsStats.rate}%
+                </span>
+                <span className="text-[10px] text-white/40 block font-bold">نسبة إنجاز الكتس</span>
+              </div>
+            </div>
+
+            {/* Progress bar */}
+            <div className="w-full h-3 bg-white/5 rounded-full overflow-hidden flex gap-0.5 p-0.5 border border-white/10 mb-4 shadow-inner">
+              <div 
+                style={{ width: `${stats.cutsStats.rate}%` }}
+                className="bg-gradient-to-r from-orange-500 to-amber-400 h-full rounded-full transition-all duration-1000 shadow-[0_0_10px_rgba(249,115,22,0.5)]"
+                title={`مكتمل الكتس: ${stats.cutsStats.completed}`}
+              />
+              <div 
+                style={{ width: `${100 - stats.cutsStats.rate}%` }}
+                className="bg-amber-500/70 h-full rounded-full transition-all duration-1000"
+                title={`قيد التقطيع: ${stats.cutsStats.pending}`}
+              />
+            </div>
+
+            {/* Stats Row */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              <div className="p-2.5 rounded-2xl bg-white/[0.03] border border-white/10 text-center">
+                <span className="text-[10px] text-white/50 font-bold block mb-0.5">إجمالي الكتس</span>
+                <span className="text-lg font-black font-mono text-white">{stats.cutsStats.total}</span>
+                <span className="text-[9px] text-white/30 block mt-0.5">في شيت Cuts</span>
+              </div>
+              <div className="p-2.5 rounded-2xl bg-emerald-950/40 border border-emerald-500/30 text-center">
+                <span className="text-[10px] text-emerald-300 font-bold block mb-0.5">مكتمل (DONE)</span>
+                <span className="text-lg font-black font-mono text-emerald-400">{stats.cutsStats.completed}</span>
+                <span className="text-[9px] text-emerald-300/60 block mt-0.5">تم الانتهاء</span>
+              </div>
+              <div className="p-2.5 rounded-2xl bg-amber-950/40 border border-amber-500/30 text-center">
+                <span className="text-[10px] text-amber-300 font-bold block mb-0.5">قيد التقطيع</span>
+                <span className="text-lg font-black font-mono text-amber-400">{stats.cutsStats.pending}</span>
+                <span className="text-[9px] text-amber-300/60 block mt-0.5">متبقي للتسليم</span>
+              </div>
+              <div className="p-2.5 rounded-2xl bg-rose-950/40 border border-rose-500/30 text-center">
+                <span className="text-[10px] text-rose-300 font-bold block mb-0.5">مشاكل / ملغي</span>
+                <span className="text-lg font-black font-mono text-rose-400">{stats.cutsStats.canceled + stats.cutsStats.missing}</span>
+                <span className="text-[9px] text-rose-300/60 block mt-0.5">مشاكل تقطيع</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       {/* Production Progress Bar (Leader Dashboard Banner) */}
       <div className="p-6 rounded-3xl bg-[#0a0d14] border border-emerald-500/30 shadow-2xl space-y-4">
-        <div className="flex items-center justify-between">
+        <div className="flex items-center justify-between flex-wrap gap-4">
           <div className="flex items-center gap-3">
             <span className="text-xl">🚀</span>
             <div>
-              <h3 className="text-base font-black text-white arabic-text">مؤشر نسبة الإنجاز والإنتاج الكلية</h3>
-              <p className="text-xs text-muted arabic-text">متابعة دقيقة لنسب المكتمل، قيد التنفيذ، والتفاصيل الناقصة/الملغية</p>
+              <h3 className="text-base font-black text-white arabic-text">{currentKpis?.title}</h3>
+              <p className="text-xs text-muted arabic-text">{currentKpis?.subtitle}</p>
             </div>
           </div>
           <div className="text-left">
             <span className="text-3xl font-black font-mono text-emerald-400">
-              {stats.total > 0 ? Math.round((stats.completed / stats.total) * 100) : 0}%
+              {currentKpis?.rate}%
             </span>
-            <span className="text-xs text-muted block arabic-text">نسبة الإنجاز النهائية</span>
+            <span className="text-xs text-muted block arabic-text">{currentKpis?.rateLabel}</span>
           </div>
         </div>
 
         {/* Multi-segment Animated Progress Bar */}
         <div className="w-full h-4 bg-white/5 rounded-full overflow-hidden flex gap-0.5 p-0.5 border border-white/10 shadow-inner">
-          {/* DONE / MUP */}
+          {/* DONE */}
           <div 
-            style={{ width: `${stats.total > 0 ? (stats.completed / stats.total) * 100 : 0}%` }}
+            style={{ width: `${(currentKpis?.total || 0) > 0 ? ((currentKpis?.completed || 0) / (currentKpis?.total || 1)) * 100 : 0}%` }}
             className="bg-gradient-to-r from-emerald-500 to-teal-400 h-full rounded-full transition-all duration-1000 shadow-[0_0_12px_rgba(16,185,129,0.5)]"
-            title={`مكتمل (DONE): ${stats.completed}`}
+            title={`مكتمل (DONE): ${currentKpis?.completed}`}
           />
           {/* In Progress / Pending */}
           <div 
-            style={{ width: `${stats.total > 0 ? (stats.pending / stats.total) * 100 : 0}%` }}
+            style={{ width: `${(currentKpis?.total || 0) > 0 ? ((currentKpis?.pending || 0) / (currentKpis?.total || 1)) * 100 : 0}%` }}
             className="bg-gradient-to-r from-amber-500 to-yellow-400 h-full rounded-full transition-all duration-1000 shadow-[0_0_12px_rgba(245,158,11,0.5)]"
-            title={`قيد التنفيذ: ${stats.pending}`}
+            title={`قيد التنفيذ: ${currentKpis?.pending}`}
           />
           {/* Missing / Canceled */}
           <div 
-            style={{ width: `${stats.total > 0 ? ((stats.canceled + stats.missing) / stats.total) * 100 : 0}%` }}
+            style={{ width: `${(currentKpis?.total || 0) > 0 ? (((currentKpis?.canceled || 0) + (currentKpis?.missing || 0)) / (currentKpis?.total || 1)) * 100 : 0}%` }}
             className="bg-gradient-to-r from-rose-500 to-red-400 h-full rounded-full transition-all duration-1000 shadow-[0_0_12px_rgba(244,63,94,0.5)]"
-            title={`ملغي / ناقص: ${stats.canceled + stats.missing}`}
+            title={`ملغي / ناقص: ${(currentKpis?.canceled || 0) + (currentKpis?.missing || 0)}`}
           />
         </div>
 
@@ -495,15 +829,15 @@ export const ReelsAnalytics = ({ isDemo = false }: ReelsAnalyticsProps) => {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3 pt-2">
           <div className="bg-emerald-500/10 border border-emerald-500/20 rounded-xl p-3 text-center">
             <span className="text-[11px] font-bold text-emerald-400 block arabic-text">🟩 مكتمل (DONE)</span>
-            <span className="text-lg font-black font-mono text-white">{stats.completed} ({stats.total > 0 ? Math.round((stats.completed / stats.total) * 100) : 0}%)</span>
+            <span className="text-lg font-black font-mono text-white">{currentKpis?.completed} ({(currentKpis?.total || 0) > 0 ? Math.round(((currentKpis?.completed || 0) / (currentKpis?.total || 1)) * 100) : 0}%)</span>
           </div>
           <div className="bg-amber-500/10 border border-amber-500/20 rounded-xl p-3 text-center">
             <span className="text-[11px] font-bold text-amber-400 block arabic-text">🟨 قيد التنفيذ والمونتاج</span>
-            <span className="text-lg font-black font-mono text-white">{stats.pending} ({stats.total > 0 ? Math.round((stats.pending / stats.total) * 100) : 0}%)</span>
+            <span className="text-lg font-black font-mono text-white">{currentKpis?.pending} ({(currentKpis?.total || 0) > 0 ? Math.round(((currentKpis?.pending || 0) / (currentKpis?.total || 1)) * 100) : 0}%)</span>
           </div>
           <div className="bg-rose-500/10 border border-rose-500/20 rounded-xl p-3 text-center">
             <span className="text-[11px] font-bold text-rose-400 block arabic-text">🟥 ملغي / ناقص تفاصيل</span>
-            <span className="text-lg font-black font-mono text-white">{stats.canceled + stats.missing} ({stats.total > 0 ? Math.round(((stats.canceled + stats.missing) / stats.total) * 100) : 0}%)</span>
+            <span className="text-lg font-black font-mono text-white">{(currentKpis?.canceled || 0) + (currentKpis?.missing || 0)} ({(currentKpis?.total || 0) > 0 ? Math.round((((currentKpis?.canceled || 0) + (currentKpis?.missing || 0)) / (currentKpis?.total || 1)) * 100) : 0}%)</span>
           </div>
         </div>
       </div>
@@ -513,13 +847,13 @@ export const ReelsAnalytics = ({ isDemo = false }: ReelsAnalyticsProps) => {
         {/* Total Reels */}
         <div className="p-6 rounded-3xl bg-[#0a0d14] border border-white/5 hover:border-emerald-500/40 transition-all duration-300 group hover:shadow-[0_0_30px_rgba(16,185,129,0.15)] relative overflow-hidden">
           <div className="flex items-center justify-between mb-4">
-            <span className="text-xs font-black text-white/50 group-hover:text-emerald-300 transition-colors arabic-text">إجمالي الريلز</span>
+            <span className="text-xs font-black text-white/50 group-hover:text-emerald-300 transition-colors arabic-text">{currentKpis?.totalLabel}</span>
             <div className="w-10 h-10 rounded-xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center group-hover:scale-110 transition-transform">
               <Film size={20} />
             </div>
           </div>
-          <h3 className="text-4xl font-black tracking-tight text-white">{stats.total}</h3>
-          <p className="text-[10px] text-white/40 mt-2 arabic-text">تشمل التصوير والمونتاج والتقطيع</p>
+          <h3 className="text-4xl font-black tracking-tight text-white">{currentKpis?.total}</h3>
+          <p className="text-[10px] text-white/40 mt-2 arabic-text">{currentKpis?.totalSub}</p>
         </div>
 
         {/* Successfully Completed */}
@@ -530,9 +864,9 @@ export const ReelsAnalytics = ({ isDemo = false }: ReelsAnalyticsProps) => {
               <CheckCircle2 size={20} />
             </div>
           </div>
-          <h3 className="text-4xl font-black tracking-tight text-emerald-400">{stats.completed}</h3>
+          <h3 className="text-4xl font-black tracking-tight text-emerald-400">{currentKpis?.completed}</h3>
           <div className="mt-2 w-full bg-white/5 rounded-full h-1.5 overflow-hidden">
-            <div className="bg-emerald-500 h-full rounded-full transition-all duration-1000" style={{ width: `${stats.total > 0 ? (stats.completed/stats.total)*100 : 0}%` }} />
+            <div className="bg-emerald-500 h-full rounded-full transition-all duration-1000" style={{ width: `${(currentKpis?.total || 0) > 0 ? ((currentKpis?.completed || 0) / (currentKpis?.total || 1)) * 100 : 0}%` }} />
           </div>
         </div>
 
@@ -544,9 +878,9 @@ export const ReelsAnalytics = ({ isDemo = false }: ReelsAnalyticsProps) => {
               <Clock size={20} />
             </div>
           </div>
-          <h3 className="text-4xl font-black tracking-tight text-amber-400">{stats.pending}</h3>
+          <h3 className="text-4xl font-black tracking-tight text-amber-400">{currentKpis?.pending}</h3>
           <div className="mt-2 w-full bg-white/5 rounded-full h-1.5 overflow-hidden">
-            <div className="bg-amber-500 h-full rounded-full transition-all duration-1000" style={{ width: `${stats.total > 0 ? (stats.pending/stats.total)*100 : 0}%` }} />
+            <div className="bg-amber-500 h-full rounded-full transition-all duration-1000" style={{ width: `${(currentKpis?.total || 0) > 0 ? ((currentKpis?.pending || 0) / (currentKpis?.total || 1)) * 100 : 0}%` }} />
           </div>
         </div>
 
@@ -558,9 +892,9 @@ export const ReelsAnalytics = ({ isDemo = false }: ReelsAnalyticsProps) => {
               <AlertCircle size={20} />
             </div>
           </div>
-          <h3 className="text-4xl font-black tracking-tight text-purple-400">{stats.missing}</h3>
+          <h3 className="text-4xl font-black tracking-tight text-purple-400">{currentKpis?.missing}</h3>
           <div className="mt-2 w-full bg-white/5 rounded-full h-1.5 overflow-hidden">
-            <div className="bg-purple-500 h-full rounded-full transition-all duration-1000" style={{ width: `${stats.total > 0 ? (stats.missing/stats.total)*100 : 0}%` }} />
+            <div className="bg-purple-500 h-full rounded-full transition-all duration-1000" style={{ width: `${(currentKpis?.total || 0) > 0 ? ((currentKpis?.missing || 0) / (currentKpis?.total || 1)) * 100 : 0}%` }} />
           </div>
         </div>
 
@@ -572,9 +906,9 @@ export const ReelsAnalytics = ({ isDemo = false }: ReelsAnalyticsProps) => {
               <XCircle size={20} />
             </div>
           </div>
-          <h3 className="text-4xl font-black tracking-tight text-rose-400">{stats.canceled}</h3>
+          <h3 className="text-4xl font-black tracking-tight text-rose-400">{currentKpis?.canceled}</h3>
           <div className="mt-2 w-full bg-white/5 rounded-full h-1.5 overflow-hidden">
-            <div className="bg-rose-500 h-full rounded-full transition-all duration-1000" style={{ width: `${stats.total > 0 ? (stats.canceled/stats.total)*100 : 0}%` }} />
+            <div className="bg-rose-500 h-full rounded-full transition-all duration-1000" style={{ width: `${(currentKpis?.total || 0) > 0 ? ((currentKpis?.canceled || 0) / (currentKpis?.total || 1)) * 100 : 0}%` }} />
           </div>
         </div>
       </div>
@@ -895,19 +1229,19 @@ export const ReelsAnalytics = ({ isDemo = false }: ReelsAnalyticsProps) => {
             <span className="text-xs text-muted font-bold">{stats.stageMap.length} مراحل نشطة</span>
           </div>
           <div className="space-y-5 max-h-[360px] overflow-y-auto pr-2">
-            {stats.stageMap.map(([stage, { count, completed }]) => (
+            {stats.stageMap.map(([stage, info]) => (
               <div key={stage} className="space-y-2">
                 <div className="flex justify-between text-sm arabic-text font-bold">
                   <span className="text-white/90">{stage}</span>
                   <div className="flex items-center gap-4 text-xs font-mono">
-                    <span className="text-emerald-400">{completed} مكتمل</span>
+                    <span className="text-emerald-400">{info.completed} {info.actionLabel || 'مكتمل'}</span>
                     <span className="text-muted">/</span>
-                    <span className="text-white">{count} إجمالي</span>
+                    <span className="text-white">{info.count} إجمالي</span>
                   </div>
                 </div>
                 <div className="w-full bg-white/5 rounded-full h-2.5 overflow-hidden p-0.5 flex">
-                  <div className="bg-gradient-to-l from-emerald-500 to-teal-400 h-full rounded-full transition-all duration-1000 shadow-sm" style={{ width: `${count > 0 ? (completed/count)*100 : 0}%` }} />
-                  <div className="bg-white/15 h-full transition-all duration-1000 rounded-full" style={{ width: `${count > 0 ? ((count-completed)/count)*100 : 0}%` }} />
+                  <div className="bg-gradient-to-l from-emerald-500 to-teal-400 h-full rounded-full transition-all duration-1000 shadow-sm" style={{ width: `${info.count > 0 ? (info.completed/info.count)*100 : 0}%` }} />
+                  <div className="bg-white/15 h-full transition-all duration-1000 rounded-full" style={{ width: `${info.count > 0 ? ((info.count-info.completed)/info.count)*100 : 0}%` }} />
                 </div>
               </div>
             ))}

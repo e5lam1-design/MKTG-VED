@@ -2866,13 +2866,15 @@ const ShootingRow = ({ item, index, activeGid, onToggleFilmed, loadingFilmedCode
       } row-hover ${isGlowing ? 'bg-emerald-500/20 shadow-[inset_0_0_25px_rgba(16,185,129,0.4)] ring-2 ring-emerald-500/50 border-emerald-500/50 animate-pulse relative z-10' : isRowActive ? 'relative z-20' : ''}`}
     >
       {!isSimple && (
-        <>
-          <td className="px-4 py-5 text-center"><span className="px-3 py-1.5 rounded-xl bg-white/5 border border-white/10 text-xs font-mono font-bold text-blue-400 shrink-0">{item.date || '---'}</span></td>
-          
-          <AutofillCell colKey="branch" rowIndex={index} value={editForm.branch} autofillDrag={autofillDrag} setAutofillDrag={setAutofillDrag} onApply={onApplyAutofill} activeCell={activeCell} setActiveCell={setActiveCell} liveDataLength={liveData?.length}>
-            <InlineCombobox options={optionsLists?.branches} value={editForm.branch} onChange={(val: string) => handleFieldChange('branch', val)} />
-          </AutofillCell>
+        <td className="px-4 py-5 text-center"><span className="px-3 py-1.5 rounded-xl bg-white/5 border border-white/10 text-xs font-mono font-bold text-blue-400 shrink-0">{item.date || '---'}</span></td>
+      )}
+      
+      <AutofillCell colKey="branch" rowIndex={index} value={editForm.branch} autofillDrag={autofillDrag} setAutofillDrag={setAutofillDrag} onApply={onApplyAutofill} activeCell={activeCell} setActiveCell={setActiveCell} liveDataLength={liveData?.length}>
+        <InlineCombobox options={optionsLists?.branches} value={editForm.branch} onChange={(val: string) => handleFieldChange('branch', val)} />
+      </AutofillCell>
 
+      {!isSimple && (
+        <>
           <AutofillCell colKey="year" rowIndex={index} value={editForm.year} autofillDrag={autofillDrag} setAutofillDrag={setAutofillDrag} onApply={onApplyAutofill} activeCell={activeCell} setActiveCell={setActiveCell} liveDataLength={liveData?.length}>
             <InlineCombobox options={optionsLists?.years} value={editForm.year} onChange={(val: string) => handleFieldChange('year', val)} />
           </AutofillCell>
@@ -9690,6 +9692,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
     );
     if (activeGid === '1939073164' && veViewMode === 'SIMPLE') return (
       <>
+        <th className="px-3 py-4 text-center th-style"><ColFilter colKey="branch" label="Branch" /></th>
         <th className="px-4 py-4 text-center th-style">code</th>
         <th className="px-8 py-4 text-right th-style">السكريبت</th>
         <th className="px-3 py-4 text-center th-style"><ColFilter colKey="type" label="النوع" /></th>
@@ -9936,7 +9939,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
     return Array.from(list);
   }, [uniqueTeachers]);
 
-  const colSpan = isOperations ? 7 : isTagme3at ? (tagmeViewMode === 'SIMPLE' ? 8 : 13) : activeGid === '0' ? 18 : activeGid === '1939073164' ? (veViewMode === 'SIMPLE' ? 16 : 22) : ['1436746012', '798246690'].includes(activeGid) ? 16 : 7;
+  const colSpan = isOperations ? 7 : isTagme3at ? (tagmeViewMode === 'SIMPLE' ? 8 : 13) : activeGid === '0' ? 18 : activeGid === '1939073164' ? (veViewMode === 'SIMPLE' ? 17 : 22) : ['1436746012', '798246690'].includes(activeGid) ? 16 : 7;
 
   const effectiveLoading = isTagme3at 
     ? (isTagmeDbLoading && tagmeDbRows.length === 0)

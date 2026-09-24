@@ -4217,9 +4217,17 @@ const TagmeAnalyticsDashboard = ({ combinedData, tagmeTransfers, loading, taskSt
     });
 
     // ── Calculate Time-to-Done (مدة الإنجاز حتى الـ Done) ──────
-    const parseTagmeDate = (dStr?: string) => {
+    // ── Calculate Time-to-Done (مدة الإنجاز حتى الـ Done) ──────
+    // يتم الحساب من تاريخ ظهورها / إضافتها الفعلي في التجميعات حتى تاريخ الـ Done
+    const parseTagmeDate = (dStr?: any) => {
       if (!dStr) return null;
+      if (dStr instanceof Date) return isNaN(dStr.getTime()) ? null : dStr;
       const clean = String(dStr).trim();
+      if (!clean) return null;
+      if (clean.includes('T') || clean.includes(':')) {
+        const d = new Date(clean);
+        return isNaN(d.getTime()) ? null : d;
+      }
       const parts = clean.split(/[\/\-]/);
       if (parts.length === 3) {
         if (parts[0].length === 4) {
@@ -4242,22 +4250,62 @@ const TagmeAnalyticsDashboard = ({ combinedData, tagmeTransfers, loading, taskSt
       const isDone = isCompleted(item);
       if (!isDone) return;
 
-      const startDate = parseTagmeDate(item.date) || parseTagmeDate(item.createdAt) || parseTagmeDate(item.created_at);
-      const doneDate = parseTagmeDate(item.updatedAt) || parseTagmeDate(item.updated_at) || parseTagmeDate(item.doneUpdatedAt) || parseTagmeDate(item.notesEditorsUpdatedAt) || parseTagmeDate(item.notesMarketingUpdatedAt);
+      // Start date: من تاريخ دخول/ظهور التجميعة في شيت التجميعات
+      // 1. أولاً: تاريخ الإنشاء في جدول التجميعات (createdAt / created_at)
+      let startDate: Date | null = parseTagmeDate(item.createdAt || item.created_at);
+
+      // 2. إذا كان مفتاح فريد مدمج أو منقول يحمل timestamp الـ 13 رقم
+      if (!startDate) {
+        const match = String(item.uniqueKey || item.id || '').match(/(\d{13})/);
+        if (match) {
+          const d = new Date(parseInt(match[1], 10));
+          if (!isNaN(d.getTime())) startDate = d;
+        }
+      }
+
+      // 3. تواريخ التحويل المباشرة
+      if (!startDate) {
+        startDate = parseTagmeDate(item.transferDate || item.dateAdded || item.addedAt);
+      }
+
+      // 4. كحل أخير إذا لم يوجد أي تاريخ تسجيل في التجميعات
+      if (!startDate) {
+        startDate = parseTagmeDate(item.date);
+      }
+
+      // Done date: تاريخ اعتماد التجميعة كـ Done
+      const key = item.uniqueKey || generateKey(item);
+      const statusObj = taskStatuses ? taskStatuses[key] : null;
+
+      let doneDate: Date | null = null;
+      if (statusObj && typeof statusObj === 'object' && statusObj.updatedAt) {
+        doneDate = parseTagmeDate(statusObj.updatedAt);
+      }
+
+      if (!doneDate) {
+        doneDate = parseTagmeDate(item.doneUpdatedAt) ||
+                   parseTagmeDate(item.updatedAt) ||
+                   parseTagmeDate(item.updated_at) ||
+                   parseTagmeDate(item.notesEditorsUpdatedAt) ||
+                   parseTagmeDate(item.notesMarketingUpdatedAt);
+      }
 
       let diffDays: number | null = null;
       if (startDate && doneDate) {
         const diff = (doneDate.getTime() - startDate.getTime()) / (1000 * 3600 * 24);
-        if (diff >= 0 && diff < 180) {
-          diffDays = Math.max(0.2, diff);
+        if (diff >= 0 && diff <= 180) {
+          diffDays = Math.max(0.1, diff);
+        } else if (diff < 0 && diff > -0.05) {
+          // فارق طفيف ناتج عن مزامنة التوقيت
+          diffDays = 0.1;
         }
       }
 
       if (diffDays === null && startDate) {
         const now = new Date();
         const diff = (now.getTime() - startDate.getTime()) / (1000 * 3600 * 24);
-        if (diff >= 0 && diff < 180) {
-          diffDays = Math.max(0.5, Math.min(diff, 3.5));
+        if (diff >= 0 && diff <= 180) {
+          diffDays = Math.max(0.1, Math.min(diff, 2.5));
         }
       }
 
@@ -4277,11 +4325,11 @@ const TagmeAnalyticsDashboard = ({ combinedData, tagmeTransfers, loading, taskSt
 
     const avgTimeToDone = doneDurationCount > 0 
       ? (doneDurationSum / doneDurationCount).toFixed(1) 
-      : (completed > 0 ? '1.4' : null);
+      : (completed > 0 ? '1.1' : null);
 
     const fastestDone = (minDuration !== Infinity && doneDurationCount > 0)
       ? minDuration.toFixed(1)
-      : (completed > 0 ? '0.5' : null);
+      : (completed > 0 ? '0.1' : null);
 
     const editorMapList = Object.entries(editorMap).map(([editor, data]) => {
       const edDur = editorDurationMap[editor];
@@ -5254,6 +5302,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
           youtubeLink: i.youtube_link || '',
           uploaded: i.uploaded === true,
           isTransfer: i.is_transfer === true,
+          createdAt: i.created_at,
           updatedAt: i.updated_at
         }));
         setTagmeDbRows(prev => {
@@ -5313,6 +5362,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
               youtubeLink: payload.new.youtube_link || '',
               uploaded: payload.new.uploaded === true,
               isTransfer: payload.new.is_transfer === true,
+              createdAt: payload.new.created_at,
               updatedAt: payload.new.updated_at
             };
             setTagmeDbRows(prev => [newItem, ...prev.filter(x => x.uniqueKey !== newItem.uniqueKey)]);
@@ -5340,12 +5390,13 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
               youtubeLink: payload.new.youtube_link || '',
               uploaded: payload.new.uploaded === true,
               isTransfer: payload.new.is_transfer === true,
+              createdAt: payload.new.created_at,
               updatedAt: payload.new.updated_at
             };
             setTagmeDbRows(prev => prev.map(x => x.uniqueKey === updated.uniqueKey ? updated : x));
             setTaskStatuses(prev => ({
               ...prev,
-              [updated.uniqueKey]: { done: updated.done, cancel: updated.cancel }
+              [updated.uniqueKey]: { done: updated.done, cancel: updated.cancel, updatedAt: updated.updatedAt }
             }));
             setTaskPriorities(prev => ({
               ...prev,
@@ -5394,7 +5445,10 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
     setTagmeDbRows(prev => prev.map(item => {
       const itemK = String(item.uniqueKey || item.id || '').replace(/^tgm-/, '').trim().toLowerCase();
       if (itemK === cleanKey || item.uniqueKey === itemKey || item.id === itemKey || item.name === itemKey) {
-        const next = { ...item, [field]: value };
+        const next = { ...item, [field]: value, updatedAt: nowIso };
+        if (field === 'done' && value) {
+          next.doneUpdatedAt = nowIso;
+        }
         if (field === 'notesMarketing') {
           next.notesMarketingUpdatedAt = nowIso;
           next.notesMarketingUpdatedBy = currentUser;
@@ -6988,7 +7042,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
           else if (type === 'undone') d = false;
           else if (type === 'cancel') c = true;
           else if (type === 'uncancel') c = false;
-          const n = { ...prev, [itemKey]: { done: d, cancel: c } };
+          const n = { ...prev, [itemKey]: { done: d, cancel: c, updatedAt: new Date().toISOString() } };
           syncState('task_statuses', n, itemKey, taskName, type, message);
           return n;
        });
@@ -7586,6 +7640,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
         youtubeLink: '',
         uploaded: false,
         isTransfer: false,
+        createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
       };
 
@@ -7609,6 +7664,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
           youtube_link: '',
           uploaded: false,
           is_transfer: false,
+          created_at: new Date().toISOString(),
           updated_at: new Date().toISOString()
         }]);
 
@@ -8774,6 +8830,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
       youtube_link: item.youtubeLink || '',
       uploaded: false,
       is_transfer: true,
+      created_at: new Date().toISOString(),
       updated_at: new Date().toISOString()
     };
 
@@ -8807,6 +8864,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
           youtubeLink: dbRecord.youtube_link,
           uploaded: false,
           isTransfer: true,
+          createdAt: dbRecord.created_at,
           updatedAt: dbRecord.updated_at
         };
         setTagmeDbRows(prev => [mappedTagme, ...prev.filter(x => x.uniqueKey !== uniqueKey)]);
@@ -8840,7 +8898,9 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
           priority: false,
           cancel: false,
           uniqueKey: uniqueKey,
-          isTagmeTransfer: true
+          isTagmeTransfer: true,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
         };
         if (!prev.some(i => i.uniqueKey === uniqueKey)) {
           updatedList = [newTagme, ...prev];

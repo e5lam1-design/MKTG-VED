@@ -4142,9 +4142,53 @@ const CutsRow = ({
   );
 };
 
-const TAGME_DAILY_PRIORITY_LIMIT = 10;
+const TagmeAnalyticsDashboard = ({ combinedData, tagmeTransfers, loading, taskStatuses, taskPriorities, priorityLimit: propPriorityLimit }: any) => {
+  const [internalLimit, setInternalLimit] = useState<number>(() => {
+    if (propPriorityLimit !== undefined && propPriorityLimit !== null) {
+      return Number(propPriorityLimit);
+    }
+    try {
+      const saved = localStorage.getItem('tab_priority_limits_v1');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (parsed['1535230545'] !== undefined) return Number(parsed['1535230545']);
+      }
+    } catch {}
+    return 10;
+  });
 
-const TagmeAnalyticsDashboard = ({ combinedData, tagmeTransfers, loading, taskStatuses, taskPriorities }: any) => {
+  useEffect(() => {
+    if (propPriorityLimit !== undefined && propPriorityLimit !== null) {
+      setInternalLimit(Number(propPriorityLimit));
+    }
+  }, [propPriorityLimit]);
+
+  useEffect(() => {
+    const handleUpdate = (e: any) => {
+      if (e.detail?.gid === '1535230545' && e.detail?.limit !== undefined) {
+        setInternalLimit(Number(e.detail.limit));
+      }
+    };
+    window.addEventListener('tab-priority-limit-updated', handleUpdate);
+
+    if (supabase) {
+      supabase
+        .from('tab_priority_limits')
+        .select('priority_limit')
+        .eq('gid', '1535230545')
+        .maybeSingle()
+        .then(({ data }) => {
+          if (data && data.priority_limit !== undefined) {
+            setInternalLimit(Number(data.priority_limit));
+          }
+        });
+    }
+
+    return () => window.removeEventListener('tab-priority-limit-updated', handleUpdate);
+  }, []);
+
+  const activeLimit = propPriorityLimit !== undefined && propPriorityLimit !== null ? Number(propPriorityLimit) : internalLimit;
+
   const stats = useMemo(() => {
     const isCompleted = (i: any) => {
       if (!i) return false;
@@ -4172,7 +4216,10 @@ const TagmeAnalyticsDashboard = ({ combinedData, tagmeTransfers, loading, taskSt
       return String(i.priority) === 'true' || i.priority === true;
     }).length;
     const priority = priorityFromOverrides + priorityFromRaw;
-    const priorityLimitPct = Math.min(100, Math.round((priority / TAGME_DAILY_PRIORITY_LIMIT) * 100));
+    const limitToUse = activeLimit > 0 ? activeLimit : 10;
+    const priorityLimitPct = limitToUse >= 999 
+      ? Math.min(100, Math.round((priority / 20) * 100)) 
+      : Math.min(100, Math.round((priority / limitToUse) * 100));
     const transfersCount = (tagmeTransfers || []).length;
 
     // Stage breakdown
@@ -4344,6 +4391,7 @@ const TagmeAnalyticsDashboard = ({ combinedData, tagmeTransfers, loading, taskSt
       completed, 
       pending, 
       priority, 
+      priorityLimit: limitToUse,
       priorityLimitPct,
       transfersCount, 
       avgTimeToDone,
@@ -4352,7 +4400,7 @@ const TagmeAnalyticsDashboard = ({ combinedData, tagmeTransfers, loading, taskSt
       editorMap: editorMapList,
       branchMap: Object.entries(branchMap).sort((a,b) => b[1].count - a[1].count)
     };
-  }, [combinedData, tagmeTransfers, taskStatuses, taskPriorities]);
+  }, [combinedData, tagmeTransfers, taskStatuses, taskPriorities, activeLimit]);
 
   if (loading) {
     return (
@@ -4422,23 +4470,30 @@ const TagmeAnalyticsDashboard = ({ combinedData, tagmeTransfers, loading, taskSt
           <div className="flex items-center justify-between mb-4">
             <span className="text-xs font-black text-muted group-hover:text-purple-300 transition-colors arabic-text">أولوية نشطة</span>
             <div className={`w-10 h-10 rounded-xl flex items-center justify-center group-hover:scale-110 transition-transform shadow-[0_0_15px_rgba(147,51,234,0.5)] ${
-              stats.priority >= TAGME_DAILY_PRIORITY_LIMIT ? 'bg-rose-500/20 text-rose-400 animate-pulse' : 'bg-purple-500/20 text-purple-400 animate-pulse'
+              stats.priorityLimit < 999 && stats.priority >= stats.priorityLimit ? 'bg-rose-500/20 text-rose-400 animate-pulse' : 'bg-purple-500/20 text-purple-400 animate-pulse'
             }`}>
               <AlertCircle size={20} />
             </div>
           </div>
           <h3 className={`text-4xl font-black tracking-tight ${
-            stats.priority >= TAGME_DAILY_PRIORITY_LIMIT ? 'text-rose-400' : 'text-purple-400'
-          }`}>{stats.priority}<span className="text-base text-muted font-bold">/{TAGME_DAILY_PRIORITY_LIMIT}</span></h3>
+            stats.priorityLimit < 999 && stats.priority >= stats.priorityLimit ? 'text-rose-400' : 'text-purple-400'
+          }`}>
+            {stats.priority}
+            <span className="text-base text-muted font-bold">/{stats.priorityLimit >= 999 ? '∞' : stats.priorityLimit}</span>
+          </h3>
           <div className="mt-2 w-full bg-white/5 rounded-full h-1.5 overflow-hidden">
             <div className={`h-full rounded-full transition-all duration-1000 ${
-              stats.priority >= TAGME_DAILY_PRIORITY_LIMIT ? 'bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.6)]' : 'bg-purple-500'
+              stats.priorityLimit < 999 && stats.priority >= stats.priorityLimit ? 'bg-rose-500 shadow-[0_0_8px_rgba(244,63,94,0.6)]' : 'bg-purple-500'
             }`} style={{ width: `${stats.priorityLimitPct}%` }} />
           </div>
           <p className={`text-[10px] mt-1.5 arabic-text opacity-80 font-bold ${
-            stats.priority >= TAGME_DAILY_PRIORITY_LIMIT ? 'text-rose-300' : 'text-purple-300'
+            stats.priorityLimit < 999 && stats.priority >= stats.priorityLimit ? 'text-rose-300' : 'text-purple-300'
           }`}>
-            {stats.priority >= TAGME_DAILY_PRIORITY_LIMIT ? '🔒 الحد الأقصى ممتلئ!' : `${TAGME_DAILY_PRIORITY_LIMIT - stats.priority} متبقي من الحد`}
+            {stats.priorityLimit >= 999 
+              ? 'حد غير محدود' 
+              : stats.priority >= stats.priorityLimit 
+              ? '🔒 الحد الأقصى ممتلئ!' 
+              : `${stats.priorityLimit - stats.priority} متبقي من الحد`}
           </p>
         </div>
 
@@ -11701,7 +11756,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
               <EditorsManagement userRole={profile?.role} toast={toast} />
             </ErrorBoundary>
           ) : isAnalyticsTagme ? (
-            <TagmeAnalyticsDashboard combinedData={combinedData} tagmeTransfers={tagmeTransfers} loading={loading} taskStatuses={taskStatuses} taskPriorities={taskPriorities} />
+            <TagmeAnalyticsDashboard combinedData={combinedData} tagmeTransfers={tagmeTransfers} loading={loading} taskStatuses={taskStatuses} taskPriorities={taskPriorities} priorityLimit={tabPriorityLimits['1535230545']} />
           ) : isDesignAnalytics ? (
             <DesignAnalytics liveData={liveData} loading={loading} />
           ) : isDesignersTeamPage ? (

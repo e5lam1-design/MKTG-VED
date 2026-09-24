@@ -5325,10 +5325,24 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
   // ─── Direct Supabase Database for Tagme3at (tagme3at_26) ───────────────────
   const [tagmeDbRows, setTagmeDbRows] = useState<any[]>([]);
   const [isTagmeDbLoading, setIsTagmeDbLoading] = useState(false);
+  const lastTagmeUpdatedAtRef = useRef<string | null>(null);
 
   const fetchTagmeDb = async (isSilent = false) => {
     if (!isSilent) setIsTagmeDbLoading(true);
     try {
+      // Smart Delta: If silent poll, check latest updated_at to avoid re-downloading entire table if unchanged
+      if (isSilent && lastTagmeUpdatedAtRef.current) {
+        const { data: checkData } = await supabase
+          .from('tagme3at_26')
+          .select('updated_at')
+          .order('updated_at', { ascending: false })
+          .limit(1);
+        const latest = checkData?.[0]?.updated_at;
+        if (latest && latest === lastTagmeUpdatedAtRef.current) {
+          return;
+        }
+      }
+
       const { data, error } = await supabase
         .from('tagme3at_26')
         .select('*')
@@ -5336,6 +5350,10 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
 
       if (error) throw error;
       if (data) {
+        if (data.length > 0) {
+          const maxUp = data.reduce((max, r) => (r.updated_at > max ? r.updated_at : max), data[0].updated_at || '');
+          lastTagmeUpdatedAtRef.current = maxUp;
+        }
         const mapped = data.map((i: any) => ({
           uniqueKey: i.unique_key,
           id: i.unique_key,
@@ -5380,8 +5398,10 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
     if (isTagme3at || isAnalyticsTagme) {
       fetchTagmeDb();
       const intervalId = setInterval(() => {
-        fetchTagmeDb(true);
-      }, 15000);
+        if (document.visibilityState === 'visible') {
+          fetchTagmeDb(true);
+        }
+      }, 30000);
       return () => clearInterval(intervalId);
     }
   }, [activeGid, isTagme3at, isAnalyticsTagme]);
@@ -5566,6 +5586,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
   const [stageDbRows, setStageDbRows] = useState<any[]>([]);
   const [isStageDbLoading, setIsStageDbLoading] = useState(false);
   const [stageUncompletedCounts, setStageUncompletedCounts] = useState<Record<string, number>>({});
+  const lastStageUpdatedAtRef = useRef<Record<string, string>>({});
 
   const stageTable = STAGE_TABLE_MAP[activeGid];
   const isStageTab = !!stageTable;
@@ -5575,6 +5596,19 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
     if (!tbl) return;
     if (!isSilent) setIsStageDbLoading(true);
     try {
+      // Smart Delta: If silent poll, check latest updated_at to avoid re-downloading entire table if unchanged
+      if (isSilent && lastStageUpdatedAtRef.current[gid]) {
+        const { data: check } = await supabase
+          .from(tbl)
+          .select('updated_at')
+          .order('updated_at', { ascending: false })
+          .limit(1);
+        const latest = check?.[0]?.updated_at;
+        if (latest && latest === lastStageUpdatedAtRef.current[gid]) {
+          return;
+        }
+      }
+
       const { data, error } = await supabase
         .from(tbl)
         .select('*')
@@ -5582,6 +5616,10 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
 
       if (error) throw error;
       if (data) {
+        if (data.length > 0) {
+          const maxUp = data.reduce((max, r) => (r.updated_at > max ? r.updated_at : max), data[0].updated_at || '');
+          lastStageUpdatedAtRef.current[gid] = maxUp;
+        }
         const mapped = data.map((i: any) => {
           const uKey = i.unique_key || (i.id ? String(i.id) : '');
           return {
@@ -5714,8 +5752,10 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
     fetchStageUncompletedCounts();
 
     const interval = setInterval(() => {
-      fetchStageUncompletedCounts();
-    }, 25000);
+      if (document.visibilityState === 'visible') {
+        fetchStageUncompletedCounts();
+      }
+    }, 45000);
 
     const tables = [...Object.values(STAGE_TABLE_MAP), 'reels_ve_26', 'reels_cuts_26', 'tagme3at_26'];
     let channel = supabase.channel('stages_uncompleted_realtime');
@@ -5776,8 +5816,10 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
     if (isStageTab) {
       fetchStageDb(activeGid);
       const intervalId = setInterval(() => {
-        fetchStageDb(activeGid, true);
-      }, 15000);
+        if (document.visibilityState === 'visible') {
+          fetchStageDb(activeGid, true);
+        }
+      }, 30000);
       return () => clearInterval(intervalId);
     }
   }, [activeGid, isStageTab]);
@@ -5931,6 +5973,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
 
   const [reelsDbRows, setReelsDbRows] = useState<any[]>([]);
   const [isReelsDbLoading, setIsReelsDbLoading] = useState(false);
+  const lastReelsUpdatedAtRef = useRef<Record<string, string>>({});
 
   const reelsTable = REELS_TABLE_MAP[activeGid];
   const isReelsTableTab = !!reelsTable;
@@ -5951,6 +5994,19 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
     if (!tbl) return;
     if (!isSilent) setIsReelsDbLoading(true);
     try {
+      // Smart Delta: If silent poll, check latest updated_at to avoid re-downloading entire table if unchanged
+      if (isSilent && lastReelsUpdatedAtRef.current[gid]) {
+        const { data: check } = await supabase
+          .from(tbl)
+          .select('updated_at')
+          .order('updated_at', { ascending: false })
+          .limit(1);
+        const latest = check?.[0]?.updated_at;
+        if (latest && latest === lastReelsUpdatedAtRef.current[gid]) {
+          return;
+        }
+      }
+
       // If loading VE tab, ensure all filmed tasks from Shooting tab exist in VE, without overwriting existing VE edits/notes
       if (gid === '1939073164') {
         const { data: filmedShooting } = await supabase
@@ -6013,6 +6069,10 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
 
       if (error) throw error;
       if (data) {
+        if (data.length > 0) {
+          const maxUp = data.reduce((max, r) => (r.updated_at > max ? r.updated_at : max), data[0].updated_at || '');
+          lastReelsUpdatedAtRef.current[gid] = maxUp;
+        }
         let mapped: any[] = [];
         if (gid === '0') {
           mapped = data.map((i: any) => ({
@@ -6089,8 +6149,10 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
     if (isReelsTableTab) {
       fetchReelsDb(activeGid);
       const intervalId = setInterval(() => {
-        fetchReelsDb(activeGid, true);
-      }, 15000);
+        if (document.visibilityState === 'visible') {
+          fetchReelsDb(activeGid, true);
+        }
+      }, 30000);
       return () => clearInterval(intervalId);
     }
   }, [activeGid, isReelsTableTab]);
@@ -6249,6 +6311,22 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
       supabase.removeChannel(channel);
     };
   }, [isDemo, activeGid, isReelsTableTab]);
+
+  useEffect(() => {
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        if (isTagme3at || isAnalyticsTagme) {
+          fetchTagmeDb(true);
+        } else if (isStageTab && activeGid) {
+          fetchStageDb(activeGid, true);
+        } else if (isReelsTableTab && activeGid) {
+          fetchReelsDb(activeGid, true);
+        }
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [activeGid, isTagme3at, isAnalyticsTagme, isStageTab, isReelsTableTab]);
 
   const [tagmeTransfers, setTagmeTransfers] = useState<any[]>([]);
   const [activeTagmeToast, setActiveTagmeToast] = useState<{ item: any, stage: { gid: string, label: string }, uniqueKey: string } | null>(null);
@@ -7306,9 +7384,12 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
         }
       };
 
-      // Initial fetch & short interval polling to stay 100% in sync
       fetchTabPriorityLimits();
-      const intervalId = setInterval(fetchTabPriorityLimits, 2500);
+      const intervalId = setInterval(() => {
+        if (document.visibilityState === 'visible') {
+          fetchTabPriorityLimits();
+        }
+      }, 5000);
 
       // Custom window event listener for instant local sync
       const handleCustomUpdate = (e: any) => {

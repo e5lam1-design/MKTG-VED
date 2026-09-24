@@ -124,14 +124,10 @@ export const PresenceProvider: React.FC<{ children: React.ReactNode }> = ({ chil
         }
       });
 
-    // Initial heartbeat fetch
+    // Initial heartbeat fetch once on mount
     fetchHeartbeats();
 
-    // Polling interval for heartbeats every 25s
-    const heartbeatInterval = setInterval(fetchHeartbeats, 25000);
-
     return () => {
-      clearInterval(heartbeatInterval);
       if (profile?.id) {
         channel.untrack();
       }
@@ -139,7 +135,7 @@ export const PresenceProvider: React.FC<{ children: React.ReactNode }> = ({ chil
     };
   }, [profile?.id, profile?.name, profile?.role, profile?.email, profile?.team, fetchHeartbeats]);
 
-  // 3. Heartbeat writer for current logged in user
+  // 3. Heartbeat writer for current logged in user (write once on mount, clean up on unmount)
   useEffect(() => {
     if (!profile?.id) return;
 
@@ -166,25 +162,18 @@ export const PresenceProvider: React.FC<{ children: React.ReactNode }> = ({ chil
       } catch {}
     };
 
-    // Write immediately on load
+    // Write once on load
     writeHeartbeat();
-
-    // Repeat every 35s
-    const writerInterval = setInterval(writeHeartbeat, 35000);
 
     // Clean up on tab close
     const handleBeforeUnload = () => {
-      const url = `${supabase.supabaseUrl}/rest/v1/page_announcements?page_key=eq.online_${profile.id}`;
-      // Use sendBeacon for guaranteed network send during window close
       if (navigator.sendBeacon) {
-        // Just fire and forget
         supabase.from('page_announcements').delete().eq('page_key', `online_${profile.id}`);
       }
     };
     window.addEventListener('beforeunload', handleBeforeUnload);
 
     return () => {
-      clearInterval(writerInterval);
       window.removeEventListener('beforeunload', handleBeforeUnload);
       supabase.from('page_announcements').delete().eq('page_key', `online_${profile.id}`).then(() => {});
     };

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Megaphone, 
@@ -11,7 +11,8 @@ import {
   ChevronDown, 
   ChevronUp, 
   X,
-  Sparkles
+  Sparkles,
+  RefreshCw
 } from 'lucide-react';
 import type { PageAnnouncement } from '../lib/announcements';
 import { 
@@ -53,30 +54,44 @@ export const PageAnnouncementBar: React.FC<PageAnnouncementBarProps> = ({
 
   // Can manage: Manager or Admin only
   const canManage = userRole === 'admin' || userRole === 'manager';
+  const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
 
-  // Load announcement whenever pageKey changes
-  useEffect(() => {
-    let isMounted = true;
-    setLoading(true);
-
-    getPageAnnouncement(pageKey).then((data) => {
-      if (isMounted) {
-        setAnnouncement(data);
-        if (data) {
-          setFormMessage(data.message);
-          setFormType(data.type || 'info');
-        } else {
-          setFormMessage('');
-          setFormType('info');
-        }
-        setLoading(false);
+  const loadAnnouncement = useCallback(async (isSilent = false) => {
+    if (!isSilent) setLoading(true);
+    try {
+      const data = await getPageAnnouncement(pageKey);
+      setAnnouncement(data);
+      if (data) {
+        setFormMessage(data.message);
+        setFormType(data.type || 'info');
+      } else {
+        setFormMessage('');
+        setFormType('info');
       }
-    });
-
-    return () => {
-      isMounted = false;
-    };
+    } finally {
+      if (!isSilent) setLoading(false);
+    }
   }, [pageKey]);
+
+  // Load announcement once whenever pageKey changes, then poll only once every 15 minutes
+  useEffect(() => {
+    loadAnnouncement();
+
+    const intervalId = setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        loadAnnouncement(true);
+      }
+    }, 15 * 60 * 1000); // 15 minutes
+
+    return () => clearInterval(intervalId);
+  }, [loadAnnouncement]);
+
+  const handleManualRefresh = async () => {
+    setIsRefreshing(true);
+    await loadAnnouncement(false);
+    setIsRefreshing(false);
+    toast.success('تم تحديث التوجيهات والتنبيهات بنجاح');
+  };
 
   const handleOpenEdit = () => {
     if (announcement) {
@@ -187,10 +202,10 @@ export const PageAnnouncementBar: React.FC<PageAnnouncementBarProps> = ({
 
     // Manager / Admin empty state invitation
     return (
-      <div className="mb-6" dir="rtl">
+      <div className="mb-6 flex items-center gap-2" dir="rtl">
         <button
           onClick={handleOpenEdit}
-          className="w-full py-2.5 px-4 rounded-2xl bg-white/[0.02] hover:bg-purple-500/[0.06] border border-dashed border-white/10 hover:border-purple-500/40 flex items-center justify-between text-xs text-muted hover:text-purple-300 transition-all group"
+          className="flex-1 py-2.5 px-4 rounded-2xl bg-white/[0.02] hover:bg-purple-500/[0.06] border border-dashed border-white/10 hover:border-purple-500/40 flex items-center justify-between text-xs text-muted hover:text-purple-300 transition-all group"
         >
           <div className="flex items-center gap-2">
             <Megaphone size={16} className="text-muted group-hover:text-purple-400 transition-colors" />
@@ -200,6 +215,14 @@ export const PageAnnouncementBar: React.FC<PageAnnouncementBarProps> = ({
             <Plus size={14} />
             <span>كتابة تنبيه</span>
           </div>
+        </button>
+        <button
+          onClick={handleManualRefresh}
+          disabled={isRefreshing}
+          className="p-2.5 rounded-2xl bg-white/[0.02] hover:bg-white/10 border border-white/10 text-muted hover:text-white transition-all shrink-0"
+          title="تحديث التنبيهات يدوياً"
+        >
+          <RefreshCw size={14} className={isRefreshing ? 'animate-spin text-purple-400' : ''} />
         </button>
 
         {/* Edit Modal */}
@@ -254,6 +277,16 @@ export const PageAnnouncementBar: React.FC<PageAnnouncementBarProps> = ({
                 </button>
               </div>
             )}
+
+            {/* Manual refresh button */}
+            <button
+              onClick={handleManualRefresh}
+              disabled={isRefreshing}
+              className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-muted hover:text-white transition-colors"
+              title="تحديث التنبيه يدوياً"
+            >
+              <RefreshCw size={13} className={isRefreshing ? 'animate-spin text-purple-400' : ''} />
+            </button>
 
             {/* Collapse/Expand toggle for all users */}
             <button

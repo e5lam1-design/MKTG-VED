@@ -4142,6 +4142,8 @@ const CutsRow = ({
   );
 };
 
+const TAGME_DAILY_PRIORITY_LIMIT = 10;
+
 const TagmeAnalyticsDashboard = ({ combinedData, tagmeTransfers, loading, taskStatuses, taskPriorities, priorityLimit: propPriorityLimit }: any) => {
   const [internalLimit, setInternalLimit] = useState<number>(() => {
     if (propPriorityLimit !== undefined && propPriorityLimit !== null) {
@@ -4767,11 +4769,11 @@ const TagmeAnalyticsDashboard = ({ combinedData, tagmeTransfers, loading, taskSt
             <h3 className="text-lg font-black text-white arabic-text">الأولويات النشطة حالياً</h3>
           </div>
           <span className={`text-sm font-black px-4 py-2 rounded-xl border ${
-            stats.priority >= TAGME_DAILY_PRIORITY_LIMIT 
+            stats.priorityLimit < 999 && stats.priority >= stats.priorityLimit 
               ? 'bg-rose-500/15 border-rose-500/30 text-rose-400' 
               : 'bg-purple-500/15 border-purple-500/30 text-purple-400'
           }`}>
-            {stats.priority} / {TAGME_DAILY_PRIORITY_LIMIT}
+            {stats.priority} / {stats.priorityLimit >= 999 ? '∞' : stats.priorityLimit}
           </span>
         </div>
       )}

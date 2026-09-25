@@ -5574,8 +5574,8 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
           .eq('name', itemKey);
       }
 
-      if (error) {
-        console.error('Error updating tagme3at_26 in Supabase:', error);
+      if (field === 'done' || field === 'cancel') {
+        notifyCoreCountsChanged(['1535230545']);
       }
     } catch (err) {
       console.error('Exception updating tagme3at_26 in Supabase:', err);
@@ -5762,6 +5762,18 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
     }
   }, [isDemo]);
 
+  const notifyCoreCountsChanged = useCallback((gids: string[]) => {
+    if (!gids || gids.length === 0) return;
+    fetchCountsForGids(gids);
+    if (globalChannelRef.current) {
+      globalChannelRef.current.send({
+        type: 'broadcast',
+        event: 'core_counts_updated',
+        payload: { gids }
+      }).catch(() => {});
+    }
+  }, [fetchCountsForGids]);
+
   // Keep uncompleted count for active stage in sync with stageDbRows immediately in-memory
   useEffect(() => {
     if (isStageTab && activeGid && STAGE_TABLE_MAP[activeGid]) {
@@ -5775,9 +5787,9 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
     }
   }, [stageDbRows, isStageTab, activeGid]);
 
-  // Keep uncompleted count for active Tagme3at stage in sync with tagmeDbRows immediately in-memory
+  // Keep uncompleted count for Tagme3at stage in sync with tagmeDbRows immediately in-memory
   useEffect(() => {
-    if (activeGid === '1535230545') {
+    if (tagmeDbRows.length > 0 || activeGid === '1535230545') {
       const count = tagmeDbRows.filter(r => r.done !== true && r.cancel !== true).length;
       setStageUncompletedCounts(prev => {
         if (prev['1535230545'] === count) return prev;
@@ -5788,7 +5800,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
     }
   }, [tagmeDbRows, activeGid]);
 
-  // Primary core production tabs that ALWAYS load their counts on startup and stay updated
+  // Primary core production tabs that ALWAYS load their counts on startup and stay updated in Realtime
   const PRIMARY_CORE_GIDS = useMemo(() => ['1535230545', '1939073164', '0'], []); // تجميعات, Ve, CUTS
 
   // 1. Initial startup sync: pull counts for the 3 core tabs (تجميعات, Ve, CUTS) ONCE on startup
@@ -5803,30 +5815,27 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
     fetchCountsForGids([activeGid]);
   }, [activeGid, isDemo, fetchCountsForGids]);
 
-  // Realtime subscription: When a table changes, ONLY update that single specific table
+  // 3. Dedicated Realtime subscription for the 3 Core Tabs (reels_ve_26, reels_cuts_26, tagme3at_26)
   useEffect(() => {
     if (isDemo) return;
 
-    const tables = [...Object.values(STAGE_TABLE_MAP), 'reels_ve_26', 'reels_cuts_26', 'tagme3at_26'];
-    let channel = supabase.channel('stages_uncompleted_realtime');
-    tables.forEach(tbl => {
-      channel = channel.on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: tbl },
-        () => {
-          const targetGid = TABLE_TO_GID_MAP[tbl];
-          if (targetGid) {
-            fetchCountsForGids([targetGid]);
-          }
-        }
-      );
-    });
-    channel.subscribe();
+    const coreChannel = supabase
+      .channel(`core_badges_realtime_${Date.now()}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'reels_ve_26' }, () => {
+        fetchCountsForGids(['1939073164']);
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'reels_cuts_26' }, () => {
+        fetchCountsForGids(['0']);
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'tagme3at_26' }, () => {
+        fetchCountsForGids(['1535230545']);
+      })
+      .subscribe();
 
     return () => {
-      supabase.removeChannel(channel);
+      supabase.removeChannel(coreChannel);
     };
-  }, [isDemo, fetchCountsForGids, TABLE_TO_GID_MAP]);
+  }, [isDemo, fetchCountsForGids]);
 
   // Reward celebration toast when all tasks in CUTS, Ve, or تجميعات are completed (transitions >0 down to 0)
   const prevStageCountsRef = useRef<Record<string, number>>({});
@@ -6032,14 +6041,16 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
 
   // Keep uncompleted count for active Reels stage (VE / CUTS) in sync with reelsDbRows immediately
   useEffect(() => {
-    if (activeGid === '1939073164' || activeGid === '0') {
+    if ((activeGid === '1939073164' || activeGid === '0') && (reelsDbRows.length > 0 || !isReelsDbLoading)) {
       const count = reelsDbRows.filter(r => r.done !== true && r.canceled !== true).length;
       setStageUncompletedCounts(prev => {
         if (prev[activeGid] === count) return prev;
-        return { ...prev, [activeGid]: count };
+        const next = { ...prev, [activeGid]: count };
+        try { localStorage.setItem('stage_uncompleted_counts_cache_v1', JSON.stringify(next)); } catch {}
+        return next;
       });
     }
-  }, [reelsDbRows, activeGid]);
+  }, [reelsDbRows, activeGid, isReelsDbLoading]);
 
   const fetchReelsDb = async (gid: string, isSilent = false) => {
     const tbl = REELS_TABLE_MAP[gid];
@@ -6939,6 +6950,12 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
       console.warn('[Session] Received force_logout broadcast. Clearing cache and reloading...');
       localStorage.clear();
       window.location.reload();
+    });
+
+    globalCh.on('broadcast', { event: 'core_counts_updated' }, ({ payload }: any) => {
+      if (payload?.gids && Array.isArray(payload.gids)) {
+        fetchCountsForGids(payload.gids);
+      }
     });
 
     globalCh.on('broadcast', { event: 'update' }, ({ payload }: any) => {
@@ -7867,6 +7884,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
 
         // 2. Optimistic UI update
         setTagmeDbRows(prev => [newTagme, ...prev.filter(x => x.uniqueKey !== newKey)]);
+        notifyCoreCountsChanged(['1535230545']);
 
         // 3. Broadcast to all clients
         if (globalChannelRef.current && profile?.name) {
@@ -8245,6 +8263,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
 
     let updatedItem: any;
     let dbPayload: any;
+    let isFilmed = false;
     if (activeGid === '0') {
       const isDone = newRowData[14] === 'TRUE' || newRowData[14] === true;
       const isProblem = newRowData[13] === 'TRUE' || newRowData[13] === true;
@@ -8296,11 +8315,10 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
         updated_at: new Date().toISOString()
       };
     } else {
-      const isFilmed = newRowData[9] === 'TRUE' || newRowData[9] === true;
+      isFilmed = newRowData[9] === 'TRUE' || newRowData[9] === true;
       const isDone = newRowData[16] === 'TRUE' || newRowData[16] === true;
       const isCanceled = newRowData[18] === 'TRUE' || newRowData[18] === true;
       const isMissing = newRowData[19] === 'TRUE' || newRowData[19] === true;
-      const newCode = newRowData[5] || oldCode;
 
       updatedItem = {
         date: newRowData[0] || '',
@@ -8676,6 +8694,15 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
 
         // Automatic copy / sync to Ve table (reels_ve_26) when filmed in Shooting tab
         if (activeGid === '1436746012') {
+          if (Boolean(prevItem?.filmed) !== isFilmed) {
+            setStageUncompletedCounts(prev => {
+              const cur = prev['1939073164'] || 0;
+              const nextVal = Math.max(0, cur + (isFilmed ? 1 : -1));
+              const next = { ...prev, ['1939073164']: nextVal };
+              try { localStorage.setItem('stage_uncompleted_counts_cache_v1', JSON.stringify(next)); } catch {}
+              return next;
+            });
+          }
           if (isFilmed) {
             setActiveVeToast({ item: updatedItem });
             const veRecord = {
@@ -8708,11 +8735,15 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
               console.error("Error copying to reels_ve_26:", veErr);
             } else {
               toast.success("تم نقل ومزامنة الريل تلقائياً إلى شيت VE! 🎬");
+              notifyCoreCountsChanged(['1939073164']);
             }
           } else {
             await supabase.from('reels_ve_26').delete().or(`code.eq."${oldCode}",code.eq."${newCode}",code.eq."${updatedItem.code}"`);
             toast.info("تمت إزالة الريل من شيت VE لإلغاء التصوير");
+            notifyCoreCountsChanged(['1939073164']);
           }
+        } else if (activeGid === '1939073164' || activeGid === '0') {
+          notifyCoreCountsChanged([activeGid]);
         }
 
         // Two-way sync: If editing in VE tab, sync notes and shared fields back to Shooting tab!
@@ -8767,8 +8798,17 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
     setReelsDbRows(prev => prev.map(row => (row.id === itemCode || row.code === itemCode) ? { ...row, filmed: isFilmed, filmingDate } : row));
     setLiveData((prev: any[]) => prev.map((row: any) => (row.id === itemCode || row.code === itemCode) ? { ...row, filmed: isFilmed, filmingDate } : row));
     
-    if (isFilmed && activeGid === '1436746012') {
-      setActiveVeToast({ item: { ...item, filmed: isFilmed, filmingDate } });
+    if (activeGid === '1436746012') {
+      setStageUncompletedCounts(prev => {
+        const cur = prev['1939073164'] || 0;
+        const nextVal = Math.max(0, cur + (isFilmed ? 1 : -1));
+        const next = { ...prev, ['1939073164']: nextVal };
+        try { localStorage.setItem('stage_uncompleted_counts_cache_v1', JSON.stringify(next)); } catch {}
+        return next;
+      });
+      if (isFilmed) {
+        setActiveVeToast({ item: { ...item, filmed: isFilmed, filmingDate } });
+      }
     }
 
     // Broadcast Realtime activity for subscribers
@@ -8822,9 +8862,11 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
               console.error("Error copying to reels_ve_26:", veErr);
             } else {
               toast.success("تم نقل ومزامنة الريل تلقائياً إلى شيت VE! 🎬");
+              notifyCoreCountsChanged(['1939073164']);
             }
           } else {
             await supabase.from('reels_ve_26').delete().eq('code', itemCode);
+            notifyCoreCountsChanged(['1939073164']);
           }
         }
       } catch (err: any) {
@@ -8888,6 +8930,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
         toast.error(`خطأ أثناء الحفظ في قاعدة البيانات: ${error.message}`);
       } else {
         toast.success("⚠️ تم تسجيل طلب التعديل (EDIT) وإعادة فتح المهمة!");
+        notifyCoreCountsChanged(['1939073164']);
 
         // Telegram Notification for Edit Request
         const editorName = item.editor_col || item.editor || '';
@@ -9026,6 +9069,14 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
     };
 
     if (!isDemo) {
+      setStageUncompletedCounts(prev => {
+        const cur = prev['1535230545'] || 0;
+        const nextVal = Math.max(0, cur + (isChecked ? 1 : -1));
+        const next = { ...prev, ['1535230545']: nextVal };
+        try { localStorage.setItem('stage_uncompleted_counts_cache_v1', JSON.stringify(next)); } catch {}
+        return next;
+      });
+
       if (isChecked) {
         // 1. Direct Supabase Client upsert to tagme3at_26
         supabase
@@ -9033,6 +9084,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
           .upsert(dbRecord, { onConflict: 'unique_key' })
           .then(({ error }) => {
             if (error) console.error('Error upserting tagme3at_26 transfer:', error);
+            else notifyCoreCountsChanged(['1535230545']);
           });
 
         // 2. Optimistic local state update for instant UI feedback
@@ -9067,6 +9119,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
           .eq('unique_key', uniqueKey)
           .then(({ error }) => {
             if (error) console.error('Error deleting tagme3at_26 transfer:', error);
+            else notifyCoreCountsChanged(['1535230545']);
           });
 
         setTagmeDbRows(prev => prev.filter(x => x.uniqueKey !== uniqueKey));

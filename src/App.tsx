@@ -9488,30 +9488,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
         return finalNew;
       });
 
-      if (newlyAdded.length === 1) {
-        const item = newlyAdded[0];
-        const toastId = 'toast-' + Math.random().toString(36).substr(2, 9);
-        setItemToasts(prev => [...prev, { 
-          id: toastId, 
-          name: item.name, 
-          filingName: item.filingName, 
-          title: "تنبيه: إضافة درس جديد! 🎉" 
-        }]);
-        setTimeout(() => {
-          setItemToasts(prev => prev.filter(t => t.id !== toastId));
-        }, 8000);
-      } else if (newlyAdded.length > 1) {
-        const toastId = 'toast-' + Math.random().toString(36).substr(2, 9);
-        setItemToasts(prev => [...prev, { 
-          id: toastId, 
-          name: `تم رصد ${newlyAdded.length} تحديثات جديدة مضافة في الجداول!`, 
-          filingName: '', 
-          title: "تحديثات جديدة متعددة! 🔔" 
-        }]);
-        setTimeout(() => {
-          setItemToasts(prev => prev.filter(t => t.id !== toastId));
-        }, 8000);
-      }
+      // Update seen key silently without throwing annoying toasts
     }
 
     localStorage.setItem(SEEN_KEY, JSON.stringify(Array.from(currentNames)));

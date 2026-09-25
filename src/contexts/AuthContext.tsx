@@ -33,6 +33,18 @@ const isSessionExpiredAt2AM = (loginTimestampMs: number): boolean => {
   }
 };
 
+const clearAuthSessionOnly = () => {
+  try {
+    localStorage.removeItem(LOCAL_LOGIN_KEY);
+    localStorage.removeItem('session_login_timestamp');
+    Object.keys(localStorage).forEach(k => {
+      if (k.startsWith('sb-') && k.endsWith('-auth-token')) {
+        localStorage.removeItem(k);
+      }
+    });
+  } catch {}
+};
+
 // Force logout if version mismatch or session expired past 2:00 AM
 if (typeof window !== 'undefined') {
   try {
@@ -42,7 +54,7 @@ if (typeof window !== 'undefined') {
     const isExpired2AM = loginTs > 0 && isSessionExpiredAt2AM(loginTs);
 
     if (isVersionMismatch || isExpired2AM) {
-      localStorage.clear();
+      clearAuthSessionOnly();
       localStorage.setItem('app_session_version', CURRENT_APP_VERSION);
       supabase.auth.signOut().catch(() => {});
     }
@@ -382,7 +394,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     } catch (e) {
       console.error('[signOut]', e);
     } finally {
-      localStorage.clear();
+      clearAuthSessionOnly();
       localProfileIdRef.current = null;
       setProfile(null);
       setUser(null);

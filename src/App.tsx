@@ -312,10 +312,23 @@ const HistoryInput = ({ itemKey, fieldKey, value, onChange, placeholder, updated
     let entries: HistoryEntry[] = [];
     const resolvedAuthor = getResolvedExistingAuthor();
 
+    // 1. Check server-synced note_authors history first if available
+    try {
+      const allAuthorsRaw = localStorage.getItem('note_authors');
+      if (allAuthorsRaw && fieldKey && itemKey) {
+        const allAuthors = JSON.parse(allAuthorsRaw);
+        const serverHist = allAuthors?.[`${fieldKey}_${itemKey}`]?.history;
+        if (Array.isArray(serverHist) && serverHist.length > 0) {
+          entries = serverHist;
+        }
+      }
+    } catch {}
+
+    // 2. Merge / prefer local history if it has more snapshots
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
+        if (Array.isArray(parsed) && parsed.length >= entries.length && parsed.length > 0) {
           entries = parsed.map((item: any) => {
             if (typeof item === 'string') {
               return { text: item, timestamp: updatedAt || new Date().toISOString(), author: resolvedAuthor || '' };
@@ -331,7 +344,14 @@ const HistoryInput = ({ itemKey, fieldKey, value, onChange, placeholder, updated
 
     const currentText = (value || '').trim();
     if (currentText) {
-      if (entries.length === 0 || entries[entries.length - 1].text !== currentText) {
+      // Ensure baseline empty state at index 0 so existing notes always have an active Undo button
+      if (entries.length === 0) {
+        entries.push({ text: '', timestamp: '', author: '' });
+      } else if (entries.length === 1 && entries[0].text === currentText) {
+        entries.unshift({ text: '', timestamp: '', author: '' });
+      }
+
+      if (entries[entries.length - 1].text !== currentText) {
         entries.push({
           text: currentText,
           timestamp: updatedAt || new Date().toISOString(),
@@ -386,17 +406,19 @@ const HistoryInput = ({ itemKey, fieldKey, value, onChange, placeholder, updated
     if (trimmed) {
       const currentAuthor = resolved || '';
       setHistory(prev => {
-        const existingIdx = prev.findIndex(e => e.text === trimmed);
+        let base = prev.length === 0 ? [{ text: '', timestamp: '', author: '' }] : [...prev];
+        if (base.length === 1 && base[0].text === trimmed) {
+          base.unshift({ text: '', timestamp: '', author: '' });
+        }
+        const existingIdx = base.findIndex((e, idx) => idx > 0 && e.text === trimmed);
         if (existingIdx !== -1) {
           setCurrentIndex(existingIdx);
-          if (resolved && prev[existingIdx].author !== resolved) {
-            const updatedH = [...prev];
-            updatedH[existingIdx] = { ...updatedH[existingIdx], author: resolved };
-            return updatedH;
+          if (resolved && base[existingIdx].author !== resolved) {
+            base[existingIdx] = { ...base[existingIdx], author: resolved };
           }
-          return prev;
+          return base;
         }
-        const newH = [...prev, { text: trimmed, timestamp: updatedAt || new Date().toISOString(), author: currentAuthor }].slice(-30);
+        const newH = [...base, { text: trimmed, timestamp: updatedAt || new Date().toISOString(), author: currentAuthor }].slice(-30);
         try { localStorage.setItem(historyKey, JSON.stringify(newH)); } catch {}
         setCurrentIndex(newH.length - 1);
         return newH;
@@ -431,7 +453,8 @@ const HistoryInput = ({ itemKey, fieldKey, value, onChange, placeholder, updated
       localStorage.setItem(authorKey, currentUser);
     } catch {}
 
-    const newHistory = [...history.slice(0, currentIndex + 1), newEntry].slice(-30);
+    const baseHistory = history.length === 0 ? [{ text: '', timestamp: '', author: '' }] : history.slice(0, currentIndex + 1);
+    const newHistory = [...baseHistory, newEntry].slice(-30);
     setHistory(newHistory);
     setCurrentIndex(newHistory.length - 1);
     try {
@@ -534,12 +557,12 @@ const HistoryInput = ({ itemKey, fieldKey, value, onChange, placeholder, updated
         onClick={undo} 
         disabled={currentIndex <= 0}
         type="button"
-        className={`absolute -left-6 p-1.5 rounded-full bg-white/5 border transition-all z-10 ${
+        className={`absolute -left-6 p-1.5 rounded-full border transition-all z-10 ${
           currentIndex > 0 
-            ? 'border-blue-500/50 text-blue-400 hover:bg-blue-500/20 hover:scale-110 shadow-lg opacity-100 cursor-pointer' 
-            : 'border-white/5 text-white/15 opacity-20 cursor-not-allowed'
+            ? 'bg-blue-500/15 border-blue-400/70 text-blue-300 hover:bg-blue-500/30 hover:scale-110 shadow-[0_0_10px_rgba(59,130,246,0.3)] opacity-100 cursor-pointer' 
+            : 'bg-white/[0.04] border-white/15 text-white/40 opacity-55 cursor-not-allowed'
         }`}
-        title={currentIndex > 0 ? `تراجع إلى النسخة السابقة (${formatArabicTimestamp(history[currentIndex - 1]?.timestamp)})` : "لا يوجد تراجع"}
+        title={currentIndex > 0 ? `تراجع إلى النسخة السابقة (${formatArabicTimestamp(history[currentIndex - 1]?.timestamp) || 'فراغ'})` : "لا يوجد تراجع"}
       >
         <Undo2 size={12} />
       </button>
@@ -566,10 +589,10 @@ const HistoryInput = ({ itemKey, fieldKey, value, onChange, placeholder, updated
         onClick={redo} 
         disabled={currentIndex >= history.length - 1}
         type="button"
-        className={`absolute -right-6 p-1.5 rounded-full bg-white/5 border transition-all z-10 ${
+        className={`absolute -right-6 p-1.5 rounded-full border transition-all z-10 ${
           currentIndex < history.length - 1 
-            ? 'border-emerald-500/50 text-emerald-400 hover:bg-emerald-500/20 hover:scale-110 shadow-lg opacity-100 cursor-pointer' 
-            : 'border-white/5 text-white/15 opacity-20 cursor-not-allowed'
+            ? 'bg-emerald-500/15 border-emerald-400/70 text-emerald-300 hover:bg-emerald-500/30 hover:scale-110 shadow-[0_0_10px_rgba(16,185,129,0.3)] opacity-100 cursor-pointer' 
+            : 'bg-white/[0.04] border-white/15 text-white/40 opacity-55 cursor-not-allowed'
         }`}
         title={currentIndex < history.length - 1 ? `تقدم إلى النسخة التالية (${formatArabicTimestamp(history[currentIndex + 1]?.timestamp)})` : "لا يوجد تقدم"}
       >
@@ -6947,8 +6970,16 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
     globalChannelRef.current = globalCh;
 
     globalCh.on('broadcast', { event: 'force_logout' }, () => {
-      console.warn('[Session] Received force_logout broadcast. Clearing cache and reloading...');
-      localStorage.clear();
+      console.warn('[Session] Received force_logout broadcast. Clearing auth session and reloading...');
+      try {
+        localStorage.removeItem('local_login_profile');
+        localStorage.removeItem('session_login_timestamp');
+        Object.keys(localStorage).forEach(k => {
+          if (k.startsWith('sb-') && k.endsWith('-auth-token')) {
+            localStorage.removeItem(k);
+          }
+        });
+      } catch {}
       window.location.reload();
     });
 
@@ -8239,7 +8270,16 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
         fieldKey = noteMeta.fieldName === 'editorNotes' ? 've_editor_notes' : 'shooting_notes';
       }
       const noteKey = `${fieldKey}_${oldCode}`;
-      const entry = { author: noteMeta.author, timestamp: noteMeta.time || new Date().toISOString() };
+      let savedHist: any[] = [];
+      try {
+        const rawH = localStorage.getItem(`hist_${fieldKey}_${oldCode}`);
+        if (rawH) savedHist = JSON.parse(rawH);
+      } catch {}
+      const entry = {
+        author: noteMeta.author,
+        timestamp: noteMeta.time || new Date().toISOString(),
+        ...(Array.isArray(savedHist) && savedHist.length > 0 ? { history: savedHist.slice(-15) } : {})
+      };
       setNoteAuthors(prev => {
         const updated = { ...prev, [noteKey]: entry };
         saveNoteAuthors(updated);

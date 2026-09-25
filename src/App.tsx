@@ -6911,6 +6911,13 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
       config: { broadcast: { self: false } }
     });
     globalChannelRef.current = globalCh;
+
+    globalCh.on('broadcast', { event: 'force_logout' }, () => {
+      console.warn('[Session] Received force_logout broadcast. Clearing cache and reloading...');
+      localStorage.clear();
+      window.location.reload();
+    });
+
     globalCh.on('broadcast', { event: 'update' }, ({ payload }: any) => {
       const { itemKey, taskName, message, type, from, field, dict, altKeys, updatedItem } = payload;
       if (!from || from.toLowerCase() === profile.name.toLowerCase()) return;

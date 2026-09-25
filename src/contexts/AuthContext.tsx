@@ -17,6 +17,19 @@ interface AuthContextType {
 const AuthContext = createContext<AuthContextType | null>(null);
 const SUPER_ADMIN_EMAILS = new Set(['eslamabdalhamidfb@gmail.com']);
 const LOCAL_LOGIN_KEY = 'local_profile_login';
+const CURRENT_APP_VERSION = '2026.09.25-build-v3';
+
+// Force logout all existing sessions if version mismatch
+if (typeof window !== 'undefined') {
+  try {
+    const currentVersion = localStorage.getItem('app_session_version');
+    if (currentVersion !== CURRENT_APP_VERSION) {
+      localStorage.clear();
+      localStorage.setItem('app_session_version', CURRENT_APP_VERSION);
+      supabase.auth.signOut().catch(() => {});
+    }
+  } catch {}
+}
 
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [user, setUser] = useState<User | null>(null);

@@ -5788,15 +5788,16 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
     }
   }, [tagmeDbRows, activeGid]);
 
-  const ALL_BADGE_GIDS = useMemo(() => Object.keys(STAGE_WITH_BADGE_MAP), []);
+  // Primary core production tabs that ALWAYS load their counts on startup and stay updated
+  const PRIMARY_CORE_GIDS = useMemo(() => ['1535230545', '1939073164', '0'], []); // تجميعات, Ve, CUTS
 
-  // 1. Initial startup sync: pull all badge counts ONCE to populate/refresh the local cache
+  // 1. Initial startup sync: pull counts for the 3 core tabs (تجميعات, Ve, CUTS) ONCE on startup
   useEffect(() => {
     if (isDemo) return;
-    fetchCountsForGids(ALL_BADGE_GIDS);
-  }, [isDemo, fetchCountsForGids, ALL_BADGE_GIDS]);
+    fetchCountsForGids(PRIMARY_CORE_GIDS);
+  }, [isDemo, fetchCountsForGids, PRIMARY_CORE_GIDS]);
 
-  // 2. On-demand: when user clicks/switches to a specific stage tab, ONLY refresh that single stage (1 request)
+  // 2. On-demand: when user clicks/switches to any specific stage tab, ONLY refresh that single stage
   useEffect(() => {
     if (isDemo || !activeGid || !STAGE_WITH_BADGE_MAP[activeGid]) return;
     fetchCountsForGids([activeGid]);

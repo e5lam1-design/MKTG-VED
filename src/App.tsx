@@ -7414,12 +7414,6 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
       };
 
       fetchTabPriorityLimits();
-      // Long background fallback every 5 hours (Realtime postgres_changes handles instant updates)
-      const intervalId = setInterval(() => {
-        if (document.visibilityState === 'visible') {
-          fetchTabPriorityLimits();
-        }
-      }, 5 * 60 * 60 * 1000);
 
       // Custom window event listener for instant local sync
       const handleCustomUpdate = (e: any) => {
@@ -7445,7 +7439,6 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
         .subscribe();
 
       return () => {
-        clearInterval(intervalId);
         window.removeEventListener('tab-priority-limit-updated', handleCustomUpdate);
         supabase.removeChannel(tabLimitsChannel);
       };

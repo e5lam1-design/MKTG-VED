@@ -19,11 +19,29 @@ const SUPER_ADMIN_EMAILS = new Set(['eslamabdalhamidfb@gmail.com']);
 const LOCAL_LOGIN_KEY = 'local_profile_login';
 const CURRENT_APP_VERSION = '2026.09.25-build-v3';
 
-// Force logout all existing sessions if version mismatch
+// Check if the login happened before the last 2:00 AM cutoff
+const isSessionExpiredAt2AM = (loginTimestampMs: number): boolean => {
+  if (!loginTimestampMs) return true;
+  const now = new Date();
+  const today2AM = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 2, 0, 0, 0);
+
+  if (now.getTime() >= today2AM.getTime()) {
+    return loginTimestampMs < today2AM.getTime();
+  } else {
+    const yesterday2AM = new Date(today2AM.getTime() - 24 * 60 * 60 * 1000);
+    return loginTimestampMs < yesterday2AM.getTime();
+  }
+};
+
+// Force logout if version mismatch or session expired past 2:00 AM
 if (typeof window !== 'undefined') {
   try {
     const currentVersion = localStorage.getItem('app_session_version');
-    if (currentVersion !== CURRENT_APP_VERSION) {
+    const loginTs = parseInt(localStorage.getItem('session_login_timestamp') || '0', 10);
+    const isVersionMismatch = currentVersion !== CURRENT_APP_VERSION;
+    const isExpired2AM = loginTs > 0 && isSessionExpiredAt2AM(loginTs);
+
+    if (isVersionMismatch || isExpired2AM) {
       localStorage.clear();
       localStorage.setItem('app_session_version', CURRENT_APP_VERSION);
       supabase.auth.signOut().catch(() => {});
@@ -303,6 +321,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         body: JSON.stringify({ user_id: authData.user.id, event_type: 'login', email: cleanEmail }),
       }).catch(() => {});
 
+      localStorage.setItem('session_login_timestamp', String(Date.now()));
       localStorage.removeItem(LOCAL_LOGIN_KEY);
       localProfileIdRef.current = null;
       return { error: null };
@@ -334,6 +353,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
         const p = { ...dbUser, last_login_at: nowIso, allowed_tabs: parseAllowedTabs(dbUser.allowed_tabs) } as UserProfile;
         localProfileIdRef.current = p.id;
+        localStorage.setItem('session_login_timestamp', String(Date.now()));
         setUser(null);
         setSession(null);
         applyProfile(p);

@@ -5585,7 +5585,14 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
   // ─── Direct Supabase Database for Stage Sheets (stage_j4_26 -> stage_s3_26) ─────
   const [stageDbRows, setStageDbRows] = useState<any[]>([]);
   const [isStageDbLoading, setIsStageDbLoading] = useState(false);
-  const [stageUncompletedCounts, setStageUncompletedCounts] = useState<Record<string, number>>({});
+  const [stageUncompletedCounts, setStageUncompletedCounts] = useState<Record<string, number>>(() => {
+    try {
+      const cached = localStorage.getItem('stage_uncompleted_counts_cache_v1');
+      return cached ? JSON.parse(cached) : {};
+    } catch {
+      return {};
+    }
+  });
   const lastStageUpdatedAtRef = useRef<Record<string, string>>({});
 
   const stageTable = STAGE_TABLE_MAP[activeGid];
@@ -5745,7 +5752,11 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
       results.forEach(([gid, count]) => {
         if (gid) updateMap[gid] = count;
       });
-      setStageUncompletedCounts(prev => ({ ...prev, ...updateMap }));
+      setStageUncompletedCounts(prev => {
+        const next = { ...prev, ...updateMap };
+        try { localStorage.setItem('stage_uncompleted_counts_cache_v1', JSON.stringify(next)); } catch {}
+        return next;
+      });
     } catch (err) {
       console.error('Error fetching stage uncompleted counts for gids:', err);
     }
@@ -5757,7 +5768,9 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
       const count = stageDbRows.filter(r => !r.isTagme3a && !r.delivered).length;
       setStageUncompletedCounts(prev => {
         if (prev[activeGid] === count) return prev;
-        return { ...prev, [activeGid]: count };
+        const next = { ...prev, [activeGid]: count };
+        try { localStorage.setItem('stage_uncompleted_counts_cache_v1', JSON.stringify(next)); } catch {}
+        return next;
       });
     }
   }, [stageDbRows, isStageTab, activeGid]);
@@ -5768,17 +5781,26 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
       const count = tagmeDbRows.filter(r => r.done !== true && r.cancel !== true).length;
       setStageUncompletedCounts(prev => {
         if (prev['1535230545'] === count) return prev;
-        return { ...prev, ['1535230545']: count };
+        const next = { ...prev, ['1535230545']: count };
+        try { localStorage.setItem('stage_uncompleted_counts_cache_v1', JSON.stringify(next)); } catch {}
+        return next;
       });
     }
   }, [tagmeDbRows, activeGid]);
 
-  // On-demand: when user stands on/selects a year or stage, ONLY fetch counts for that specific group
+  const ALL_BADGE_GIDS = useMemo(() => Object.keys(STAGE_WITH_BADGE_MAP), []);
+
+  // 1. Initial startup sync: pull all badge counts ONCE to populate/refresh the local cache
   useEffect(() => {
-    if (isDemo || !activeGid) return;
-    const targetGids = STAGE_YEAR_GROUPS[activeGid] || [activeGid];
-    fetchCountsForGids(targetGids);
-  }, [activeGid, isDemo, fetchCountsForGids, STAGE_YEAR_GROUPS]);
+    if (isDemo) return;
+    fetchCountsForGids(ALL_BADGE_GIDS);
+  }, [isDemo, fetchCountsForGids, ALL_BADGE_GIDS]);
+
+  // 2. On-demand: when user clicks/switches to a specific stage tab, ONLY refresh that single stage (1 request)
+  useEffect(() => {
+    if (isDemo || !activeGid || !STAGE_WITH_BADGE_MAP[activeGid]) return;
+    fetchCountsForGids([activeGid]);
+  }, [activeGid, isDemo, fetchCountsForGids]);
 
   // Realtime subscription: When a table changes, ONLY update that single specific table
   useEffect(() => {

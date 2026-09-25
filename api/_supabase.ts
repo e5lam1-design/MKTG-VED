@@ -33,14 +33,16 @@ export const getRequesterProfile = async (req: VercelRequest) => {
   let profile: any = null;
   let userId: string | null = null;
 
-  // 1. Try Supabase getUser
-  try {
-    const { data: userData, error: userError } = await supabaseAuthClient.auth.getUser(token);
-    if (!userError && userData?.user) {
-      userId = userData.user.id;
+  // 1. Try Supabase getUser only if token is a valid 3-part JWT
+  if (token.includes('.') && token.split('.').length === 3) {
+    try {
+      const { data: userData, error: userError } = await supabaseAuthClient.auth.getUser(token);
+      if (!userError && userData?.user) {
+        userId = userData.user.id;
+      }
+    } catch (e) {
+      // Ignore error
     }
-  } catch (e) {
-    // Ignore error
   }
 
   // 2. Query profile by resolved userId

@@ -117,10 +117,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (token) {
     let userId: string | null = null;
 
-    // Try Supabase auth token verification
-    const { data: userData } = await supabaseAdmin.auth.getUser(token);
-    if (userData?.user) {
-      userId = userData.user.id;
+    // Try Supabase auth token verification only if token is a valid 3-part JWT
+    if (token.includes('.') && token.split('.').length === 3) {
+      try {
+        const { data: userData } = await supabaseAdmin.auth.getUser(token);
+        if (userData?.user) {
+          userId = userData.user.id;
+        }
+      } catch (e) {}
     } else {
       // Fallback for custom user profile ID (local token login)
       userId = token;

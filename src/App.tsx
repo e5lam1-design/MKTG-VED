@@ -5676,55 +5676,82 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
     }
   };
 
-  const fetchStageUncompletedCounts = useCallback(async () => {
-    if (isDemo) return;
-    try {
-      const opEntries = Object.entries(STAGE_TABLE_MAP);
-      const [opResults, veRes, cutsRes, tagmeRes] = await Promise.all([
-        Promise.all(
-          opEntries.map(async ([gid, tbl]) => {
-            try {
-              const { data, error } = await supabase
-                .from(tbl)
-                .select('unique_key, is_tagme3a, delivered');
-              if (error || !data) return [gid, 0] as const;
-              const count = data.filter((r: any) => r.is_tagme3a !== true && r.delivered !== true).length;
-              return [gid, count] as const;
-            } catch {
-              return [gid, 0] as const;
-            }
-          })
-        ),
-        // VE (Reels): Tasks that are not done and not canceled
-        supabase.from('reels_ve_26').select('code, done, canceled'),
-        // CUTS (Reels): Tasks that are not done and not canceled
-        supabase.from('reels_cuts_26').select('code, done, canceled'),
-        // Tagme3at: Tasks that are not done and not canceled
-        supabase.from('tagme3at_26').select('unique_key, done, cancel'),
-      ]);
+  // Group stages by educational year / category
+  const STAGE_YEAR_GROUPS: Record<string, string[]> = useMemo(() => ({
+    // الثانوية العامة
+    '1640460225': ['1640460225', '595027661', '286303232'],
+    '595027661': ['1640460225', '595027661', '286303232'],
+    '286303232': ['1640460225', '595027661', '286303232'],
+    // المرحلة الإعدادية
+    '458352282': ['458352282', '2113852114', '2089699920'],
+    '2113852114': ['458352282', '2113852114', '2089699920'],
+    '2089699920': ['458352282', '2113852114', '2089699920'],
+    // المرحلة الابتدائية
+    '497207661': ['497207661', '96752860', '346788121'],
+    '96752860': ['497207661', '96752860', '346788121'],
+    '346788121': ['497207661', '96752860', '346788121'],
+    // الريلز
+    '1939073164': ['1939073164', '0'],
+    '0': ['1939073164', '0'],
+    // التجميعات
+    '1535230545': ['1535230545']
+  }), []);
 
-      const map: Record<string, number> = {};
-      opResults.forEach(([gid, count]) => {
-        map[gid] = count;
+  const TABLE_TO_GID_MAP: Record<string, string> = useMemo(() => ({
+    ...Object.fromEntries(Object.entries(STAGE_TABLE_MAP).map(([gid, tbl]) => [tbl, gid])),
+    'reels_ve_26': '1939073164',
+    'reels_cuts_26': '0',
+    'tagme3at_26': '1535230545'
+  }), []);
+
+  // Fetch uncompleted count ONLY for specific gids on-demand (never all 12 tables at once)
+  const fetchCountsForGids = useCallback(async (gids: string[]) => {
+    if (isDemo || !gids || gids.length === 0) return;
+    try {
+      const promises = gids.map(async (gid) => {
+        try {
+          const tbl = STAGE_TABLE_MAP[gid];
+          if (tbl) {
+            const { data, error } = await supabase
+              .from(tbl)
+              .select('unique_key, is_tagme3a, delivered');
+            if (error || !data) return [gid, 0] as const;
+            const count = data.filter((r: any) => r.is_tagme3a !== true && r.delivered !== true).length;
+            return [gid, count] as const;
+          }
+          if (gid === '1939073164') {
+            const { data } = await supabase.from('reels_ve_26').select('code, done, canceled');
+            const count = data ? data.filter((r: any) => !r.done && !r.canceled).length : 0;
+            return [gid, count] as const;
+          }
+          if (gid === '0') {
+            const { data } = await supabase.from('reels_cuts_26').select('code, done, canceled');
+            const count = data ? data.filter((r: any) => !r.done && !r.canceled).length : 0;
+            return [gid, count] as const;
+          }
+          if (gid === '1535230545') {
+            const { data } = await supabase.from('tagme3at_26').select('unique_key, done, cancel');
+            const count = data ? data.filter((r: any) => !r.done && !r.cancel).length : 0;
+            return [gid, count] as const;
+          }
+        } catch {
+          return [gid, 0] as const;
+        }
+        return [gid, 0] as const;
       });
 
-      if (veRes.data && !veRes.error) {
-        map['1939073164'] = veRes.data.filter((r: any) => r.done !== true && r.canceled !== true).length;
-      }
-      if (cutsRes.data && !cutsRes.error) {
-        map['0'] = cutsRes.data.filter((r: any) => r.done !== true && r.canceled !== true).length;
-      }
-      if (tagmeRes.data && !tagmeRes.error) {
-        map['1535230545'] = tagmeRes.data.filter((r: any) => r.done !== true && r.cancel !== true).length;
-      }
-
-      setStageUncompletedCounts(prev => ({ ...prev, ...map }));
+      const results = await Promise.all(promises);
+      const updateMap: Record<string, number> = {};
+      results.forEach(([gid, count]) => {
+        if (gid) updateMap[gid] = count;
+      });
+      setStageUncompletedCounts(prev => ({ ...prev, ...updateMap }));
     } catch (err) {
-      console.error('Error fetching stage uncompleted counts:', err);
+      console.error('Error fetching stage uncompleted counts for gids:', err);
     }
   }, [isDemo]);
 
-  // Keep uncompleted count for active stage in sync with stageDbRows immediately
+  // Keep uncompleted count for active stage in sync with stageDbRows immediately in-memory
   useEffect(() => {
     if (isStageTab && activeGid && STAGE_TABLE_MAP[activeGid]) {
       const count = stageDbRows.filter(r => !r.isTagme3a && !r.delivered).length;
@@ -5735,7 +5762,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
     }
   }, [stageDbRows, isStageTab, activeGid]);
 
-  // Keep uncompleted count for active Tagme3at stage in sync with tagmeDbRows immediately
+  // Keep uncompleted count for active Tagme3at stage in sync with tagmeDbRows immediately in-memory
   useEffect(() => {
     if (activeGid === '1535230545') {
       const count = tagmeDbRows.filter(r => r.done !== true && r.cancel !== true).length;
@@ -5746,16 +5773,16 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
     }
   }, [tagmeDbRows, activeGid]);
 
-  // Periodic polling & Realtime subscription across all stage, reels, and tagme3at tables for badge counts
+  // On-demand: when user stands on/selects a year or stage, ONLY fetch counts for that specific group
+  useEffect(() => {
+    if (isDemo || !activeGid) return;
+    const targetGids = STAGE_YEAR_GROUPS[activeGid] || [activeGid];
+    fetchCountsForGids(targetGids);
+  }, [activeGid, isDemo, fetchCountsForGids, STAGE_YEAR_GROUPS]);
+
+  // Realtime subscription: When a table changes, ONLY update that single specific table
   useEffect(() => {
     if (isDemo) return;
-    fetchStageUncompletedCounts();
-
-    const interval = setInterval(() => {
-      if (document.visibilityState === 'visible') {
-        fetchStageUncompletedCounts();
-      }
-    }, 45000);
 
     const tables = [...Object.values(STAGE_TABLE_MAP), 'reels_ve_26', 'reels_cuts_26', 'tagme3at_26'];
     let channel = supabase.channel('stages_uncompleted_realtime');
@@ -5764,17 +5791,19 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
         'postgres_changes',
         { event: '*', schema: 'public', table: tbl },
         () => {
-          fetchStageUncompletedCounts();
+          const targetGid = TABLE_TO_GID_MAP[tbl];
+          if (targetGid) {
+            fetchCountsForGids([targetGid]);
+          }
         }
       );
     });
     channel.subscribe();
 
     return () => {
-      clearInterval(interval);
       supabase.removeChannel(channel);
     };
-  }, [isDemo, fetchStageUncompletedCounts]);
+  }, [isDemo, fetchCountsForGids, TABLE_TO_GID_MAP]);
 
   // Reward celebration toast when all tasks in CUTS, Ve, or تجميعات are completed (transitions >0 down to 0)
   const prevStageCountsRef = useRef<Record<string, number>>({});

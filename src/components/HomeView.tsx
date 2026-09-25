@@ -247,21 +247,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
           }
         }
       )
-      .subscribe();
-
-    // 2. Fast Polling fallback every 2s
-    const interval = setInterval(async () => {
-      const id = await getUserTelegramChatId(currentUser.id, currentUser.name);
-      if (id !== telegramChatId) {
-        setTelegramChatId(id);
-        if (id && !telegramChatId) {
-          toast.success('🎉 رائع! تم ربط حسابك بتليجرام بنجاح وبدء الاتصال!');
-        }
-      }
-    }, 2000);
-
     return () => {
-      clearInterval(interval);
       supabase.removeChannel(channel);
     };
   }, [currentUser?.id, currentUser?.name, telegramChatId]);

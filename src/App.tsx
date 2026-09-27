@@ -54,7 +54,8 @@ import {
   EyeOff,
   Home,
   Calendar,
-  Send
+  Send,
+  Loader2
 } from 'lucide-react';
 import { useGoogleSheets } from './hooks/useGoogleSheets';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
@@ -7398,6 +7399,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
   }, [liveEditors, liveData, activeGid]);
 
   const [showAddModal, setShowAddModal] = useState(false);
+  const [isSubmittingAdd, setIsSubmittingAdd] = useState(false);
   const [showGoogleSheetImportModal, setShowGoogleSheetImportModal] = useState(false);
   const [addForm, setAddForm] = useState({ name: '', filingName: '', val: '', id: '', subject: '', extra: '', editor: '', notesMarketing: '' });
   const [shootingAddForm, setShootingAddForm] = useState({
@@ -7601,6 +7603,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
 
   const handleAddSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isSubmittingAdd) return;
 
     // For Shooting / reels / Cuts sheets
     if (['1436746012', '1939073164', '798246690', '0'].includes(activeGid)) {
@@ -7641,39 +7644,66 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
         return;
       }
 
-      const scriptValue = shootingAddForm.scriptLink.trim()
-        ? `=HYPERLINK("${shootingAddForm.scriptLink.trim()}", "${effectiveScriptName}")`
-        : effectiveScriptName;
+      // Deduplication check: prevent accidental double submissions of identical script link / name
+      const trimmedScriptLink = shootingAddForm.scriptLink.trim();
+      const trimmedScriptName = effectiveScriptName.toLowerCase();
+      const codePrefix = activeGid === '0'
+        ? `${shootingAddForm.year}-cut-${shootingAddForm.extraName}-`.toLowerCase().replace(/\s+/g, ' ')
+        : `${shootingAddForm.year}-${shootingAddForm.teacher}-${shootingAddForm.extraName}-`.toLowerCase().replace(/\s+/g, ' ');
 
-      const tbl = REELS_TABLE_MAP[activeGid];
+      const isDuplicate = reelsDbRows.some((r: any) => {
+        const rowScript = (r.script || '').toString();
+        // 1. Same scriptLink AND same script title
+        if (trimmedScriptLink && trimmedScriptName && rowScript.includes(trimmedScriptLink) && rowScript.toLowerCase().includes(trimmedScriptName)) {
+          return true;
+        }
+        // 2. Same teacher/creator prefix and exact script name match
+        const rowCode = (r.code || '').toString().toLowerCase();
+        if (rowCode.startsWith(codePrefix) && trimmedScriptName && rowScript.toLowerCase().includes(trimmedScriptName)) {
+          return true;
+        }
+        return false;
+      });
 
-      if (activeGid === '0') {
-        // CUTS
-        const newCut = {
-          date: new Date().toLocaleDateString('en-US'),
-          branch: shootingAddForm.branch,
-          year: shootingAddForm.year,
-          typeCol: 'CUT',
-          creator: shootingAddForm.extraName,
-          code: generatedCode,
-          id: generatedCode,
-          dataFiles: '',
-          script: scriptValue,
-          type: shootingAddForm.type,
-          format: shootingAddForm.format,
-          creatorNotes: '',
-          editorNotes: '',
-          missingDetails: false,
-          problem: false,
-          done: false,
-          editor: '',
-          driveFinal: '',
-          canceled: false,
-          uniqueKey: generatedCode
-        };
+      if (isDuplicate) {
+        toast.error("⚠️ هذا السكريبت أو الرابط مضاف بالفعل في هذا الجدول لتجنب التكرار!");
+        return;
+      }
 
-        if (tbl) {
-          try {
+      setIsSubmittingAdd(true);
+      try {
+        const scriptValue = shootingAddForm.scriptLink.trim()
+          ? `=HYPERLINK("${shootingAddForm.scriptLink.trim()}", "${effectiveScriptName}")`
+          : effectiveScriptName;
+
+        const tbl = REELS_TABLE_MAP[activeGid];
+
+        if (activeGid === '0') {
+          // CUTS
+          const newCut = {
+            date: new Date().toLocaleDateString('en-US'),
+            branch: shootingAddForm.branch,
+            year: shootingAddForm.year,
+            typeCol: 'CUT',
+            creator: shootingAddForm.extraName,
+            code: generatedCode,
+            id: generatedCode,
+            dataFiles: '',
+            script: scriptValue,
+            type: shootingAddForm.type,
+            format: shootingAddForm.format,
+            creatorNotes: '',
+            editorNotes: '',
+            missingDetails: false,
+            problem: false,
+            done: false,
+            editor: '',
+            driveFinal: '',
+            canceled: false,
+            uniqueKey: generatedCode
+          };
+
+          if (tbl) {
             let finalCode = generatedCode;
             const cutPrefix = `${shootingAddForm.year}-cut-${shootingAddForm.extraName}-`.toLowerCase().replace(/\s+/g, ' ');
             const { data: existingCut } = await supabase.from(tbl).select('code').eq('code', finalCode).maybeSingle();
@@ -7726,41 +7756,62 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
             }
 
             setReelsDbRows(prev => [newCut, ...prev.filter(x => x.code !== newCut.code)]);
-          } catch (err: any) {
-            console.error(err);
-            toast.error("حدث خطأ أثناء الإضافة: " + err.message);
-            return;
           }
-        }
-      } else {
-        // Shooting & Ve
-        const newShooting = {
-          date: new Date().toLocaleDateString('en-US'),
-          branch: shootingAddForm.branch,
-          year: shootingAddForm.year,
-          teacher: shootingAddForm.teacher,
-          extraName: shootingAddForm.extraName,
-          code: generatedCode,
-          id: generatedCode,
-          script: scriptValue,
-          type: shootingAddForm.type,
-          format: shootingAddForm.format,
-          filmed: false,
-          filmingDate: '',
-          by: '',
-          storage: '',
-          notes: '',
-          driveRaw: shootingAddForm.driveRaw?.trim() || '',
-          editorCol: '',
-          done: false,
-          driveFinal: '',
-          canceled: false,
-          missingDetails: false,
-          uniqueKey: generatedCode
-        };
 
-        if (tbl) {
-          try {
+          // Close modal immediately and show success!
+          setShowAddModal(false);
+          setShootingAddForm(prev => ({
+            ...prev,
+            scriptName: '',
+            scriptLink: '',
+            driveRaw: ''
+          }));
+          toast.success("تم إضافة الريل الجديد بنجاح في Supabase! 🎉");
+
+          const broadcastCode = newCut.code || generatedCode;
+          if (globalChannelRef.current && profile?.name) {
+            globalChannelRef.current.send({
+              type: 'broadcast',
+              event: 'update',
+              payload: {
+                itemKey: broadcastCode,
+                taskName: scriptValue || broadcastCode,
+                message: `🎬 تم إضافة مهمة مونتاج (Cut) جديدة: "${scriptValue || broadcastCode}"`,
+                type: 'new_entry',
+                from: profile.name,
+                activeGid
+              }
+            });
+          }
+          return;
+        } else {
+          // Shooting & Ve
+          const newShooting = {
+            date: new Date().toLocaleDateString('en-US'),
+            branch: shootingAddForm.branch,
+            year: shootingAddForm.year,
+            teacher: shootingAddForm.teacher,
+            extraName: shootingAddForm.extraName,
+            code: generatedCode,
+            id: generatedCode,
+            script: scriptValue,
+            type: shootingAddForm.type,
+            format: shootingAddForm.format,
+            filmed: false,
+            filmingDate: '',
+            by: '',
+            storage: '',
+            notes: '',
+            driveRaw: shootingAddForm.driveRaw?.trim() || '',
+            editorCol: '',
+            done: false,
+            driveFinal: '',
+            canceled: false,
+            missingDetails: false,
+            uniqueKey: generatedCode
+          };
+
+          if (tbl) {
             let finalCode = generatedCode;
             const shootingPrefix = `${shootingAddForm.year}-${shootingAddForm.teacher}-${shootingAddForm.extraName}-`.toLowerCase().replace(/\s+/g, ' ');
             const { data: existingShooting } = await supabase.from(tbl).select('code').eq('code', finalCode).maybeSingle();
@@ -7815,76 +7866,73 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
             }
 
             setReelsDbRows(prev => [newShooting, ...prev.filter(x => x.code !== newShooting.code)]);
-          } catch (err: any) {
-            console.error(err);
-            toast.error("حدث خطأ أثناء الإضافة: " + err.message);
-            return;
           }
+
+          // Close modal immediately and show success!
+          setShowAddModal(false);
+          setShootingAddForm(prev => ({
+            ...prev,
+            scriptName: '',
+            scriptLink: '',
+            driveRaw: ''
+          }));
+          toast.success("تم إضافة السكريبت الجديد بنجاح في Supabase! 🎉");
+
+          const broadcastCode = newShooting.code || generatedCode;
+          if (globalChannelRef.current && profile?.name) {
+            globalChannelRef.current.send({
+              type: 'broadcast',
+              event: 'update',
+              payload: {
+                itemKey: broadcastCode,
+                taskName: scriptValue || broadcastCode,
+                message: `🆕 تم إضافة سكريبت جديد: "${scriptValue || broadcastCode}"`,
+                type: 'new_entry',
+                from: profile.name,
+                activeGid
+              }
+            });
+          }
+          return;
         }
+      } catch (err: any) {
+        console.error(err);
+        toast.error("حدث خطأ أثناء الإضافة: " + (err.message || err));
+      } finally {
+        setIsSubmittingAdd(false);
       }
-
-      const broadcastCode = (activeGid === '0' ? newCut.code : newShooting.code) || generatedCode;
-
-      // Broadcast new entry over WebSocket to other clients
-      if (globalChannelRef.current && profile?.name) {
-        globalChannelRef.current.send({
-          type: 'broadcast',
-          event: 'update',
-          payload: {
-            itemKey: broadcastCode,
-            taskName: scriptValue || broadcastCode,
-            message: activeGid === '0' 
-              ? `🎬 تم إضافة مهمة مونتاج (Cut) جديدة: "${scriptValue || broadcastCode}"`
-              : `🆕 تم إضافة سكريبت جديد: "${scriptValue || broadcastCode}"`,
-            type: 'new_entry',
-            from: profile.name,
-            activeGid
-          }
-        });
-      }
-
-      toast.success(activeGid === '0' ? "تم إضافة الريل الجديد بنجاح في Supabase! 🎉" : "تم إضافة السكريبت الجديد بنجاح في Supabase! 🎉");
-
-      // Reset and close
-      setShowAddModal(false);
-      setShootingAddForm(prev => ({
-        ...prev,
-        scriptName: '',
-        scriptLink: '',
-        driveRaw: ''
-      }));
       return;
     }
 
     if (!addForm.name) return;
 
-    if (activeGid === '1535230545') {
-      const newKey = 'tgm-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6);
-      const newTagme = {
-        uniqueKey: newKey,
-        id: newKey,
-        name: addForm.name.trim(),
-        filingName: addForm.filingName?.trim() || '---',
-        opSheet: addForm.val?.trim() || 'Senior 1',
-        branch: (addForm.extra && !addForm.extra.includes('يوتيوب') && !addForm.extra.includes('تجميعة')) ? addForm.extra.trim() : '',
-        date: addForm.id?.trim() || new Date().toISOString().split('T')[0],
-        notesMarketing: addForm.notesMarketing?.trim() || '',
-        editor: addForm.editor?.trim() || 'غير محدد',
-        notesEditors: '',
-        done: false,
-        priority: false,
-        cancel: false,
-        thumbnailLink: '',
-        time: '',
-        youtubeLink: '',
-        uploaded: false,
-        isTransfer: false,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-      };
+    setIsSubmittingAdd(true);
+    try {
+      if (activeGid === '1535230545') {
+        const newKey = 'tgm-' + Date.now() + '-' + Math.random().toString(36).substring(2, 6);
+        const newTagme = {
+          uniqueKey: newKey,
+          id: newKey,
+          name: addForm.name.trim(),
+          filingName: addForm.filingName?.trim() || '---',
+          opSheet: addForm.val?.trim() || 'Senior 1',
+          branch: (addForm.extra && !addForm.extra.includes('يوتيوب') && !addForm.extra.includes('تجميعة')) ? addForm.extra.trim() : '',
+          date: addForm.id?.trim() || new Date().toISOString().split('T')[0],
+          notesMarketing: addForm.notesMarketing?.trim() || '',
+          editor: addForm.editor?.trim() || 'غير محدد',
+          notesEditors: '',
+          done: false,
+          priority: false,
+          cancel: false,
+          thumbnailLink: '',
+          time: '',
+          youtubeLink: '',
+          uploaded: false,
+          isTransfer: false,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        };
 
-      try {
-        // 1. Direct insert to Supabase tagme3at_26 table
         const { error } = await supabase.from('tagme3at_26').insert([{
           unique_key: newKey,
           name: newTagme.name,
@@ -7913,11 +7961,9 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
           return;
         }
 
-        // 2. Optimistic UI update
         setTagmeDbRows(prev => [newTagme, ...prev.filter(x => x.uniqueKey !== newKey)]);
         notifyCoreCountsChanged(['1535230545']);
 
-        // 3. Broadcast to all clients
         if (globalChannelRef.current && profile?.name) {
           globalChannelRef.current.send({
             type: 'broadcast',
@@ -7932,41 +7978,35 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
             }
           });
         }
-      } catch (err: any) {
-        console.error('Exception inserting into tagme3at_26:', err);
-        toast.error(`فشل الإضافة: ${err.message}`);
+
+        setShowAddModal(false);
+        setAddForm({ name: '', filingName: '', val: '', id: '', subject: '', extra: '', editor: '', notesMarketing: '' });
+        toast.success(`تم حفظ وإضافة التجميعة "${newTagme.name}" بنجاح في Supabase! 🎉`);
         return;
       }
 
-      setShowAddModal(false);
-      setAddForm({ name: '', filingName: '', val: '', id: '', subject: '', extra: '', editor: '', notesMarketing: '' });
-      toast.success(`تم حفظ وإضافة التجميعة "${newTagme.name}" بنجاح في Supabase! 🎉`);
-      return;
-    }
+      if (isStageTab) {
+        const newKey = `stg-${activeGid}-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+        const newStageItem = {
+          uniqueKey: newKey,
+          id: newKey,
+          week: 'أسبوع 1',
+          date: addForm.id?.trim() || new Date().toISOString().split('T')[0],
+          name: addForm.name.trim(),
+          filingName: addForm.filingName?.trim() || addForm.name.trim(),
+          subject: addForm.subject?.trim() || 'عام',
+          branch: addForm.extra?.trim() || 'القاهرة',
+          opSheet: addForm.val?.trim() || activeLabel || '2025 - 2026',
+          isTagme3a: false,
+          delivered: false,
+          thumbnailLink: '',
+          time: '',
+          youtubeLink: '',
+          uploaded: false,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        };
 
-    if (isStageTab) {
-      const newKey = `stg-${activeGid}-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
-      const newStageItem = {
-        uniqueKey: newKey,
-        id: newKey,
-        week: 'أسبوع 1',
-        date: addForm.id?.trim() || new Date().toISOString().split('T')[0],
-        name: addForm.name.trim(),
-        filingName: addForm.filingName?.trim() || addForm.name.trim(),
-        subject: addForm.subject?.trim() || 'عام',
-        branch: addForm.extra?.trim() || 'القاهرة',
-        opSheet: addForm.val?.trim() || activeLabel || '2025 - 2026',
-        isTagme3a: false,
-        delivered: false,
-        thumbnailLink: '',
-        time: '',
-        youtubeLink: '',
-        uploaded: false,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-      };
-
-      try {
         const { error } = await supabase.from(stageTable).insert([{
           unique_key: newKey,
           week: newStageItem.week,
@@ -8012,33 +8052,36 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
         setShowAddModal(false);
         setAddForm({ name: '', filingName: '', val: '', id: '', subject: '', extra: '', editor: '', notesMarketing: '' });
         toast.success(`تم حفظ وإضافة الدرس بنجاح في جدول Supabase (${stageTable})! 🚀`);
-      } catch (err: any) {
-        console.error(err);
-        toast.error(`فشل الإضافة: ${err.message}`);
+        return;
       }
-      return;
-    }
 
-    const newItem = {
-      ...addForm,
-      uniqueKey: 'local-' + Date.now(),
-      check1: false,
-      check2: false,
-      done: false,
-      priority: false,
-      date: addForm.id || new Date().toLocaleDateString(),
-      branch: addForm.extra,
-      opSheet: addForm.val
-    };
-    setLocalEntries(prev => {
-      const list = prev[activeGid] || [];
-      const updated = [newItem, ...list];
-      const map = { ...prev, [activeGid]: updated };
-      syncState('local_entries_v1', map, newItem.uniqueKey, newItem.name, 'add_entry', `➕ تم إضافة مهمة جديدة يدوياً: "${newItem.name}"`);
-      return map;
-    });
-    setShowAddModal(false);
-    setAddForm({ name: '', filingName: '', val: '', id: '', subject: '', extra: '', editor: '', notesMarketing: '' });
+      const newItem = {
+        ...addForm,
+        uniqueKey: 'local-' + Date.now(),
+        check1: false,
+        check2: false,
+        done: false,
+        priority: false,
+        date: addForm.id || new Date().toLocaleDateString(),
+        branch: addForm.extra,
+        opSheet: addForm.val
+      };
+      setLocalEntries(prev => {
+        const list = prev[activeGid] || [];
+        const updated = [newItem, ...list];
+        const map = { ...prev, [activeGid]: updated };
+        syncState('local_entries_v1', map, newItem.uniqueKey, newItem.name, 'add_entry', `➕ تم إضافة مهمة جديدة يدوياً: "${newItem.name}"`);
+        return map;
+      });
+      setShowAddModal(false);
+      setAddForm({ name: '', filingName: '', val: '', id: '', subject: '', extra: '', editor: '', notesMarketing: '' });
+      toast.success("تم إضافة المهمة بنجاح! 🚀");
+    } catch (err: any) {
+      console.error(err);
+      toast.error(`فشل الإضافة: ${err.message || err}`);
+    } finally {
+      setIsSubmittingAdd(false);
+    }
   };
 
   useEffect(() => {
@@ -10801,7 +10844,12 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
                       </p>
                     </div>
                   </div>
-                  <button onClick={() => setShowAddModal(false)} className="text-muted hover:text-white p-2 transition-colors cursor-pointer">
+                  <button 
+                    type="button"
+                    disabled={isSubmittingAdd}
+                    onClick={() => setShowAddModal(false)} 
+                    className="text-muted hover:text-white p-2 transition-colors cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+                  >
                     <XCircle size={22} />
                   </button>
                 </div>
@@ -11132,7 +11180,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
                       !generatedCode
                     );
                     const isTagmeIncomplete = isTagme3at && !addForm.name?.trim();
-                    const isDisabled = loading || isShootingIncomplete || isTagmeIncomplete;
+                    const isDisabled = loading || isShootingIncomplete || isTagmeIncomplete || isSubmittingAdd;
 
                     return (
                       <div className="w-full space-y-3 pt-2">
@@ -11146,17 +11194,25 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
                         <div className="flex justify-end gap-3">
                           <button
                             type="button"
+                            disabled={isSubmittingAdd}
                             onClick={() => setShowAddModal(false)}
-                            className="px-6 py-3 rounded-xl bg-white/5 hover:bg-white/10 text-muted hover:text-white transition-colors font-bold arabic-text text-xs cursor-pointer"
+                            className="px-6 py-3 rounded-xl bg-white/5 hover:bg-white/10 text-muted hover:text-white transition-colors font-bold arabic-text text-xs cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
                           >
                             إلغاء
                           </button>
                           <button
                             type="submit"
                             disabled={isDisabled}
-                            className="px-8 py-3 rounded-xl bg-primary hover:bg-primary/90 text-white font-bold arabic-text text-xs shadow-lg shadow-primary/30 transition-all hover:scale-105 active:scale-95 cursor-pointer flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed"
+                            className="px-8 py-3 rounded-xl bg-primary hover:bg-primary/90 text-white font-bold arabic-text text-xs shadow-lg shadow-primary/30 transition-all hover:scale-105 active:scale-95 cursor-pointer flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed disabled:pointer-events-none disabled:hover:scale-100"
                           >
-                            <span>حفظ وإضافة 🚀</span>
+                            {isSubmittingAdd ? (
+                              <>
+                                <Loader2 className="w-4 h-4 animate-spin text-white" />
+                                <span>جاري الحفظ والإضافة... ⏳</span>
+                              </>
+                            ) : (
+                              <span>حفظ وإضافة 🚀</span>
+                            )}
                           </button>
                         </div>
                       </div>

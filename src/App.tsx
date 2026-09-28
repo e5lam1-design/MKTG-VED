@@ -7638,6 +7638,35 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
 
         const tbl = REELS_TABLE_MAP[activeGid];
 
+        if (tbl) {
+          // Double protection: Direct database check to prevent multi-device race condition duplicates
+          if (trimmedScriptLink) {
+            const { data: dbDupLink } = await supabase
+              .from(tbl)
+              .select('code, script')
+              .ilike('script', `%${trimmedScriptLink}%`)
+              .limit(1);
+            if (dbDupLink && dbDupLink.length > 0) {
+              toast.error("⚠️ هذا الرابط مسجل بالفعل مسبقاً في قاعدة البيانات لمنع التكرار!");
+              setIsSubmittingAdd(false);
+              return;
+            }
+          }
+          if (trimmedScriptName) {
+            const { data: dbDupName } = await supabase
+              .from(tbl)
+              .select('code, script')
+              .ilike('code', `${codePrefix}%`)
+              .ilike('script', `%${trimmedScriptName}%`)
+              .limit(1);
+            if (dbDupName && dbDupName.length > 0) {
+              toast.error("⚠️ هذا السكريبت مسجل بالفعل مسبقاً لهذا المعلم/المبتكر لمنع التكرار!");
+              setIsSubmittingAdd(false);
+              return;
+            }
+          }
+        }
+
         if (activeGid === '0') {
           // CUTS
           const newCut = {

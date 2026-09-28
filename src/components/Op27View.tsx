@@ -289,7 +289,6 @@ export const Op27View: React.FC<Op27ViewProps> = ({
     window.addEventListener('focus', handleVisibilityOrFocus);
 
     return () => {
-      supabase.removeChannel(realtimeChannel);
       clearInterval(autoSyncInterval);
       document.removeEventListener('visibilitychange', handleVisibilityOrFocus);
       window.removeEventListener('focus', handleVisibilityOrFocus);

@@ -309,6 +309,11 @@ const HistoryInput = ({ itemKey, fieldKey, value, onChange, placeholder, updated
   };
   
   const [history, setHistory] = useState<HistoryEntry[]>(() => {
+    const currentText = (value || '').trim();
+    if (!currentText) {
+      return [{ text: '', timestamp: '', author: '' }];
+    }
+
     const saved = localStorage.getItem(historyKey);
     let entries: HistoryEntry[] = [];
     const resolvedAuthor = getResolvedExistingAuthor();
@@ -343,29 +348,32 @@ const HistoryInput = ({ itemKey, fieldKey, value, onChange, placeholder, updated
       } catch (e) {}
     }
 
-    const currentText = (value || '').trim();
-    if (currentText) {
-      // Ensure baseline empty state at index 0 so existing notes always have an active Undo button
-      if (entries.length === 0) {
-        entries.push({ text: '', timestamp: '', author: '' });
-      } else if (entries.length === 1 && entries[0].text === currentText) {
-        entries.unshift({ text: '', timestamp: '', author: '' });
-      }
-
-      if (entries[entries.length - 1].text !== currentText) {
-        entries.push({
-          text: currentText,
-          timestamp: updatedAt || new Date().toISOString(),
-          author: resolvedAuthor || ''
-        });
-      } else if (resolvedAuthor && entries[entries.length - 1].author !== resolvedAuthor) {
-        entries[entries.length - 1].author = resolvedAuthor;
-      }
+    // Ensure baseline empty state at index 0 so existing notes always have an active Undo button
+    if (entries.length === 0) {
+      entries.push({ text: '', timestamp: '', author: '' });
+    } else if (entries.length === 1 && entries[0].text === currentText) {
+      entries.unshift({ text: '', timestamp: '', author: '' });
     }
+
+    if (entries[entries.length - 1].text !== currentText) {
+      entries.push({
+        text: currentText,
+        timestamp: updatedAt || new Date().toISOString(),
+        author: resolvedAuthor || ''
+      });
+    } else if (resolvedAuthor && entries[entries.length - 1].author !== resolvedAuthor) {
+      entries[entries.length - 1].author = resolvedAuthor;
+    }
+
     return entries.slice(-30);
   });
   
-  const [currentIndex, setCurrentIndex] = useState(history.length > 0 ? history.length - 1 : -1);
+  const [currentIndex, setCurrentIndex] = useState(() => {
+    const cur = (value || '').trim();
+    if (!cur) return 0;
+    const idx = history.findIndex(e => e.text === cur);
+    return idx !== -1 ? idx : Math.max(0, history.length - 1);
+  });
   const [localValue, setLocalValue] = useState(value || '');
   const isUndoRedoRef = useRef(false);
 
@@ -424,6 +432,8 @@ const HistoryInput = ({ itemKey, fieldKey, value, onChange, placeholder, updated
         setCurrentIndex(newH.length - 1);
         return newH;
       });
+    } else {
+      setCurrentIndex(0);
     }
   }, [value, updatedBy, updatedAt, fallbackAuthor]);
 
@@ -556,14 +566,14 @@ const HistoryInput = ({ itemKey, fieldKey, value, onChange, placeholder, updated
       <button 
         onMouseDown={(e) => e.preventDefault()}
         onClick={undo} 
-        disabled={currentIndex <= 0}
+        disabled={currentIndex <= 0 || !hasValue}
         type="button"
         className={`absolute -left-6 p-1.5 rounded-full border transition-all z-10 ${
-          currentIndex > 0 
+          currentIndex > 0 && hasValue
             ? 'bg-blue-500/15 border-blue-400/70 text-blue-300 hover:bg-blue-500/30 hover:scale-110 shadow-[0_0_10px_rgba(59,130,246,0.3)] opacity-100 cursor-pointer' 
             : 'bg-white/[0.04] border-white/15 text-white/40 opacity-55 cursor-not-allowed'
         }`}
-        title={currentIndex > 0 ? `تراجع إلى النسخة السابقة (${formatArabicTimestamp(history[currentIndex - 1]?.timestamp) || 'فراغ'})` : "لا يوجد تراجع"}
+        title={currentIndex > 0 && hasValue ? `تراجع إلى النسخة السابقة (${formatArabicTimestamp(history[currentIndex - 1]?.timestamp) || 'فراغ'})` : "لا يوجد تراجع"}
       >
         <Undo2 size={12} />
       </button>
@@ -2731,21 +2741,21 @@ const ShootingRow = ({ item, index, activeGid, onToggleFilmed, loadingFilmedCode
       branch: item.branch || '',
       year: item.year || '',
       teacher: item.teacher || '',
-      extraName: item.extraName || '',
+      extraName: item.extraName || item.creator || '',
       type: item.type || '',
       format: item.format || '',
       by: item.by || '',
       storage: item.storage || '',
       script: item.script || '',
-      notes: item.notes ?? '',
-      editorNotes: item.editorNotes ?? '',
-      driveRaw: item.driveRaw || '',
-      editorCol: item.editorCol || '',
+      notes: item.notes || item.creatorNotes || item.creator_notes || '',
+      editorNotes: item.editorNotes || item.editor_notes || '',
+      driveRaw: item.driveRaw || item.dataFiles || '',
+      editorCol: item.editorCol || item.editor || '',
       driveFinal: item.driveFinal || '',
       filmed: item.filmed === true || item.filmed === 'TRUE',
       filmingDate: item.filmingDate || ''
     });
-  }, [item.notes, item.editorNotes, item.filmed, item.driveFinal, item.driveRaw, item.editorCol, item.branch, item.year, item.teacher, item.extraName, item.type, item.format, item.by, item.storage, item.script]);
+  }, [item.notes, item.editorNotes, item.creatorNotes, item.creator_notes, item.filmed, item.driveFinal, item.driveRaw, item.editorCol, item.branch, item.year, item.teacher, item.extraName, item.type, item.format, item.by, item.storage, item.script]);
 
   const generatedCode = useMemo(() => {
     if (!['1436746012', '1939073164', '798246690'].includes(activeGid)) return item.id;
@@ -3663,14 +3673,14 @@ const CutsRow = ({
     setEditForm({
       branch: item.branch || '',
       year: item.year || '',
-      creator: item.creator || '',
+      creator: item.creator || item.extraName || '',
       type: item.type || '',
       format: item.format || '',
-      dataFiles: item.dataFiles || '',
+      dataFiles: item.dataFiles || item.driveRaw || '',
       script: item.script || '',
-      creatorNotes: item.creatorNotes || '',
-      editorNotes: item.editorNotes || '',
-      editor: item.editor || '',
+      creatorNotes: item.creatorNotes || item.creator_notes || item.notes || '',
+      editorNotes: item.editorNotes || item.editor_notes || '',
+      editor: item.editor || item.editorCol || '',
       driveFinal: localFinal
     });
   }, [item]);
@@ -6056,7 +6066,17 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
     '0': 'reels_cuts_26',
   };
 
-  const [reelsDbRows, setReelsDbRows] = useState<any[]>([]);
+  const [reelsDbByGid, setReelsDbByGid] = useState<Record<string, any[]>>({});
+  const reelsDbRows = useMemo(() => reelsDbByGid[activeGid] || [], [reelsDbByGid, activeGid]);
+
+  const setReelsDbRows = useCallback((updater: any) => {
+    setReelsDbByGid(prev => {
+      const cur = prev[activeGid] || [];
+      const next = typeof updater === 'function' ? updater(cur) : updater;
+      return { ...prev, [activeGid]: next };
+    });
+  }, [activeGid]);
+
   const [isReelsDbLoading, setIsReelsDbLoading] = useState(false);
   const lastReelsUpdatedAtRef = useRef<Record<string, string>>({});
 
@@ -6094,61 +6114,6 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
         }
       }
 
-      // If loading VE tab, ensure all filmed tasks from Shooting tab exist in VE, without overwriting existing VE edits/notes
-      if (gid === '1939073164') {
-        const { data: filmedShooting } = await supabase
-          .from('reels_shooting_26')
-          .select('*')
-          .eq('filmed', true);
-
-        const filmedCodes = (filmedShooting || []).map(s => s.code).filter(Boolean);
-
-        // 1. Delete any row in VE that is no longer filmed in shooting
-        const { data: currentVe } = await supabase.from('reels_ve_26').select('code');
-        const existingVeCodes = new Set((currentVe || []).map(v => v.code));
-
-        if (currentVe && currentVe.length > 0) {
-          for (const v of currentVe) {
-            if (!filmedCodes.includes(v.code)) {
-              await supabase.from('reels_ve_26').delete().eq('code', v.code);
-            }
-          }
-        }
-
-        // 2. Insert ONLY new filmed shooting rows that do not exist yet in VE
-        if (filmedShooting && filmedShooting.length > 0) {
-          for (const sRow of filmedShooting) {
-            if (!existingVeCodes.has(sRow.code)) {
-              const veRecord = {
-                code: sRow.code,
-                date: sRow.date || new Date().toLocaleDateString('en-US'),
-                branch: sRow.branch || '',
-                year: sRow.year || '',
-                teacher: sRow.teacher || '',
-                extra_name: sRow.extra_name || '',
-                script: sRow.script || '',
-                type: sRow.type || '',
-                format: sRow.format || '',
-                filmed: true,
-                filming_date: sRow.filming_date || new Date().toLocaleDateString('en-US'),
-                by: sRow.by || '',
-                storage: sRow.storage || '',
-                notes: sRow.notes || '',
-                editor_notes: sRow.editor_notes || '',
-                drive_raw: sRow.drive_raw || '',
-                editor_col: sRow.editor_col || 'غير محدد',
-                done: sRow.done === true,
-                drive_final: sRow.drive_final || '',
-                canceled: sRow.canceled === true,
-                missing_details: sRow.missing_details === true,
-                updated_at: new Date().toISOString()
-              };
-              await supabase.from('reels_ve_26').insert([veRecord]);
-            }
-          }
-        }
-      }
-
       const { data, error } = await supabase
         .from(tbl)
         .select('*')
@@ -6169,17 +6134,17 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
             branch: i.branch || '',
             year: i.year || '',
             typeCol: i.type_col || 'CUT',
-            creator: i.creator || '',
-            dataFiles: i.data_files || '',
+            creator: i.creator || i.extra_name || '',
+            dataFiles: i.data_files || i.drive_raw || '',
             script: i.script || '',
             type: i.type || '',
             format: i.format || '',
-            creatorNotes: i.creator_notes || '',
+            creatorNotes: i.creator_notes || i.notes || '',
             editorNotes: i.editor_notes || '',
             missingDetails: i.missing_details === true,
             problem: i.problem === true,
             done: i.done === true,
-            editor: i.editor || '',
+            editor: i.editor || i.editor_col || '',
             driveFinal: i.drive_final || '',
             canceled: i.canceled === true,
             uniqueKey: i.code,
@@ -6194,7 +6159,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
             branch: i.branch || '',
             year: i.year || '',
             teacher: i.teacher || '',
-            extraName: i.extra_name || '',
+            extraName: i.extra_name || i.creator || '',
             script: i.script || '',
             type: i.type || '',
             format: i.format || '',
@@ -6202,10 +6167,10 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
             filmingDate: i.filming_date || '',
             by: i.by || '',
             storage: i.storage || '',
-            notes: i.notes || '',
+            notes: i.notes || i.creator_notes || '',
             editorNotes: i.editor_notes || '',
-            driveRaw: i.drive_raw || '',
-            editorCol: i.editor_col || '',
+            driveRaw: i.drive_raw || i.data_files || '',
+            editorCol: i.editor_col || i.editor || '',
             done: i.done === true,
             driveFinal: i.drive_final || '',
             canceled: i.canceled === true,
@@ -6218,12 +6183,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
             updatedAt: i.updated_at
           }));
         }
-        setReelsDbRows(prev => {
-          if (prev.length === mapped.length && prev[0]?.uniqueKey === mapped[0]?.uniqueKey && prev[0]?.updatedAt === mapped[0]?.updatedAt) {
-            return prev;
-          }
-          return mapped;
-        });
+        setReelsDbByGid(prev => ({ ...prev, [gid]: mapped }));
       }
     } catch (e) {
       console.error(`Error fetching ${tbl} from Supabase:`, e);
@@ -6582,7 +6542,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
     } else if (isStageTab) {
       baseList = stageDbRows.length > 0 ? stageDbRows : [...currentLocal, ...liveData];
     } else if (isReelsTableTab) {
-      baseList = reelsDbRows.length > 0 ? reelsDbRows : [...currentLocal, ...liveData];
+      baseList = reelsDbRows;
     } else {
       const transfers = youtubeItems[activeGid] || [];
       baseList = [...currentLocal, ...transfers, ...liveData];

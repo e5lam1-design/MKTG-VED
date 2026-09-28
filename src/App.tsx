@@ -7398,6 +7398,46 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
     return `${prefix}${nextSeq.toString().padStart(2, '0')} v7`.toLowerCase();
   }, [shootingAddForm, combinedData, activeGid]);
 
+  const duplicateScriptLinkWarning = useMemo(() => {
+    const rawLink = shootingAddForm.scriptLink?.trim();
+    if (!rawLink) return null;
+    const docIdMatch = rawLink.match(/\/d\/([-\w]{25,})|\/folders\/([-\w]{25,})|id=([-\w]{25,})/);
+    const docId = docIdMatch ? (docIdMatch[1] || docIdMatch[2] || docIdMatch[3]) : null;
+    const cleanUrl = rawLink.split('?')[0].replace(/\/+$/, '').toLowerCase();
+
+    const dup = reelsDbRows.find((r: any) => {
+      const rowScript = (r.script || '').toString();
+      if (docId && rowScript.includes(docId)) return true;
+      if (cleanUrl.length > 15 && rowScript.toLowerCase().includes(cleanUrl)) return true;
+      if (rowScript.includes(rawLink)) return true;
+      return false;
+    });
+
+    if (dup) {
+      return `⚠️ هذا الرابط مسجل بالفعل لمهمة (${dup.code || 'مهمة سابقة'}) في هذا الجدول!`;
+    }
+    return null;
+  }, [shootingAddForm.scriptLink, reelsDbRows]);
+
+  const duplicateScriptNameWarning = useMemo(() => {
+    const trimmedName = shootingAddForm.scriptName?.trim().toLowerCase();
+    if (!trimmedName || trimmedName.length < 3) return null;
+    const codePrefix = activeGid === '0'
+      ? `${shootingAddForm.year}-cut-${shootingAddForm.extraName}-`.toLowerCase().replace(/\s+/g, ' ')
+      : `${shootingAddForm.year}-${shootingAddForm.teacher}-${shootingAddForm.extraName}-`.toLowerCase().replace(/\s+/g, ' ');
+
+    const dup = reelsDbRows.find((r: any) => {
+      const rowCode = (r.code || '').toString().toLowerCase();
+      const rowScript = (r.script || '').toString().toLowerCase();
+      return rowCode.startsWith(codePrefix) && rowScript.includes(trimmedName);
+    });
+
+    if (dup) {
+      return `⚠️ يوجد سكريبت بنفس هذا العنوان للمعلم/المبتكر (${dup.code})!`;
+    }
+    return null;
+  }, [shootingAddForm.scriptName, shootingAddForm.year, shootingAddForm.teacher, shootingAddForm.extraName, activeGid, reelsDbRows]);
+
   const [colorfulTabs, setColorfulTabs] = useState(false);
   const [visibleRecordsLimit, setVisibleRecordsLimit] = useState(200);
   const [veViewMode, setVeViewMode] = useState<'SIMPLE' | 'DETAILED'>(() => {
@@ -7611,22 +7651,45 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
         ? `${shootingAddForm.year}-cut-${shootingAddForm.extraName}-`.toLowerCase().replace(/\s+/g, ' ')
         : `${shootingAddForm.year}-${shootingAddForm.teacher}-${shootingAddForm.extraName}-`.toLowerCase().replace(/\s+/g, ' ');
 
+      // Extract Document / Folder ID from link to detect duplicates across URL variants
+      const docIdMatch = trimmedScriptLink.match(/\/d\/([-\w]{25,})|\/folders\/([-\w]{25,})|id=([-\w]{25,})/);
+      const docId = docIdMatch ? (docIdMatch[1] || docIdMatch[2] || docIdMatch[3]) : null;
+      const cleanUrl = trimmedScriptLink.split('?')[0].replace(/\/+$/, '').toLowerCase();
+
+      let duplicateReason = '';
       const isDuplicate = reelsDbRows.some((r: any) => {
         const rowScript = (r.script || '').toString();
-        // 1. Same scriptLink AND same script title
-        if (trimmedScriptLink && trimmedScriptName && rowScript.includes(trimmedScriptLink) && rowScript.toLowerCase().includes(trimmedScriptName)) {
-          return true;
-        }
-        // 2. Same teacher/creator prefix and exact script name match
         const rowCode = (r.code || '').toString().toLowerCase();
-        if (rowCode.startsWith(codePrefix) && trimmedScriptName && rowScript.toLowerCase().includes(trimmedScriptName)) {
-          return true;
+
+        // 1. Check Link duplicate (independent of script title!)
+        if (trimmedScriptLink) {
+          if (docId && rowScript.includes(docId)) {
+            duplicateReason = `⚠️ هذا الرابط مضاف بالفعل لمهمة أخرى (${r.code || 'مهمة سابقة'}) لتجنب التكرار!`;
+            return true;
+          }
+          if (cleanUrl && cleanUrl.length > 15 && rowScript.toLowerCase().includes(cleanUrl)) {
+            duplicateReason = `⚠️ هذا الرابط مضاف بالفعل لمهمة أخرى (${r.code || 'مهمة سابقة'}) لتجنب التكرار!`;
+            return true;
+          }
+          if (rowScript.includes(trimmedScriptLink)) {
+            duplicateReason = `⚠️ هذا الرابط مضاف بالفعل لمهمة أخرى (${r.code || 'مهمة سابقة'}) لتجنب التكرار!`;
+            return true;
+          }
         }
+
+        // 2. Check Script Name duplicate for the same teacher/creator
+        if (trimmedScriptName && trimmedScriptName.length >= 3) {
+          if (rowCode.startsWith(codePrefix) && rowScript.toLowerCase().includes(trimmedScriptName)) {
+            duplicateReason = `⚠️ يوجد سكريبت بنفس هذا العنوان مسجل للمعلم/المبتكر (${r.code})!`;
+            return true;
+          }
+        }
+
         return false;
       });
 
       if (isDuplicate) {
-        toast.error("⚠️ هذا السكريبت أو الرابط مضاف بالفعل في هذا الجدول لتجنب التكرار!");
+        toast.error(duplicateReason || "⚠️ هذا السكريبت أو الرابط مضاف بالفعل في هذا الجدول لتجنب التكرار!");
         return;
       }
 
@@ -7640,19 +7703,31 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
 
         if (tbl) {
           // Double protection: Direct database check to prevent multi-device race condition duplicates
-          if (trimmedScriptLink) {
+          if (docId) {
+            const { data: dbDupDoc } = await supabase
+              .from(tbl)
+              .select('code, script')
+              .ilike('script', `%${docId}%`)
+              .limit(1);
+            if (dbDupDoc && dbDupDoc.length > 0) {
+              toast.error(`⚠️ هذا الرابط مسجل بالفعل في قاعدة البيانات للمهمة (${dbDupDoc[0].code}) لمنع التكرار!`);
+              setIsSubmittingAdd(false);
+              return;
+            }
+          } else if (cleanUrl && cleanUrl.length > 15) {
             const { data: dbDupLink } = await supabase
               .from(tbl)
               .select('code, script')
-              .ilike('script', `%${trimmedScriptLink}%`)
+              .ilike('script', `%${cleanUrl}%`)
               .limit(1);
             if (dbDupLink && dbDupLink.length > 0) {
-              toast.error("⚠️ هذا الرابط مسجل بالفعل مسبقاً في قاعدة البيانات لمنع التكرار!");
+              toast.error(`⚠️ هذا الرابط مسجل بالفعل في قاعدة البيانات للمهمة (${dbDupLink[0].code}) لمنع التكرار!`);
               setIsSubmittingAdd(false);
               return;
             }
           }
-          if (trimmedScriptName) {
+
+          if (trimmedScriptName && trimmedScriptName.length >= 3) {
             const { data: dbDupName } = await supabase
               .from(tbl)
               .select('code, script')
@@ -7660,7 +7735,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
               .ilike('script', `%${trimmedScriptName}%`)
               .limit(1);
             if (dbDupName && dbDupName.length > 0) {
-              toast.error("⚠️ هذا السكريبت مسجل بالفعل مسبقاً لهذا المعلم/المبتكر لمنع التكرار!");
+              toast.error(`⚠️ هذا السكريبت مسجل بالفعل لهذا المعلم/المبتكر (${dbDupName[0].code}) لمنع التكرار!`);
               setIsSubmittingAdd(false);
               return;
             }
@@ -10979,8 +11054,14 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
                             placeholder="مثال: سكريبت مستر حسام"
                             value={shootingAddForm.scriptName}
                             onChange={e => setShootingAddForm({...shootingAddForm, scriptName: e.target.value})}
-                            className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-primary transition-colors font-bold arabic-text text-sm"
+                            className={`w-full bg-white/5 border ${duplicateScriptNameWarning ? 'border-rose-500/80 focus:border-rose-500 bg-rose-500/5' : 'border-white/10 focus:border-primary'} rounded-xl px-4 py-3 text-white focus:outline-none transition-colors font-bold arabic-text text-sm`}
                           />
+                          {duplicateScriptNameWarning && (
+                            <div className="mt-1.5 text-xs font-bold text-rose-300 bg-rose-500/15 border border-rose-500/30 rounded-xl p-2.5 flex items-center gap-2 arabic-text">
+                              <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
+                              <span>{duplicateScriptNameWarning}</span>
+                            </div>
+                          )}
                         </div>
                         <div>
                           <label className="block text-xs font-bold text-muted mb-1.5 arabic-text">رابط السكريبت (Script Link)</label>
@@ -10989,9 +11070,15 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
                             placeholder="https://docs.google.com/..."
                             value={shootingAddForm.scriptLink || ''}
                             onChange={e => setShootingAddForm({...shootingAddForm, scriptLink: e.target.value})}
-                            className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-primary transition-colors font-bold text-sm"
+                            className={`w-full bg-white/5 border ${duplicateScriptLinkWarning ? 'border-rose-500/80 focus:border-rose-500 bg-rose-500/5' : 'border-white/10 focus:border-primary'} rounded-xl px-4 py-3 text-white focus:outline-none transition-colors font-bold text-sm`}
                             dir="ltr"
                           />
+                          {duplicateScriptLinkWarning && (
+                            <div className="mt-1.5 text-xs font-bold text-rose-300 bg-rose-500/15 border border-rose-500/30 rounded-xl p-2.5 flex items-center gap-2 arabic-text">
+                              <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
+                              <span>{duplicateScriptLinkWarning}</span>
+                            </div>
+                          )}
                         </div>
                       </div>
 
@@ -11168,12 +11255,19 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
                       !shootingAddForm.scriptLink?.trim() ||
                       !generatedCode
                     );
+                    const hasDuplicateError = isShootingModal && (!!duplicateScriptLinkWarning || !!duplicateScriptNameWarning);
                     const isTagmeIncomplete = isTagme3at && !addForm.name?.trim();
-                    const isDisabled = loading || isShootingIncomplete || isTagmeIncomplete || isSubmittingAdd;
+                    const isDisabled = loading || isShootingIncomplete || hasDuplicateError || isTagmeIncomplete || isSubmittingAdd;
 
                     return (
                       <div className="w-full space-y-3 pt-2">
-                        {isShootingModal && isShootingIncomplete && (
+                        {isShootingModal && hasDuplicateError && (
+                          <div className="text-[11px] font-bold text-rose-300 bg-rose-500/15 border border-rose-500/30 rounded-xl py-2 px-3 arabic-text flex items-center gap-2">
+                            <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
+                            <span>{duplicateScriptLinkWarning || duplicateScriptNameWarning}</span>
+                          </div>
+                        )}
+                        {isShootingModal && !hasDuplicateError && isShootingIncomplete && (
                           <div className="text-[11px] font-bold text-amber-300 bg-amber-500/10 border border-amber-500/20 rounded-xl py-2 px-3 arabic-text flex items-center justify-between gap-2">
                             <span>⚠️ يرجى استكمال كافة البيانات (اسم ورابط السكريبت، المدرس، الاسم الإضافي)</span>
                             <span className="text-[10px] text-muted hidden sm:inline">لن يتم الحفظ تلقائياً أثناء كتابتك</span>

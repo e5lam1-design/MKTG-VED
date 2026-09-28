@@ -262,30 +262,6 @@ export const Op27View: React.FC<Op27ViewProps> = ({
       } catch (e) {
         console.warn('Failed to load latest cached op27 tasks:', e);
       }
-
-      // Fallback to direct supabase if needed
-      try {
-        const { data } = await supabase
-          .from('dashboard_data')
-          .select('value, updated_at')
-          .eq('key', 'op27_tasks_latest')
-          .maybeSingle();
-
-        if (data && data.value) {
-          const cloudTasks = typeof data.value === 'string' ? JSON.parse(data.value) : data.value;
-          if (Array.isArray(cloudTasks) && cloudTasks.length > 0) {
-            setTasks(prev => (cloudTasks.length >= prev.length ? cloudTasks : prev));
-            if (data.updated_at) {
-              const dateObj = new Date(data.updated_at);
-              const timeStr = dateObj.toLocaleDateString('ar-EG', { month: 'numeric', day: 'numeric' }) + ' ' + dateObj.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' });
-              setLastSyncTime(timeStr);
-              try { localStorage.setItem('op27_last_synced', timeStr); } catch {}
-            }
-          }
-        }
-      } catch (e) {
-        console.warn('Failed to load cloud op27 tasks fallback:', e);
-      }
     };
     fetchCloudTasks();
 
@@ -294,36 +270,6 @@ export const Op27View: React.FC<Op27ViewProps> = ({
     if (!lastSyncMs || Date.now() - lastSyncMs >= FIFTEEN_MINS) {
       handleSyncPlatform(true);
     }
-
-    // 2. Realtime WebSocket subscription: updates all connected clients instantly when tasks sync
-    const realtimeChannel = supabase
-      .channel('op27_tasks_realtime_' + Date.now())
-      .on(
-        'postgres_changes',
-        { event: '*', schema: 'public', table: 'dashboard_data' },
-        (payload: any) => {
-          if (payload.new && payload.new.key === 'op27_tasks_latest' && payload.new.value) {
-            try {
-              const cloudTasks = typeof payload.new.value === 'string' ? JSON.parse(payload.new.value) : payload.new.value;
-              if (Array.isArray(cloudTasks) && cloudTasks.length > 0) {
-                setTasks(prev => (cloudTasks.length >= prev.length ? cloudTasks : prev));
-                try {
-                  localStorage.setItem('op27_tasks_live', JSON.stringify(cloudTasks));
-                  if (payload.new.updated_at) {
-                    const dateObj = new Date(payload.new.updated_at);
-                    const timeStr = dateObj.toLocaleDateString('ar-EG', { month: 'numeric', day: 'numeric' }) + ' ' + dateObj.toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' });
-                    setLastSyncTime(timeStr);
-                    localStorage.setItem('op27_last_synced', timeStr);
-                  }
-                } catch {}
-              }
-            } catch (err) {
-              console.warn('Realtime op27 sync parse error:', err);
-            }
-          }
-        }
-      )
-      .subscribe();
 
     // 3. Periodic background auto-refresh every 15 minutes (900,000 ms)
     const autoSyncInterval = setInterval(() => {
@@ -473,18 +419,6 @@ export const Op27View: React.FC<Op27ViewProps> = ({
           localStorage.setItem('op27_last_synced', nowStr);
           localStorage.setItem('op27_last_sync_timestamp', String(Date.now()));
         } catch {}
-
-        // Guarantee direct Supabase persistence from client as well
-        try {
-          await supabase.from('dashboard_data').upsert({
-            key: 'op27_tasks_latest',
-            field: 'tasks',
-            value: JSON.stringify(data.tasks),
-            updated_at: new Date().toISOString()
-          }, { onConflict: 'key' });
-        } catch (dbErr) {
-          console.warn('Supabase direct sync error:', dbErr);
-        }
 
         if (!isSilent) {
           setSyncFeedback(`✅ تم تحديث وتثبيت البيانات بنجاح من المنصة (${data.count} مهمة) 🚀`);

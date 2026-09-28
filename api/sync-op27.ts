@@ -1,5 +1,9 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { supabaseAdminClient } from './_supabase.js';
+
+// In-memory module-level cache to serve requests instantly with 0 bytes to Supabase
+let memoryCachedTasks: any[] | null = null;
+let memorySyncedAt: string | null = null;
+let memoryCacheExpiry = 0;
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -10,27 +14,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(200).end();
   }
 
-  // If query action=latest, return cached latest tasks from Supabase
-  if (req.method === 'GET' && req.query.action === 'latest' && supabaseAdminClient) {
-    try {
-      const { data, error } = await supabaseAdminClient
-        .from('dashboard_data')
-        .select('value, updated_at')
-        .eq('key', 'op27_tasks_latest')
-        .maybeSingle();
-
-      if (data && data.value) {
-        const tasks = typeof data.value === 'string' ? JSON.parse(data.value) : data.value;
-        return res.status(200).json({
-          success: true,
-          count: Array.isArray(tasks) ? tasks.length : 0,
-          tasks,
-          syncedAt: data.updated_at
-        });
-      }
-    } catch (e: any) {
-      console.warn('Failed to get latest cached op27 tasks:', e.message);
-    }
+  // If query action=latest and cache is warm (< 10 minutes old), return cached directly
+  if (req.query.action === 'latest' && memoryCachedTasks && Date.now() < memoryCacheExpiry) {
+    res.setHeader('Cache-Control', 'public, s-maxage=300, stale-while-revalidate=600');
+    return res.status(200).json({
+      success: true,
+      count: memoryCachedTasks.length,
+      tasks: memoryCachedTasks,
+      syncedAt: memorySyncedAt
+    });
   }
 
   try {
@@ -46,6 +38,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const setCookie = loginRes.headers.get('set-cookie');
     if (!setCookie) {
+      if (memoryCachedTasks) {
+        return res.status(200).json({
+          success: true,
+          count: memoryCachedTasks.length,
+          tasks: memoryCachedTasks,
+          syncedAt: memorySyncedAt
+        });
+      }
       return res.status(401).json({ error: 'Failed to authenticate with platform' });
     }
 
@@ -55,6 +55,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     });
 
     if (!commonRes.ok) {
+      if (memoryCachedTasks) {
+        return res.status(200).json({
+          success: true,
+          count: memoryCachedTasks.length,
+          tasks: memoryCachedTasks,
+          syncedAt: memorySyncedAt
+        });
+      }
       return res.status(502).json({ error: 'Failed to fetch tasks from platform' });
     }
 
@@ -111,20 +119,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const nowIso = new Date().toISOString();
 
-    // 4. Persist to Supabase dashboard_data so it stays permanent across all clients
-    if (supabaseAdminClient) {
-      try {
-        await supabaseAdminClient.from('dashboard_data').upsert({
-          key: 'op27_tasks_latest',
-          field: 'tasks',
-          value: JSON.stringify(formattedTasks),
-          updated_at: nowIso
-        }, { onConflict: 'key' });
-      } catch (dbErr: any) {
-        console.warn('Failed to upsert op27 tasks in Supabase dashboard_data:', dbErr.message);
-      }
-    }
+    // Cache in Vercel memory for 10 minutes (Zero bytes to Supabase!)
+    memoryCachedTasks = formattedTasks;
+    memorySyncedAt = nowIso;
+    memoryCacheExpiry = Date.now() + 10 * 60 * 1000;
 
+    res.setHeader('Cache-Control', 'public, s-maxage=300, stale-while-revalidate=600');
     return res.status(200).json({
       success: true,
       count: formattedTasks.length,
@@ -133,6 +133,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     });
   } catch (error: any) {
     console.error('Error in sync-op27 handler:', error);
+    if (memoryCachedTasks) {
+      return res.status(200).json({
+        success: true,
+        count: memoryCachedTasks.length,
+        tasks: memoryCachedTasks,
+        syncedAt: memorySyncedAt
+      });
+    }
     return res.status(500).json({ error: error.message || 'Internal Server Error' });
   }
 }

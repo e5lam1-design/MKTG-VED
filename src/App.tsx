@@ -5753,27 +5753,40 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
         try {
           const tbl = STAGE_TABLE_MAP[gid];
           if (tbl) {
-            const { data, error } = await supabase
+            const { count, error } = await supabase
               .from(tbl)
-              .select('unique_key, is_tagme3a, delivered');
-            if (error || !data) return [gid, 0] as const;
-            const count = data.filter((r: any) => r.is_tagme3a !== true && r.delivered !== true).length;
-            return [gid, count] as const;
+              .select('*', { count: 'exact', head: true })
+              .or('is_tagme3a.is.null,is_tagme3a.eq.false')
+              .or('delivered.is.null,delivered.eq.false');
+            if (error) return [gid, 0] as const;
+            return [gid, count ?? 0] as const;
           }
           if (gid === '1939073164') {
-            const { data } = await supabase.from('reels_ve_26').select('code, done, canceled');
-            const count = data ? data.filter((r: any) => !r.done && !r.canceled).length : 0;
-            return [gid, count] as const;
+            const { count, error } = await supabase
+              .from('reels_ve_26')
+              .select('*', { count: 'exact', head: true })
+              .or('done.is.null,done.eq.false')
+              .or('canceled.is.null,canceled.eq.false');
+            if (error) return [gid, 0] as const;
+            return [gid, count ?? 0] as const;
           }
           if (gid === '0') {
-            const { data } = await supabase.from('reels_cuts_26').select('code, done, canceled');
-            const count = data ? data.filter((r: any) => !r.done && !r.canceled).length : 0;
-            return [gid, count] as const;
+            const { count, error } = await supabase
+              .from('reels_cuts_26')
+              .select('*', { count: 'exact', head: true })
+              .or('done.is.null,done.eq.false')
+              .or('canceled.is.null,canceled.eq.false');
+            if (error) return [gid, 0] as const;
+            return [gid, count ?? 0] as const;
           }
           if (gid === '1535230545') {
-            const { data } = await supabase.from('tagme3at_26').select('unique_key, done, cancel');
-            const count = data ? data.filter((r: any) => !r.done && !r.cancel).length : 0;
-            return [gid, count] as const;
+            const { count, error } = await supabase
+              .from('tagme3at_26')
+              .select('*', { count: 'exact', head: true })
+              .or('done.is.null,done.eq.false')
+              .or('cancel.is.null,cancel.eq.false');
+            if (error) return [gid, 0] as const;
+            return [gid, count ?? 0] as const;
           }
         } catch {
           return [gid, 0] as const;

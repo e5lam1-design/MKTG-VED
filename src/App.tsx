@@ -8191,6 +8191,26 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
 
   const [stageWeekFilter, setStageWeekFilter] = useState('All');
   const [glowingKeys, setGlowingKeys] = useState<string[]>([]);
+  const seenItemsRef = useRef<Record<string, Set<string>>>({});
+
+  // Proactive cleanup of bloated localStorage keys that trigger QuotaExceededError
+  useEffect(() => {
+    try {
+      const keysToRemove: string[] = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && (k.startsWith('seen_items_') || k.startsWith('new_items_'))) {
+          keysToRemove.push(k);
+        }
+      }
+      keysToRemove.forEach(k => {
+        try { localStorage.removeItem(k); } catch {}
+      });
+      if (keysToRemove.length > 0) {
+        console.info(`🧹 Proactively removed ${keysToRemove.length} bloated cache entries from localStorage.`);
+      }
+    } catch {}
+  }, []);
   const [sortBy, setSortBy] = useState<'default' | 'name' | 'date' | 'addedDate'>('default');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
   const [priorityLimitModal, setPriorityLimitModal] = useState<{ isOpen: boolean; limit: number } | null>(null);
@@ -10394,27 +10414,22 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
 
   useEffect(() => {
     if (combinedData.length === 0) return;
-    const SEEN_KEY = `seen_items_${activeGid}`;
-    const NEW_KEY = `new_items_${activeGid}`;
-    
-    const seenStr = localStorage.getItem(SEEN_KEY);
     
     const currentNames = new Set<string>();
     combinedData.forEach(item => {
       currentNames.add(item.uniqueKey || generateKey(item));
     });
 
-    if (!seenStr) {
-      localStorage.setItem(SEEN_KEY, JSON.stringify(Array.from(currentNames)));
+    const previousSeen = seenItemsRef.current[activeGid];
+    if (!previousSeen) {
+      seenItemsRef.current[activeGid] = currentNames;
       return;
     }
     
-    const seenSet = new Set(JSON.parse(seenStr));
     const newlyAdded: any[] = [];
-
     combinedData.forEach((item) => {
       const key = item.uniqueKey || generateKey(item);
-      if (!seenSet.has(key)) {
+      if (!previousSeen.has(key)) {
         newlyAdded.push({ ...item, uniqueKey: key });
       }
     });
@@ -10431,15 +10446,15 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
       setNewItems(prev => {
         const map = new Map(prev.map(p => [p.uniqueKey, p]));
         newlyAdded.forEach(n => map.set(n.uniqueKey, n));
-        const finalNew = Array.from(map.values());
-        localStorage.setItem(NEW_KEY, JSON.stringify(finalNew));
+        const finalNew = Array.from(map.values()).slice(-20);
+        try {
+          localStorage.setItem(`new_items_${activeGid}`, JSON.stringify(finalNew));
+        } catch (e) {}
         return finalNew;
       });
-
-      // Update seen key silently without throwing annoying toasts
     }
 
-    localStorage.setItem(SEEN_KEY, JSON.stringify(Array.from(currentNames)));
+    seenItemsRef.current[activeGid] = currentNames;
   }, [combinedData, activeGid]);
 
   const teachers = useMemo(() => {

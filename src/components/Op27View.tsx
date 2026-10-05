@@ -22,6 +22,7 @@ import {
   ChevronUp
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { toast } from '../lib/toast';
 import { sortTasksByChunkAscending } from '../lib/chunkSort';
 import op27Data from '../data/op27_tasks.json';
 
@@ -577,6 +578,9 @@ export const Op27View: React.FC<Op27ViewProps> = ({
     return `${h > 0 ? `${h}:` : ''}${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   }, [selectedTaskObjects]);
 
+  const selectedTeacher = selectedTaskObjects[0]?.teacher?.trim() || '';
+  const selectedStageGid = selectedTaskObjects[0] ? getTargetStage26(selectedTaskObjects[0]).gid : '';
+
   const handleCopy = (text: string, id: string) => {
     navigator.clipboard.writeText(text);
     setCopiedId(id);
@@ -584,13 +588,53 @@ export const Op27View: React.FC<Op27ViewProps> = ({
   };
 
   const toggleSelectTask = (id: string) => {
-    setSelectedTasks(prev => 
-      prev.includes(id) ? prev.filter(tId => tId !== id) : [...prev, id]
-    );
+    const task = tasks.find(t => t.id === id);
+    if (!task) return;
+
+    setSelectedTasks(prev => {
+      if (prev.includes(id)) {
+        return prev.filter(tId => tId !== id);
+      }
+
+      // If there are already selected tasks, enforce SAME teacher & SAME stage
+      if (prev.length > 0) {
+        const firstSelected = tasks.find(t => t.id === prev[0]);
+        if (firstSelected) {
+          const firstTeacher = (firstSelected.teacher || '').trim().toLowerCase();
+          const taskTeacher = (task.teacher || '').trim().toLowerCase();
+          if (firstTeacher && taskTeacher && firstTeacher !== taskTeacher) {
+            toast.error(`⚠️ لا يمكن دمج دروس لمدرسين مختلفين! تم تحديد دروس للمدرس "${firstSelected.teacher}". يرجى اختيار دروس نفس المدرس فقط ("كل مدرس لوحده").`);
+            return prev;
+          }
+
+          const firstStage = getTargetStage26(firstSelected).gid;
+          const taskStage = getTargetStage26(task).gid;
+          if (firstStage && taskStage && firstStage !== taskStage) {
+            toast.error(`⚠️ لا يمكن دمج دروس لمراحل دراسية مختلفة! يرجى اختيار دروس نفس المرحلة فقط.`);
+            return prev;
+          }
+        }
+      }
+
+      return [...prev, id];
+    });
   };
 
   const handleExecuteMerge = async () => {
     if (selectedTaskObjects.length === 0) return;
+
+    // Strict safety check: Ensure all selected tasks belong to the EXACT same teacher & stage
+    const uniqueTeachers = Array.from(new Set(selectedTaskObjects.map(t => (t.teacher || '').trim().toLowerCase()).filter(Boolean)));
+    if (uniqueTeachers.length > 1) {
+      toast.error('❌ خطأ: تم اختيار دروس لمدرسين مختلفين! يرجى دمج دروس كل مدرس على حدة.');
+      return;
+    }
+    const uniqueStages = Array.from(new Set(selectedTaskObjects.map(t => getTargetStage26(t).gid)));
+    if (uniqueStages.length > 1) {
+      toast.error('❌ خطأ: تم اختيار دروس لمراحل دراسية مختلفة! يرجى دمج دروس مرحلة واحدة فقط.');
+      return;
+    }
+
     const sample = selectedTaskObjects[0];
     const targetStage = getTargetStage26(sample);
 
@@ -1288,13 +1332,38 @@ export const Op27View: React.FC<Op27ViewProps> = ({
 
                       {/* Tagme3a Checkbox Column */}
                       <td className="px-3 py-5 text-center">
-                        <input
-                          type="checkbox"
-                          checked={isSelected}
-                          onChange={() => toggleSelectTask(task.id)}
-                          className="w-5 h-5 accent-purple-600 rounded transition-transform cursor-pointer hover:scale-110"
-                          title="تحديد لإضافتها للتجميعة"
-                        />
+                        {(() => {
+                          const isDifferentTeacher = Boolean(
+                            selectedTeacher && 
+                            task.teacher && 
+                            task.teacher.trim().toLowerCase() !== selectedTeacher.toLowerCase()
+                          );
+                          const isDifferentStage = Boolean(
+                            selectedStageGid && 
+                            getTargetStage26(task).gid !== selectedStageGid
+                          );
+                          const isSelectionLocked = isDifferentTeacher || isDifferentStage;
+
+                          return (
+                            <input
+                              type="checkbox"
+                              checked={isSelected}
+                              onChange={() => toggleSelectTask(task.id)}
+                              className={`w-5 h-5 accent-purple-600 rounded transition-all ${
+                                isSelectionLocked
+                                  ? 'opacity-25 cursor-not-allowed filter grayscale'
+                                  : 'cursor-pointer hover:scale-110'
+                              }`}
+                              title={
+                                isDifferentTeacher
+                                  ? `مدرس مختلف (${task.teacher}) - تم تحديد دروس للمدرس (${selectedTeacher})`
+                                  : isDifferentStage
+                                    ? 'مرحلة دراسية مختلفة - لا يمكن الدمج إلا لنفس المرحلة'
+                                    : 'تحديد لإضافتها للتجميعة'
+                              }
+                            />
+                          );
+                        })()}
                       </td>
                     </motion.tr>
                   );
@@ -1340,6 +1409,11 @@ export const Op27View: React.FC<Op27ViewProps> = ({
               <div className="flex flex-col text-right min-w-0">
                 <span className="text-base font-bold text-white arabic-text flex items-center gap-2">
                   <span>تم تحديد عدة دروس لتجميعها معاً في يوتيوب 🔗</span>
+                  {selectedTeacher && (
+                    <span className="text-xs bg-purple-500/20 text-purple-300 border border-purple-500/30 px-2.5 py-0.5 rounded-lg">
+                      المدرس: {selectedTeacher}
+                    </span>
+                  )}
                 </span>
                 <span className="text-xs text-emerald-400 font-bold arabic-text mt-0.5 font-mono">
                   ⏱️ إجمالي الوقت: {formattedTotalTime}

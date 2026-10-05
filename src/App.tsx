@@ -1676,7 +1676,7 @@ const VideoDuration = ({ url, fallback }: { url: string; fallback: string }) => 
 };
 
 // ─── Operations Row ───────────────────────────────────────────────────────────
-const OperationsRow = ({ item, index, youtubeItems, onYoutubeToggle, isSelectedForMerge, onToggleMergeSelect, isGlowing, onOpenBunnyLinkModal }: any) => {
+const OperationsRow = ({ item, index, youtubeItems, onYoutubeToggle, isSelectedForMerge, onToggleMergeSelect, selectedTeacher, selectedStageGid, isGlowing, onOpenBunnyLinkModal }: any) => {
   const { profile } = useAuth();
   const stage = getTargetStageGid(item);
   const itemKey = item.uniqueKey || generateKey(item);
@@ -1690,6 +1690,22 @@ const OperationsRow = ({ item, index, youtubeItems, onYoutubeToggle, isSelectedF
   const isPostponed = Object.values(item).some(
     val => typeof val === 'string' && val.toUpperCase().includes('POSTPONED')
   );
+
+  const isDifferentTeacher = Boolean(
+    selectedTeacher &&
+    item.teacher &&
+    item.teacher.trim().toLowerCase() !== selectedTeacher.toLowerCase()
+  );
+  const isDifferentStage = Boolean(
+    selectedStageGid &&
+    stage.gid !== selectedStageGid
+  );
+  const isMergeLocked = isDifferentTeacher || isDifferentStage;
+  const mergeLockTitle = isDifferentTeacher
+    ? `مدرس مختلف (${item.teacher}) - تم قفل التحديد لأنك محدد دروس للمدرس (${selectedTeacher})`
+    : isDifferentStage
+      ? 'مرحلة دراسية مختلفة - لا يمكن الدمج إلا لنفس المرحلة'
+      : 'تحديد لإضافتها لتجميعة يوتيوب';
 
   return (
     <motion.tr
@@ -1781,8 +1797,14 @@ const OperationsRow = ({ item, index, youtubeItems, onYoutubeToggle, isSelectedF
           checked={isSelectedForMerge}
           onChange={() => onToggleMergeSelect(item)}
           disabled={!(profile?.role && PERMISSIONS.canAddEntry(profile.role))}
-          className={`w-5 h-5 accent-purple-600 rounded transition-transform ${profile?.role && PERMISSIONS.canAddEntry(profile.role) ? 'cursor-pointer hover:scale-110' : 'cursor-not-allowed opacity-50'}`}
-          title="تحديد لإضافتها لتجميعة يوتيوب"
+          className={`w-5 h-5 accent-purple-600 rounded transition-all ${
+            profile?.role && PERMISSIONS.canAddEntry(profile.role)
+              ? isMergeLocked
+                ? 'opacity-25 cursor-not-allowed filter grayscale'
+                : 'cursor-pointer hover:scale-110'
+              : 'cursor-not-allowed opacity-50'
+          }`}
+          title={mergeLockTitle}
         />
       </td>
     </motion.tr>
@@ -2148,7 +2170,7 @@ const TagmeRow = ({
 };
 
 // ─── Stage Row (Junior/Middle/Senior) ─────────────────────────────────────────
-const StageRow = ({ item, index, tagmeTransfers, onTagmeToggle, activeLabel, isGlowing, onUpdateDate, onUpdateWeek, onUpdateThumbnailLink, onUpdateTime, onUpdateYoutubeLink, onUpdateUploaded, onToggleDelivered }: any) => {
+const StageRow = ({ item, index, tagmeTransfers, onTagmeToggle, activeLabel, isGlowing, onUpdateDate, onUpdateWeek, onUpdateThumbnailLink, onUpdateTime, onUpdateYoutubeLink, onUpdateUploaded, onToggleDelivered, onDeleteRow }: any) => {
   const { profile } = useAuth();
   const rowKey = item.uniqueKey || generateKey(item);
   const itemKey = 'tgm-' + rowKey;
@@ -2468,6 +2490,20 @@ const StageRow = ({ item, index, tagmeTransfers, onTagmeToggle, activeLabel, isG
           title="تم الرفع؟"
         >
           {isUploaded && <CheckCircle2 size={14} />}
+        </button>
+      </td>
+      <td className="px-3 py-5 text-center">
+        <button
+          onClick={() => onDeleteRow && onDeleteRow(item)}
+          disabled={!(profile?.role && PERMISSIONS.canAddEntry(profile.role))}
+          className={`w-8 h-8 rounded-xl flex items-center justify-center mx-auto transition-all ${
+            profile?.role && PERMISSIONS.canAddEntry(profile.role)
+              ? 'text-muted/40 hover:text-rose-400 hover:bg-rose-500/15 border border-transparent hover:border-rose-500/30 cursor-pointer opacity-70 hover:opacity-100 hover:scale-110 active:scale-95'
+              : 'text-muted/20 cursor-not-allowed opacity-30'
+          }`}
+          title="حذف هذا الدرس من المرحلة"
+        >
+          <Trash2 size={15} />
         </button>
       </td>
     </motion.tr>
@@ -6770,6 +6806,42 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
     }
   };
 
+  const handleDeleteStageRow = async (item: any) => {
+    const itemKey = item.uniqueKey || item.id;
+    const itemName = item.name || 'هذا الدرس';
+    if (!window.confirm(`هل أنت متأكد من رغبتك في حذف هذا الدرس نهائياً من المرحلة؟\n\n"${itemName}"`)) {
+      return;
+    }
+
+    const tbl = STAGE_TABLE_MAP[activeGid];
+    if (!tbl || !itemKey) return;
+
+    // Optimistic UI update
+    setStageDbRows(prev => prev.filter(r => (r.uniqueKey || r.id) !== itemKey));
+
+    if (!isDemo) {
+      try {
+        const { error } = await supabase.from(tbl).delete().or(`unique_key.eq.${itemKey},id.eq.${Number(itemKey) || -1}`);
+        if (error) {
+          console.error(`Error deleting from ${tbl} in Supabase:`, error);
+        }
+      } catch (err) {
+        console.error(`Exception deleting from ${tbl} in Supabase:`, err);
+      }
+    }
+
+    // Clean from youtubeItems if present
+    setYoutubeItems(prev => {
+      const list = prev[activeGid] || [];
+      const updated = list.filter((i: any) => (i.uniqueKey || i.id) !== itemKey);
+      const map = { ...prev, [activeGid]: updated };
+      try { localStorage.setItem('youtube_transfers', JSON.stringify(map)); } catch (e) {}
+      return map;
+    });
+
+    toast.success('🗑️ تم حذف الدرس من المرحلة بنجاح');
+  };
+
   // ─── Direct Supabase Database for Reels Sheets (reels_shooting_26, reels_ve_26, reels_cuts_26) ─────
   const REELS_TABLE_MAP: Record<string, string> = {
     '1436746012': 'reels_shooting_26',
@@ -10120,12 +10192,45 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
       if (prev.some(i => (i.uniqueKey || generateKey(i)) === key)) {
         return prev.filter(i => (i.uniqueKey || generateKey(i)) !== key);
       }
+
+      // If there are already selected items, enforce SAME teacher & SAME stage
+      if (prev.length > 0) {
+        const firstItem = prev[0];
+        const firstTeacher = (firstItem.teacher || '').trim();
+        const itemTeacher = (item.teacher || '').trim();
+
+        if (firstTeacher && itemTeacher && firstTeacher.toLowerCase() !== itemTeacher.toLowerCase()) {
+          toast.error(`⚠️ لا يمكن دمج دروس لمدرسين مختلفين! تم تحديد دروس للمدرس "${firstTeacher}". يرجى اختيار دروس نفس المدرس فقط ("كل مدرس لوحده").`);
+          return prev;
+        }
+
+        const firstStage = getTargetStageGid(firstItem).gid;
+        const itemStage = getTargetStageGid(item).gid;
+        if (firstStage && itemStage && firstStage !== itemStage) {
+          toast.error(`⚠️ لا يمكن دمج دروس لمراحل دراسية مختلفة! يرجى اختيار دروس نفس المرحلة فقط.`);
+          return prev;
+        }
+      }
+
       return [...prev, item];
     });
   };
 
   const handleExecuteMerge = async () => {
     if (selectedForMerge.length === 0) return;
+
+    // Strict safety check: Ensure all selected items belong to the EXACT same teacher & stage
+    const uniqueTeachers = Array.from(new Set(selectedForMerge.map(i => (i.teacher || '').trim().toLowerCase()).filter(Boolean)));
+    if (uniqueTeachers.length > 1) {
+      toast.error('❌ خطأ: تم اختيار دروس لمدرسين مختلفين! يرجى دمج دروس كل مدرس على حدة.');
+      return;
+    }
+    const uniqueStages = Array.from(new Set(selectedForMerge.map(i => getTargetStageGid(i).gid)));
+    if (uniqueStages.length > 1) {
+      toast.error('❌ خطأ: تم اختيار دروس لمراحل دراسية مختلفة! يرجى دمج دروس مرحلة واحدة فقط.');
+      return;
+    }
+
     const sortedSelected = sortTasksByChunkAscending(selectedForMerge);
     const sample = sortedSelected[0];
     const stage = getTargetStageGid(sample);
@@ -10983,6 +11088,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
         <th className="px-4 py-4 text-center th-style text-purple-400 font-bold">time</th>
         <th className="px-4 py-4 text-center th-style text-purple-400 font-bold">لينك اليوتيوب</th>
         <th className="px-4 py-4 text-center th-style text-purple-400 font-bold">UPLOADED?</th>
+        <th className="px-3 py-4 text-center th-style text-rose-400/80 font-bold w-14">حذف</th>
       </>
     );
   };
@@ -11162,7 +11268,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
     return Array.from(list);
   }, [uniqueTeachers]);
 
-  const colSpan = isOperations ? 7 : isTagme3at ? (tagmeViewMode === 'SIMPLE' ? 8 : 13) : activeGid === '0' ? 18 : activeGid === '1939073164' ? (veViewMode === 'SIMPLE' ? 17 : 22) : activeGid === '1436746012' ? 17 : activeGid === '798246690' ? 16 : 7;
+  const colSpan = isOperations ? 7 : isTagme3at ? (tagmeViewMode === 'SIMPLE' ? 8 : 13) : isStageTab ? 13 : activeGid === '0' ? 18 : activeGid === '1939073164' ? (veViewMode === 'SIMPLE' ? 17 : 22) : activeGid === '1436746012' ? 17 : activeGid === '798246690' ? 16 : 7;
 
   const effectiveLoading = isTagme3at 
     ? (isTagmeDbLoading && tagmeDbRows.length === 0)
@@ -13254,6 +13360,8 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
 
                       if (isOperations) {
                         const isSelected = selectedForMerge.some(i => generateKey(i) === generateKey(item));
+                        const selectedTeacher = selectedForMerge.length > 0 ? (selectedForMerge[0]?.teacher || '').trim() : '';
+                        const selectedStageGid = selectedForMerge.length > 0 ? getTargetStageGid(selectedForMerge[0]).gid : '';
                         return (
                           <OperationsRow
                             key={idx}
@@ -13263,6 +13371,8 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
                             onYoutubeToggle={handleYoutubeToggle}
                             isSelectedForMerge={isSelected}
                             onToggleMergeSelect={handleToggleMergeSelect}
+                            selectedTeacher={selectedTeacher}
+                            selectedStageGid={selectedStageGid}
                             isGlowing={isGlowing}
                             onOpenBunnyLinkModal={(itemKey: string, itemName: string, initialUrl: string) => setBunnyLinkModal({ isOpen: true, itemKey, itemName, initialUrl })}
                           />
@@ -13324,7 +13434,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
                         });
                         return <ShootingRow key={item.code || item.id || item.uniqueKey || idx} item={item} index={idx} activeGid={activeGid} onToggleFilmed={handleFilmedToggle} onToggleEditCheck={handleToggleEditCheck} loadingFilmedCode={loadingFilmedCode} onUpdateShootingRow={handleUpdateShootingRow} liveData={liveData} optionsLists={{ branches: uniqueBranches, years: uniqueYears, teachers: uniqueTeachers, extraNames: uniqueExtraNames, types: uniqueTypes, formats: uniqueFormats, bys: uniqueBys, storages: uniqueStorages, editors: editorsList }} autofillDrag={autofillDrag} setAutofillDrag={setAutofillDrag} onApplyAutofill={handleApplyAutofill} activeCell={activeCell} setActiveCell={setActiveCell} toast={toast} isSubscribed={isSubscribed} onToggleSubscribe={() => toggleSubscribe(item.code || item.id || item.uniqueKey)} isSimple={activeGid === '1939073164' && veViewMode === 'SIMPLE'} publishedTasks={publishedTasks} sharedLinks={sharedLinks} onTogglePublish={handleTogglePublish} onUpdateSharedLink={handleUpdateSharedLink} noteAuthors={noteAuthors} />;
                       }
-                      return <StageRow key={idx} item={item} index={idx} tagmeTransfers={tagmeTransfers} onTagmeToggle={handleTagmeToggle} activeLabel={activeLabel} isGlowing={isGlowing} onUpdateDate={handleUpdateDate} onUpdateWeek={handleUpdateWeek} onUpdateThumbnailLink={handleUpdateThumbnailLink} onUpdateTime={handleUpdateTime} onUpdateYoutubeLink={handleUpdateYoutubeLink} onUpdateUploaded={handleUpdateUploaded} onToggleDelivered={handleToggleDelivered} />;
+                      return <StageRow key={idx} item={item} index={idx} tagmeTransfers={tagmeTransfers} onTagmeToggle={handleTagmeToggle} activeLabel={activeLabel} isGlowing={isGlowing} onUpdateDate={handleUpdateDate} onUpdateWeek={handleUpdateWeek} onUpdateThumbnailLink={handleUpdateThumbnailLink} onUpdateTime={handleUpdateTime} onUpdateYoutubeLink={handleUpdateYoutubeLink} onUpdateUploaded={handleUpdateUploaded} onToggleDelivered={handleToggleDelivered} onDeleteRow={handleDeleteStageRow} />;
                     }) : (
                       <motion.tr initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
                         <td colSpan={colSpan} className="py-40 text-center opacity-30">
@@ -13373,7 +13483,14 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
                   {selectedForMerge.length}
                 </div>
                 <div className="flex flex-col text-right" dir="rtl">
-                  <span className="text-base font-bold text-white arabic-text">تم تحديد عدة دروس لتجميعها معاً في يوتيوب 🔗</span>
+                  <span className="text-base font-bold text-white arabic-text flex items-center gap-2">
+                    <span>تم تحديد عدة دروس لتجميعها معاً في يوتيوب 🔗</span>
+                    {selectedForMerge[0]?.teacher && (
+                      <span className="text-xs bg-purple-500/20 text-purple-300 border border-purple-500/30 px-2.5 py-0.5 rounded-lg">
+                        المدرس: {selectedForMerge[0].teacher}
+                      </span>
+                    )}
+                  </span>
                   <span className="text-xs text-emerald-400 font-bold arabic-text mt-1">{calculateTotalDuration(sortTasksByChunkAscending(selectedForMerge))}</span>
                   <span className="text-[10px] text-purple-300 arabic-text line-clamp-1 mt-0.5">{sortTasksByChunkAscending(selectedForMerge).map(i => i.name).join(' + ')}</span>
                 </div>

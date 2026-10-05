@@ -70,6 +70,7 @@ import { DesignAnalytics } from './components/DesignAnalytics';
 import { DesignersTeamManagement } from './components/DesignersTeamManagement';
 import { EditorsManagement } from './components/EditorsManagement';
 import { StudioCalendarView } from './components/StudioCalendarView';
+import { TeachersFollowUpView } from './components/TeachersFollowUpView';
 import { useEditorsOptions, getGlobalEditorColor } from './hooks/useEditorsOptions';
 import { Op27View, getTargetStage26 } from './components/Op27View';
 import { PageAnnouncementBar } from './components/PageAnnouncementBar';
@@ -5576,6 +5577,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
   const isAnalyticsTagme = activeGid === 'analytics_tagme3at';
   const isReelsAnalytics = activeGid === 'reels-analytics';
   const isStudioCalendar = activeGid === 'reels-calendar';
+  const isTeachersTab = activeGid === 'reels-teachers';
   const isDesignersPage = activeGid === '501319673';
   const isDesignAnalytics = activeGid === 'design-analytics';
   const isDesignersTeamPage = activeGid === 'designers-team-management';
@@ -5583,7 +5585,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
   const isDesignersMode = isDesignersPage || isDesignAnalytics || isDesignersTeamPage;
 
   const isReelsStage = ['1436746012', '1939073164', '0', '798246690'].includes(activeGid);
-  const isStage = !isHome && !isOperations && !isOp27 && !isTagme3at && !isAnalyticsTagme && !isReelsAnalytics && !isStudioCalendar && !isDesignersMode && !isEditorsTeamPage;
+  const isStage = !isHome && !isOperations && !isOp27 && !isTagme3at && !isAnalyticsTagme && !isReelsAnalytics && !isStudioCalendar && !isTeachersTab && !isDesignersMode && !isEditorsTeamPage;
 
   const isSupabaseLiveTab = !isDemo && (
     activeGid === '1535230545' || 
@@ -5593,7 +5595,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
 
   const sheetGidToFetch = isSupabaseLiveTab
     ? ''
-    : isStudioCalendar
+    : (isStudioCalendar || isTeachersTab)
     ? ''
     : isAnalyticsTagme 
     ? '1535230545' 
@@ -6465,12 +6467,12 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
         try {
           const tbl = STAGE_TABLE_MAP[gid];
           if (tbl) {
-            const { count, error } = await supabase
+            const { data, error } = await supabase
               .from(tbl)
-              .select('*', { count: 'exact', head: true })
-              .or('delivered.is.null,delivered.eq.false');
-            if (error) return { gid, pending: 0, missing: 0 };
-            return { gid, pending: count ?? 0, missing: 0 };
+              .select('delivered, is_tagme3a');
+            if (error || !data) return { gid, pending: 0, missing: 0 };
+            const pending = data.filter(r => r.delivered !== true && r.is_tagme3a !== true).length;
+            return { gid, pending, missing: 0 };
           }
           if (gid === '1939073164') {
             // For Ve: query done, canceled, missing_details to separate actionable pending vs missing details tasks
@@ -6546,7 +6548,11 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
   // Keep uncompleted count for active stage in sync with stageDbRows immediately in-memory
   useEffect(() => {
     if (isStageTab && activeGid && STAGE_TABLE_MAP[activeGid]) {
-      const count = stageDbRows.filter(r => !r.delivered).length;
+      const count = stageDbRows.filter(r => {
+        const isDelivered = r.delivered === true || r.received === true || r.check2 === true;
+        const isTagme = r.isTagme3a === true || r.is_tagme3a === true;
+        return !isDelivered && !isTagme;
+      }).length;
       setStageUncompletedCounts(prev => {
         if (prev[activeGid] === count) return prev;
         const next = { ...prev, [activeGid]: count };
@@ -7536,6 +7542,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
   const handleToggleDelivered = (itemKey: string, delivered: boolean) => {
     if (isStageTab) {
       updateStageDbField(activeGid, itemKey, 'delivered', delivered);
+      notifyCoreCountsChanged([activeGid]);
     }
   };
 
@@ -10025,6 +10032,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
     // 1. Update is_tagme3a in the active stage table in Supabase!
     if (!isDemo && isStageTab) {
       updateStageDbField(activeGid, rawKey, 'isTagme3a', isChecked);
+      notifyCoreCountsChanged([activeGid]);
     }
 
     const dbRecord = {
@@ -10515,6 +10523,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
     { label: 'إدارة المحررين والقوائم', gid: 'editors-team-management', icon: Users, colorHex: '#f43f5e' },
     { label: 'احصائيات الريلز', gid: 'reels-analytics', icon: BarChart3, colorHex: '#818cf8' },
     { label: 'Calendar', gid: 'reels-calendar', icon: Calendar, colorHex: '#10b981' },
+    { label: 'Teachers', gid: 'reels-teachers', icon: GraduationCap, colorHex: '#06b6d4' },
   ];
 
   useEffect(() => {
@@ -12975,6 +12984,10 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
           ) : isStudioCalendar ? (
             <ErrorBoundary>
               <StudioCalendarView isDemo={isDemo} userProfile={profile} toast={toast} />
+            </ErrorBoundary>
+          ) : isTeachersTab ? (
+            <ErrorBoundary>
+              <TeachersFollowUpView isDemo={isDemo} userProfile={profile} toast={toast} />
             </ErrorBoundary>
           ) : isEditorsTeamPage ? (
             <ErrorBoundary>

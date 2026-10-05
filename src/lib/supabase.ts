@@ -80,6 +80,10 @@ export const PERMISSIONS = {
             (lowerT === 'calendar' || lowerT === 'التقويم' || lowerT === 'الكالندر' || lowerT.includes('calendar'))) {
           return true;
         }
+        if ((lowerTab === 'teachers' || lowerTab === 'reels-teachers' || lowerTab === 'المدرسين' || lowerTab.includes('teacher')) && 
+            (lowerT === 'teachers' || lowerT === 'reels-teachers' || lowerT === 'المدرسين' || lowerT.includes('teacher'))) {
+          return true;
+        }
         return false;
       });
     }

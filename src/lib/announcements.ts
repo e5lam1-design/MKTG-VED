@@ -172,14 +172,32 @@ export interface PollData {
   createdAt?: string;
 }
 
+export interface SuggestionEntry {
+  id: string;
+  user_id?: string;
+  user_name: string;
+  response: string;
+  created_at: string;
+}
+
+export interface QaData {
+  question: string;
+  totalResponses?: number;
+  suggestions?: SuggestionEntry[];
+  createdAt?: string;
+}
+
 export interface GlobalAnnouncement {
   id?: string;
   title?: string;
   message: string;
+  imageUrl?: string;
   color: AnnouncementColor;
   is_active: boolean;
   is_poll?: boolean;
   poll_data?: PollData;
+  is_qa?: boolean;
+  qa_data?: QaData;
   updated_by?: string;
   updated_at?: string;
   created_at?: string;
@@ -187,10 +205,36 @@ export interface GlobalAnnouncement {
 
 const GLOBAL_KEY = '__global__';
 
-function parseGlobalMessage(rawMessage: string): { message: string; is_poll: boolean; poll_data?: PollData } {
+function parseGlobalMessage(rawMessage: string): { 
+  message: string; 
+  imageUrl?: string;
+  is_poll: boolean; 
+  poll_data?: PollData;
+  is_qa?: boolean;
+  qa_data?: QaData;
+} {
   if (typeof rawMessage === 'string' && rawMessage.trim().startsWith('{')) {
     try {
       const parsed = JSON.parse(rawMessage);
+
+      // 1. Q&A / Suggestions mode
+      if (parsed && (parsed.__is_qa__ === true || parsed.is_qa === true)) {
+        const rawSuggestions = Array.isArray(parsed.suggestions) ? parsed.suggestions : [];
+        return {
+          message: parsed.question || '',
+          imageUrl: parsed.imageUrl || parsed.image_url || undefined,
+          is_poll: false,
+          is_qa: true,
+          qa_data: {
+            question: parsed.question || '',
+            totalResponses: typeof parsed.totalResponses === 'number' ? parsed.totalResponses : rawSuggestions.length,
+            suggestions: rawSuggestions,
+            createdAt: parsed.createdAt
+          }
+        };
+      }
+
+      // 2. Poll mode
       if (parsed && (parsed.__is_poll__ === true || parsed.is_poll === true)) {
         const rawOptions = Array.isArray(parsed.options) ? parsed.options : [];
         const voters = typeof parsed.voters === 'object' && parsed.voters ? parsed.voters : {};
@@ -212,6 +256,7 @@ function parseGlobalMessage(rawMessage: string): { message: string; is_poll: boo
 
         return {
           message: parsed.question || '',
+          imageUrl: parsed.imageUrl || parsed.image_url || undefined,
           is_poll: true,
           poll_data: {
             question: parsed.question || '',
@@ -222,12 +267,23 @@ function parseGlobalMessage(rawMessage: string): { message: string; is_poll: boo
           }
         };
       }
+
+      // 3. Rich text announcement with image
+      if (parsed && (parsed.__is_rich__ === true || parsed.is_rich === true || parsed.imageUrl || parsed.image_url)) {
+        return {
+          message: parsed.text || parsed.message || '',
+          imageUrl: parsed.imageUrl || parsed.image_url || undefined,
+          is_poll: false,
+          is_qa: false
+        };
+      }
     } catch {}
   }
 
   return {
     message: rawMessage || '',
-    is_poll: false
+    is_poll: false,
+    is_qa: false
   };
 }
 
@@ -247,12 +303,15 @@ export async function getGlobalAnnouncement(): Promise<GlobalAnnouncement | null
       const parsed = parseGlobalMessage(data.message);
       return {
         id: data.id,
-        title: data.page_label || (parsed.is_poll ? '🗳️ استطلاع رأي' : 'إشعار عام'),
+        title: data.page_label || (parsed.is_qa ? '💬 اقتراحات وأسئلة' : parsed.is_poll ? '🗳️ استطلاع رأي' : 'إشعار عام'),
         message: parsed.message,
+        imageUrl: data.image_url || parsed.imageUrl || undefined,
         color: (data.type as AnnouncementColor) || 'purple',
         is_active: data.is_active,
         is_poll: parsed.is_poll,
         poll_data: parsed.poll_data,
+        is_qa: parsed.is_qa,
+        qa_data: parsed.qa_data,
         updated_by: data.updated_by,
         updated_at: data.updated_at,
         created_at: data.created_at
@@ -271,12 +330,15 @@ export async function getGlobalAnnouncement(): Promise<GlobalAnnouncement | null
         const msgParsed = parseGlobalMessage(parsed.message);
         return {
           id: parsed.id,
-          title: parsed.page_label || parsed.title || (msgParsed.is_poll ? '🗳️ استطلاع رأي' : 'إشعار عام'),
+          title: parsed.page_label || parsed.title || (msgParsed.is_qa ? '💬 اقتراحات وأسئلة' : msgParsed.is_poll ? '🗳️ استطلاع رأي' : 'إشعار عام'),
           message: msgParsed.message,
+          imageUrl: parsed.image_url || parsed.imageUrl || msgParsed.imageUrl || undefined,
           color: (parsed.type as AnnouncementColor) || parsed.color || 'purple',
           is_active: parsed.is_active,
           is_poll: msgParsed.is_poll,
           poll_data: msgParsed.poll_data,
+          is_qa: msgParsed.is_qa,
+          qa_data: msgParsed.qa_data,
           updated_by: parsed.updated_by,
           updated_at: parsed.updated_at,
           created_at: parsed.created_at
@@ -295,18 +357,32 @@ export async function saveGlobalAnnouncement(
   announcement: { 
     title?: string; 
     message: string; 
+    imageUrl?: string;
     color: AnnouncementColor;
     is_poll?: boolean;
     poll_data?: PollData;
+    is_qa?: boolean;
+    qa_data?: QaData;
   },
   userName: string
 ): Promise<{ success: boolean; error?: string }> {
   let messageToSave = announcement.message.trim();
+  const cleanImageUrl = announcement.imageUrl?.trim() || null;
 
-  if (announcement.is_poll && announcement.poll_data) {
+  if (announcement.is_qa && announcement.qa_data) {
+    messageToSave = JSON.stringify({
+      __is_qa__: true,
+      question: announcement.qa_data.question.trim() || announcement.message.trim(),
+      imageUrl: cleanImageUrl,
+      totalResponses: announcement.qa_data.totalResponses || (announcement.qa_data.suggestions?.length || 0),
+      suggestions: announcement.qa_data.suggestions || [],
+      createdAt: announcement.qa_data.createdAt || new Date().toISOString()
+    });
+  } else if (announcement.is_poll && announcement.poll_data) {
     messageToSave = JSON.stringify({
       __is_poll__: true,
       question: announcement.poll_data.question.trim() || announcement.message.trim(),
+      imageUrl: cleanImageUrl,
       options: announcement.poll_data.options.map(opt => ({
         id: opt.id,
         text: opt.text.trim(),
@@ -316,12 +392,25 @@ export async function saveGlobalAnnouncement(
       totalVotes: announcement.poll_data.totalVotes || 0,
       createdAt: announcement.poll_data.createdAt || new Date().toISOString()
     });
+  } else if (cleanImageUrl) {
+    messageToSave = JSON.stringify({
+      __is_rich__: true,
+      text: announcement.message.trim(),
+      imageUrl: cleanImageUrl
+    });
   }
 
-  const payload = {
+  const defaultTitle = announcement.is_qa 
+    ? '💬 اقتراحات وأفكار الفريق' 
+    : announcement.is_poll 
+      ? '🗳️ تصويت عام' 
+      : 'إشعار عام';
+
+  const payload: any = {
     page_key: GLOBAL_KEY,
-    page_label: announcement.title || (announcement.is_poll ? '🗳️ تصويت عام' : 'إشعار عام'),
+    page_label: announcement.title || defaultTitle,
     message: messageToSave,
+    image_url: cleanImageUrl,
     type: announcement.color || 'purple',
     is_active: true,
     updated_by: userName || 'المانجر',
@@ -479,3 +568,149 @@ export async function deleteGlobalAnnouncement(): Promise<boolean> {
 
   return true;
 }
+
+/**
+ * Submit an answer / suggestion to the global broadcast Q&A.
+ * Saves directly into the dedicated Supabase table 'broadcast_suggestions'
+ * and updates qa_data inside page_announcements for real-time sync.
+ */
+export async function submitBroadcastSuggestion(
+  response: string,
+  userKey: string,
+  userName: string
+): Promise<{ success: boolean; error?: string }> {
+  try {
+    const cleanResponse = response.trim();
+    if (!cleanResponse) {
+      return { success: false, error: 'يرجى كتابة اقتراحك أو إجابتك أولاً' };
+    }
+
+    const latest = await getGlobalAnnouncement();
+    const questionText = (latest?.is_qa && latest.qa_data?.question) || latest?.message || '';
+
+    // 1. Insert into Supabase table 'broadcast_suggestions'
+    try {
+      await supabase
+        .from('broadcast_suggestions')
+        .insert([
+          {
+            broadcast_id: '__global__',
+            question: questionText,
+            user_id: userKey,
+            user_name: userName || 'عضو بالفريق',
+            response: cleanResponse
+          }
+        ]);
+    } catch (insertErr) {
+      console.warn('Failed to insert into broadcast_suggestions table:', insertErr);
+    }
+
+    // 2. Also mirror into qa_data.suggestions for 0ms cross-client sync
+    if (latest && latest.is_qa && latest.qa_data) {
+      const existing = latest.qa_data.suggestions || [];
+      const newEntry: SuggestionEntry = {
+        id: `sug_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+        user_id: userKey,
+        user_name: userName || 'عضو بالفريق',
+        response: cleanResponse,
+        created_at: new Date().toISOString()
+      };
+
+      const updatedSuggestions = [newEntry, ...existing];
+      const updatedQaData: QaData = {
+        ...latest.qa_data,
+        suggestions: updatedSuggestions,
+        totalResponses: (latest.qa_data.totalResponses || existing.length) + 1
+      };
+
+      await saveGlobalAnnouncement(
+        {
+          title: latest.title,
+          message: latest.message,
+          color: latest.color,
+          is_qa: true,
+          qa_data: updatedQaData
+        },
+        latest.updated_by || userName
+      );
+    }
+
+    return { success: true };
+  } catch (err: any) {
+    console.error('Error submitting broadcast suggestion:', err);
+    return { success: false, error: err.message || 'حدث خطأ أثناء إرسال اقتراحك' };
+  }
+}
+
+/**
+ * Fetch all submitted suggestions for the active broadcast.
+ * Reads from Supabase table 'broadcast_suggestions' with fallback to qa_data.
+ */
+export async function fetchBroadcastSuggestions(broadcastId: string = '__global__'): Promise<SuggestionEntry[]> {
+  try {
+    const { data, error } = await supabase
+      .from('broadcast_suggestions')
+      .select('*')
+      .eq('broadcast_id', broadcastId)
+      .order('created_at', { ascending: false });
+
+    if (!error && Array.isArray(data) && data.length > 0) {
+      return data.map((d: any) => ({
+        id: String(d.id),
+        user_id: d.user_id,
+        user_name: d.user_name || 'مستخدم',
+        response: d.response || '',
+        created_at: d.created_at || new Date().toISOString()
+      }));
+    }
+  } catch (err) {
+    console.warn('Error fetching from broadcast_suggestions table:', err);
+  }
+
+  // Fallback to qa_data inside latest announcement
+  try {
+    const latest = await getGlobalAnnouncement();
+    if (latest?.is_qa && latest.qa_data?.suggestions) {
+      return latest.qa_data.suggestions;
+    }
+  } catch {}
+
+  return [];
+}
+
+/**
+ * Delete a specific suggestion (Admin / Manager only).
+ */
+export async function deleteBroadcastSuggestion(suggestionId: string): Promise<boolean> {
+  try {
+    await supabase
+      .from('broadcast_suggestions')
+      .delete()
+      .eq('id', suggestionId);
+  } catch {}
+
+  // Also remove from qa_data if present
+  try {
+    const latest = await getGlobalAnnouncement();
+    if (latest?.is_qa && latest.qa_data?.suggestions) {
+      const filtered = latest.qa_data.suggestions.filter(s => s.id !== suggestionId);
+      await saveGlobalAnnouncement(
+        {
+          title: latest.title,
+          message: latest.message,
+          color: latest.color,
+          is_qa: true,
+          qa_data: {
+            ...latest.qa_data,
+            suggestions: filtered,
+            totalResponses: Math.max(0, (latest.qa_data.totalResponses || 1) - 1)
+          }
+        },
+        latest.updated_by || 'المانجر'
+      );
+    }
+  } catch {}
+
+  return true;
+}
+

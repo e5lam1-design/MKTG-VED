@@ -2841,6 +2841,16 @@ const ShootingRow = ({ item, index, activeGid, onToggleFilmed, loadingFilmedCode
   }, [editForm, item, liveData, activeGid]);
 
   const handleFieldChange = async (fieldName: string, value: string, time?: string, author?: string) => {
+    const isMarketingUser = profile?.team?.toLowerCase() === 'marketing' && profile?.role !== 'admin' && profile?.role !== 'manager';
+    if (fieldName === 'driveFinal' && isMarketingUser && activeGid === '1939073164') {
+      if (toast && toast.error) {
+        toast.error("غير مسموح لتيم الماركتينج بتعديل أو إزالة رابط الفاينال 🎬🔒 (خاص بتيم الفيديو)");
+      } else {
+        alert("غير مسموح لتيم الماركتينج بتعديل أو إزالة رابط الفاينال 🎬🔒 (خاص بتيم الفيديو)");
+      }
+      return;
+    }
+
     // 1. Update the state immediately for fast feedback
     const updatedForm = { ...editForm, [fieldName]: value };
     setEditForm(updatedForm);
@@ -2998,6 +3008,7 @@ const ShootingRow = ({ item, index, activeGid, onToggleFilmed, loadingFilmedCode
   const isFilmed = item.filmed === true || item.filmed === 'TRUE';
   const isRowActive = activeCell?.rowIndex === index;
   const isPrivilegedUser = profile?.role === 'admin' || profile?.role === 'manager' || profile?.role === 'supervisor';
+  const isMarketingUser = profile?.team?.toLowerCase() === 'marketing' && profile?.role !== 'admin' && profile?.role !== 'manager';
 
   return (
     <motion.tr
@@ -3394,6 +3405,17 @@ const ShootingRow = ({ item, index, activeGid, onToggleFilmed, loadingFilmedCode
                 if (isCanceled) return;
                 const rowCode = item.code || item.id;
                 if (!rowCode) { alert("لا يمكن تعديل هذا الصف لعدم وجود كود (Code)"); return; }
+                if (isMarketingUser && activeGid === '1939073164') {
+                  const msg = isDone 
+                    ? "غير مسموح لتيم الماركتينج بإلغاء Done 🔒 (المسموح لك فقط هو طلب تعديل عبر زر EDIT)"
+                    : "تحديد حالة Done خاص بتيم الفيديو فقط 🎬🔒";
+                  if (toast && toast.error) {
+                    toast.error(msg);
+                  } else {
+                    alert(msg);
+                  }
+                  return;
+                }
                 const nextDone = !isDone;
                 if (nextDone) {
                   const finalVal = String(editForm.driveFinal || '').trim();
@@ -3453,11 +3475,19 @@ const ShootingRow = ({ item, index, activeGid, onToggleFilmed, loadingFilmedCode
               className={`w-7 h-7 rounded-lg flex items-center justify-center mx-auto transition-all duration-300 ${
                 isCanceled
                   ? 'opacity-20 cursor-not-allowed bg-white/5 text-muted/40'
-                  : isDone 
-                    ? 'bg-emerald-500 text-white shadow-[0_0_20px_rgba(16,185,129,0.95)] ring-2 ring-emerald-300 scale-110 cursor-pointer' 
-                    : 'bg-white/10 text-muted hover:bg-emerald-500/30 hover:text-emerald-300 cursor-pointer'
+                  : isMarketingUser && activeGid === '1939073164'
+                    ? (isDone ? 'bg-emerald-500 text-white shadow-[0_0_20px_rgba(16,185,129,0.95)] ring-2 ring-emerald-300 scale-110 cursor-not-allowed' : 'bg-white/10 text-muted cursor-not-allowed')
+                    : isDone 
+                      ? 'bg-emerald-500 text-white shadow-[0_0_20px_rgba(16,185,129,0.95)] ring-2 ring-emerald-300 scale-110 cursor-pointer' 
+                      : 'bg-white/10 text-muted hover:bg-emerald-500/30 hover:text-emerald-300 cursor-pointer'
               }`}
-              title={isCanceled ? "المهمة ملغية - لا يمكن إنجازها" : "تم الإنجاز"}
+              title={
+                isCanceled 
+                  ? "المهمة ملغية - لا يمكن إنجازها" 
+                  : (isMarketingUser && activeGid === '1939073164')
+                    ? (isDone ? "غير مسموح لتيم الماركتينج بإلغاء Done 🔒 (استخدم زر EDIT لطلب تعديل)" : "خاص بتيم الفيديو فقط 🔒")
+                    : "تم الإنجاز"
+              }
             >
               {isDone && <CheckCircle2 size={16} className="stroke-[2.5]" />}
             </button>
@@ -3760,27 +3790,31 @@ const ShootingRow = ({ item, index, activeGid, onToggleFilmed, loadingFilmedCode
               ) : (
                 <div className="flex items-center gap-1">
                   <span className="text-muted/40 text-xs px-2 shrink-0">---</span>
-                  <button
-                    onClick={() => {
-                      const hardVal = 'على الهارد';
-                      setEditForm(prev => ({ ...prev, driveFinal: hardVal }));
-                      handleFieldChange('driveFinal', hardVal);
-                    }}
-                    className="p-1 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-400/80 hover:text-amber-300 border border-amber-500/20 text-[10px] flex items-center gap-1 transition-all cursor-pointer"
-                    title={isPrivilegedUser ? "تسليم على الهارد (+2GB)" : "طلب تسليم على الهارد (+2GB)"}
-                  >
-                    <HardDrive size={11} />
-                    <span>{isPrivilegedUser ? 'هارد' : 'طلب هارد'}</span>
-                  </button>
+                  {!(isMarketingUser && activeGid === '1939073164') && (
+                    <button
+                      onClick={() => {
+                        const hardVal = 'على الهارد';
+                        setEditForm(prev => ({ ...prev, driveFinal: hardVal }));
+                        handleFieldChange('driveFinal', hardVal);
+                      }}
+                      className="p-1 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-400/80 hover:text-amber-300 border border-amber-500/20 text-[10px] flex items-center gap-1 transition-all cursor-pointer"
+                      title={isPrivilegedUser ? "تسليم على الهارد (+2GB)" : "طلب تسليم على الهارد (+2GB)"}
+                    >
+                      <HardDrive size={11} />
+                      <span>{isPrivilegedUser ? 'هارد' : 'طلب هارد'}</span>
+                    </button>
+                  )}
                 </div>
               )}
-              <button 
-                onClick={() => setIsEditingFinal(true)} 
-                className="p-1.5 rounded-full bg-white/5 hover:bg-white/15 text-muted hover:text-white transition-all scale-95 cursor-pointer shrink-0" 
-                title="تعديل لينك فاينال"
-              >
-                <Pencil size={11} />
-              </button>
+              {!(isMarketingUser && activeGid === '1939073164') && (
+                <button 
+                  onClick={() => setIsEditingFinal(true)} 
+                  className="p-1.5 rounded-full bg-white/5 hover:bg-white/15 text-muted hover:text-white transition-all scale-95 cursor-pointer shrink-0" 
+                  title="تعديل لينك فاينال"
+                >
+                  <Pencil size={11} />
+                </button>
+              )}
             </div>
           )}
         </div>
@@ -3896,6 +3930,7 @@ const CutsRow = ({
   item, 
   index, 
   onUpdateShootingRow, 
+  onToggleEditCheck,
   liveData, 
   optionsLists, 
   autofillDrag, 
@@ -3928,6 +3963,12 @@ const CutsRow = ({
   const [copied, setCopied] = useState(false);
   const [optimisticHardDriveStatus, setOptimisticHardDriveStatus] = useState<string | null | undefined>(undefined);
   const { profile } = useAuth();
+  const isMarketingUser = profile?.team?.toLowerCase() === 'marketing' && profile?.role !== 'admin' && profile?.role !== 'manager';
+  const [isEditChecked, setIsEditChecked] = useState(Boolean(item.editCheck || item.edit_check));
+
+  useEffect(() => {
+    setIsEditChecked(Boolean(item.editCheck || item.edit_check));
+  }, [item.editCheck, item.edit_check]);
 
   useEffect(() => {
     setOptimisticHardDriveStatus(undefined);
@@ -4060,6 +4101,15 @@ const CutsRow = ({
   };
 
   const handleFieldChange = async (fieldName: string, value: string, time?: string, author?: string) => {
+    if (fieldName === 'driveFinal' && isMarketingUser) {
+      if (toast && toast.error) {
+        toast.error("غير مسموح لتيم الماركتينج بتعديل أو إزالة رابط الفاينال 🎬🔒 (خاص بتيم الفيديو)");
+      } else {
+        alert("غير مسموح لتيم الماركتينج بتعديل أو إزالة رابط الفاينال 🎬🔒 (خاص بتيم الفيديو)");
+      }
+      return;
+    }
+
     const updatedForm = { ...editForm, [fieldName]: value };
     setEditForm(updatedForm);
     saveCutsOverrideLocally(item.id, fieldName, value);
@@ -4187,6 +4237,17 @@ const CutsRow = ({
 
   const toggleStatus = async (fieldName: string, currentVal: boolean) => {
     if (!item.id) { alert("لا يمكن تعديل هذا الصف لعدم وجود كود (Code)"); return; }
+    if (fieldName === 'done' && isMarketingUser) {
+      const msg = currentVal 
+        ? "غير مسموح لتيم الماركتينج بإلغاء Done 🔒 (المسموح لك فقط هو طلب تعديل عبر زر EDIT)"
+        : "تحديد حالة Done خاص بتيم الفيديو فقط 🎬🔒";
+      if (toast && toast.error) {
+        toast.error(msg);
+      } else {
+        alert(msg);
+      }
+      return;
+    }
     if (!onUpdateShootingRow) return;
     setIsSaving(true);
     const newVal = !currentVal;
@@ -4522,14 +4583,45 @@ const CutsRow = ({
       <td className="px-3 py-5 text-center">
         <button
           onClick={() => toggleStatus('done', isDone)}
-          className={`w-7 h-7 rounded-lg flex items-center justify-center mx-auto transition-all duration-300 cursor-pointer ${
-            isDone 
-              ? 'bg-emerald-500 text-white shadow-[0_0_20px_rgba(16,185,129,0.95)] ring-2 ring-emerald-300 scale-110' 
-              : 'bg-white/10 text-muted hover:bg-emerald-500/30 hover:text-emerald-300'
+          className={`w-7 h-7 rounded-lg flex items-center justify-center mx-auto transition-all duration-300 ${
+            isMarketingUser
+              ? (isDone ? 'bg-emerald-500 text-white shadow-[0_0_20px_rgba(16,185,129,0.95)] ring-2 ring-emerald-300 scale-110 cursor-not-allowed' : 'bg-white/10 text-muted cursor-not-allowed')
+              : isDone 
+                ? 'bg-emerald-500 text-white shadow-[0_0_20px_rgba(16,185,129,0.95)] ring-2 ring-emerald-300 scale-110 cursor-pointer' 
+                : 'bg-white/10 text-muted hover:bg-emerald-500/30 hover:text-emerald-300 cursor-pointer'
           }`}
-          title="تم الإنجاز"
+          title={
+            isMarketingUser
+              ? (isDone ? "غير مسموح لتيم الماركتينج بإلغاء Done 🔒 (استخدم زر EDIT لطلب تعديل)" : "خاص بتيم الفيديو فقط 🔒")
+              : "تم الإنجاز"
+          }
         >
           {isDone && <CheckCircle2 size={16} className="stroke-[2.5]" />}
+        </button>
+      </td>
+
+      {/* EDIT Checkmark (طلب تعديل) - Cuts: clicked once, cannot be unclicked, unchecks DONE */}
+      <td className="px-3 py-5 text-center">
+        <button
+          disabled={isEditChecked}
+          onClick={async () => {
+            if (isEditChecked) return;
+            const rowCode = item.code || item.id;
+            if (!rowCode) { alert("لا يمكن تعديل هذا الصف لعدم وجود كود (Code)"); return; }
+            
+            setIsEditChecked(true);
+            if (onToggleEditCheck) {
+              onToggleEditCheck(item, true);
+            }
+          }}
+          className={`w-6 h-6 rounded-md flex items-center justify-center mx-auto transition-all duration-300 ${
+            isEditChecked
+              ? 'bg-blue-600 text-white shadow-[0_0_12px_rgba(37,99,235,0.6)] cursor-default'
+              : 'bg-white/10 text-muted hover:bg-blue-500/30 hover:text-blue-300 cursor-pointer'
+          }`}
+          title={isEditChecked ? "تم طلب تعديل (مغلق)" : "طلب تعديل (EDIT)"}
+        >
+          {isEditChecked ? <CheckCircle2 size={14} /> : null}
         </button>
       </td>
 
@@ -4686,27 +4778,31 @@ const CutsRow = ({
               ) : (
                 <div className="flex items-center gap-1">
                   <span className="text-muted/40 text-xs px-2 shrink-0">---</span>
-                  <button
-                    onClick={() => {
-                      const hardVal = 'على الهارد';
-                      setEditForm(prev => ({ ...prev, driveFinal: hardVal }));
-                      handleFieldChange('driveFinal', hardVal);
-                    }}
-                    className="p-1 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-400/80 hover:text-amber-300 border border-amber-500/20 text-[10px] flex items-center gap-1 transition-all cursor-pointer"
-                    title={isPrivilegedUser ? "تسليم على الهارد (+2GB)" : "طلب تسليم على الهارد (+2GB)"}
-                  >
-                    <HardDrive size={11} />
-                    <span>{isPrivilegedUser ? 'هارد' : 'طلب هارد'}</span>
-                  </button>
+                  {!isMarketingUser && (
+                    <button
+                      onClick={() => {
+                        const hardVal = 'على الهارد';
+                        setEditForm(prev => ({ ...prev, driveFinal: hardVal }));
+                        handleFieldChange('driveFinal', hardVal);
+                      }}
+                      className="p-1 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-400/80 hover:text-amber-300 border border-amber-500/20 text-[10px] flex items-center gap-1 transition-all cursor-pointer"
+                      title={isPrivilegedUser ? "تسليم على الهارد (+2GB)" : "طلب تسليم على الهارد (+2GB)"}
+                    >
+                      <HardDrive size={11} />
+                      <span>{isPrivilegedUser ? 'هارد' : 'طلب هارد'}</span>
+                    </button>
+                  )}
                 </div>
               )}
-              <button 
-                onClick={() => setIsEditingFinal(true)} 
-                className="p-1.5 rounded-full bg-white/5 hover:bg-white/15 text-muted hover:text-white transition-all scale-95 cursor-pointer shrink-0" 
-                title="تعديل لينك فاينال"
-              >
-                <Pencil size={11} />
-              </button>
+              {!isMarketingUser && (
+                <button 
+                  onClick={() => setIsEditingFinal(true)} 
+                  className="p-1.5 rounded-full bg-white/5 hover:bg-white/15 text-muted hover:text-white transition-all scale-95 cursor-pointer shrink-0" 
+                  title="تعديل لينك فاينال"
+                >
+                  <Pencil size={11} />
+                </button>
+              )}
             </div>
           )}
           {isSaving && (
@@ -6767,6 +6863,8 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
             missingDetails: i.missing_details === true,
             problem: i.problem === true,
             done: i.done === true,
+            editCheck: i.edit_check === true,
+            edit_check: i.edit_check === true,
             editor: i.editor || i.editor_col || '',
             driveFinal: i.drive_final || '',
             canceled: i.canceled === true,
@@ -9047,6 +9145,9 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
       }
     }
 
+    const prevItem = reelsDbRows.find(r => r.code === oldCode || r.id === oldCode) || 
+      (Array.isArray(liveData) ? liveData.find((r: any) => r.code === oldCode || r.id === oldCode) : null);
+
     let updatedItem: any;
     let dbPayload: any;
     let isFilmed = false;
@@ -9073,6 +9174,8 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
         missingDetails: isMissing,
         problem: isProblem,
         done: isDone,
+        editCheck: prevItem?.editCheck ?? prevItem?.edit_check ?? false,
+        edit_check: prevItem?.editCheck ?? prevItem?.edit_check ?? false,
         editor: newRowData[15] || '',
         driveFinal: newRowData[16] || '',
         canceled: isCanceled,
@@ -9131,6 +9234,8 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
         driveFinal: newRowData[17] || '',
         canceled: isCanceled,
         missingDetails: isMissing,
+        editCheck: prevItem?.editCheck ?? prevItem?.edit_check ?? false,
+        edit_check: prevItem?.editCheck ?? prevItem?.edit_check ?? false,
         hardDriveStatus: newRowData[21] !== undefined ? newRowData[21] : undefined,
         uniqueKey: newCode
       };
@@ -9161,9 +9266,6 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
         updated_at: new Date().toISOString()
       };
     }
-
-    const prevItem = reelsDbRows.find(r => r.code === oldCode || r.id === oldCode) || 
-      (Array.isArray(liveData) ? liveData.find((r: any) => r.code === oldCode || r.id === oldCode) : null);
 
     // 1. Optimistic UI update
     setReelsDbRows(prev => prev.map(r => (r.code === oldCode || r.id === oldCode) ? updatedItem : r));
@@ -9705,9 +9807,10 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
     });
 
     // 2. Direct Supabase update
+    const targetTable = activeGid === '0' ? 'reels_cuts_26' : 'reels_ve_26';
     try {
       const { error } = await supabase
-        .from('reels_ve_26')
+        .from(targetTable)
         .update({ 
           edit_check: true, 
           done: false, 
@@ -9716,15 +9819,15 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
         .eq('code', rowCode);
 
       if (error) {
-        console.error("Error updating edit_check in reels_ve_26:", error);
+        console.error(`Error updating edit_check in ${targetTable}:`, error);
         toast.error(`خطأ أثناء الحفظ في قاعدة البيانات: ${error.message}`);
       } else {
         toast.success("⚠️ تم تسجيل طلب التعديل (EDIT) وإعادة فتح المهمة!");
-        notifyCoreCountsChanged(['1939073164']);
+        notifyCoreCountsChanged([activeGid]);
 
         // Telegram Notification for Edit Request
-        const editorName = item.editor_col || item.editor || '';
-        const creatorName = item.extra_name || item.creator || '';
+        const editorName = item.editor_col || item.editor || item.editorCol || '';
+        const creatorName = item.extra_name || item.creator || item.extraName || '';
         const taskTitle = item.script || item.extra_name || item.code || rowCode;
         const taskCode = item.code || rowCode;
         const taskNotes = item.editor_notes || item.notes || 'مطلوب مراجعة وتعديل المونتاج 📝';
@@ -10786,6 +10889,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
         <th className="px-3 py-4 text-center th-style">تفاصيل ناقصة</th>
         <th className="px-3 py-4 text-center th-style">مشكلة</th>
         <th className="px-3 py-4 text-center th-style"><ColFilter colKey="done" label="DONE" /></th>
+        <th className="px-3 py-4 text-center th-style" id="tour-cuts-edit-col">EDIT</th>
         <th className="px-4 py-4 text-center th-style"><ColFilter colKey="editor" label="Editor" /></th>
         <th className="px-4 py-4 text-center th-style">Drive Link (Final)</th>
         <th className="px-3 py-4 text-center th-style">CANCELO</th>
@@ -13183,6 +13287,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
                           item={item} 
                           index={idx} 
                           onUpdateShootingRow={handleUpdateShootingRow}
+                          onToggleEditCheck={handleToggleEditCheck}
                           liveData={liveData} 
                           optionsLists={{ branches: uniqueBranches, years: uniqueYears, types: uniqueTypes, formats: uniqueFormats, editors: editorsList, extraNames: uniqueExtraNames }} 
                           autofillDrag={autofillDrag} 

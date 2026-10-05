@@ -6,7 +6,7 @@ import { useAuth } from '../contexts/AuthContext';
 import {
   Users, UserPlus, Shield, Search, X, Check,
   Loader2, AlertCircle, ChevronDown, ToggleLeft, ToggleRight, Trash2,
-  Key, Eye, EyeOff, Lock, Send, QrCode
+  Key, Eye, EyeOff, Lock, Send, QrCode, Calendar
 } from 'lucide-react';
 import { TelegramQrModal } from './TelegramQrModal';
 import { getAllTelegramActivations, type TelegramActivationRecord } from '../lib/telegram';
@@ -21,7 +21,8 @@ const MARKETING_TABS = [
 
 const VIDEO_TABS = [
   'Shooting', 'Ve', 'CUTS', 'احصائيات الريلز',
-  'Designers', 'احصائيات تصاميم'
+  'Designers', 'احصائيات تصاميم',
+  'Calendar'
 ];
 
 const ALL_TABS = [...MARKETING_TABS, ...VIDEO_TABS];
@@ -271,10 +272,39 @@ const EditUserModal = ({ user, initialTeam, onClose, onSave }: EditUserModalProp
   const [showPassword, setShowPassword] = useState(false);
   const [passwordError, setPasswordError] = useState('');
 
+  const isTabActive = (tab: string) => {
+    const lower = tab.toLowerCase();
+    return allowedTabs.some(t => {
+      const l = t.toLowerCase();
+      if (l === lower) return true;
+      if ((lower === 'calendar' || lower === 'التقويم' || lower === 'الكالندر') &&
+          (l === 'calendar' || l === 'التقويم' || l === 'الكالندر')) return true;
+      return false;
+    });
+  };
+
   const toggleTab = (tab: string) => {
-    setAllowedTabs(prev =>
-      prev.includes(tab) ? prev.filter(t => t !== tab) : [...prev, tab]
-    );
+    setAllowedTabs(prev => {
+      const lower = tab.toLowerCase();
+      const exists = prev.some(t => {
+        const l = t.toLowerCase();
+        if (l === lower) return true;
+        if ((lower === 'calendar' || lower === 'التقويم' || lower === 'الكالندر') &&
+            (l === 'calendar' || l === 'التقويم' || l === 'الكالندر')) return true;
+        return false;
+      });
+      if (exists) {
+        return prev.filter(t => {
+          const l = t.toLowerCase();
+          if (l === lower) return false;
+          if ((lower === 'calendar' || lower === 'التقويم' || lower === 'الكالندر') &&
+              (l === 'calendar' || l === 'التقويم' || l === 'الكالندر')) return false;
+          return true;
+        });
+      } else {
+        return [...prev, tab];
+      }
+    });
   };
 
   const handleSave = async () => {
@@ -512,25 +542,36 @@ const EditUserModal = ({ user, initialTeam, onClose, onSave }: EditUserModalProp
           </div>
 
           <div className="grid grid-cols-2 gap-1.5 max-h-[220px] overflow-y-auto pr-1 scrollbar-thin">
-            {ALL_TABS.map(tab => (
-              <button
-                key={tab}
-                type="button"
-                onClick={() => toggleTab(tab)}
-                className={`py-2 px-3 rounded-xl text-xs font-bold border transition-all flex items-center gap-2 cursor-pointer arabic-text ${
-                  allowedTabs.includes(tab)
-                    ? 'bg-blue-500/20 border-blue-500/40 text-blue-300 shadow-sm'
-                    : 'bg-white/[0.03] border-white/[0.06] text-white/40 hover:bg-white/[0.06]'
-                }`}
-              >
-                {allowedTabs.includes(tab) ? (
-                  <Check size={11} className="shrink-0 text-blue-400" />
-                ) : (
-                  <div className="w-2.5 h-2.5 rounded-sm border border-white/20 shrink-0" />
-                )}
-                <span className="truncate">{tab}</span>
-              </button>
-            ))}
+            {ALL_TABS.map(tab => {
+              const active = isTabActive(tab);
+              const isCal = tab === 'Calendar';
+              return (
+                <button
+                  key={tab}
+                  type="button"
+                  onClick={() => toggleTab(tab)}
+                  className={`py-2 px-3 rounded-xl text-xs font-bold border transition-all flex items-center gap-2 cursor-pointer arabic-text ${
+                    active
+                      ? isCal
+                        ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-300 shadow-[0_0_12px_rgba(16,185,129,0.25)] ring-1 ring-emerald-500/40'
+                        : 'bg-blue-500/20 border-blue-500/40 text-blue-300 shadow-sm'
+                      : isCal
+                        ? 'bg-emerald-500/[0.04] border-emerald-500/20 text-emerald-400/60 hover:bg-emerald-500/10'
+                        : 'bg-white/[0.03] border-white/[0.06] text-white/40 hover:bg-white/[0.06]'
+                  }`}
+                >
+                  {active ? (
+                    <Check size={11} className={`shrink-0 ${isCal ? 'text-emerald-400' : 'text-blue-400'}`} />
+                  ) : (
+                    <div className={`w-2.5 h-2.5 rounded-sm border shrink-0 ${isCal ? 'border-emerald-500/40' : 'border-white/20'}`} />
+                  )}
+                  <span className="truncate flex items-center gap-1.5">
+                    {isCal && <Calendar size={12} className="shrink-0 text-emerald-400" />}
+                    <span>{isCal ? 'Calendar 📅 (التقويم)' : tab}</span>
+                  </span>
+                </button>
+              );
+            })}
           </div>
         </div>
 

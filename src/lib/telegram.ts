@@ -733,7 +733,9 @@ export async function notifyTaskCompleted(
     params.sourceSheet ? `<b>القسم:</b> ${escapeHtml(params.sourceSheet)}` : '',
     params.editorName ? `<b>المحرر:</b> ${escapeHtml(params.editorName)}` : '',
     `<b>وقت الإنجاز:</b> ${timeStr} (${dateStr})`,
-    params.driveLink && params.driveLink.startsWith('http')
+    params.driveLink && (params.driveLink.includes('هارد') || params.driveLink.toLowerCase().includes('hard'))
+      ? `<b>التسليم:</b> 💾 ${escapeHtml(params.driveLink)} (استثناء ملف ضخم)`
+      : params.driveLink && params.driveLink.startsWith('http')
       ? `<b>الرابط النهائي:</b> <a href="${params.driveLink}">${params.driveLink}</a>`
       : params.driveLink
       ? `<b>الرابط النهائي:</b> ${escapeHtml(params.driveLink)}`
@@ -786,6 +788,50 @@ export async function notifyTaskEditRequested(
 
   const htmlText = lines.join('\n');
   return sendTelegramMessage(token, params.chatId, htmlText);
+}
+
+/**
+ * Format and send hard drive delivery request notification to admins/supervisors
+ */
+export async function notifyHardDriveRequest(
+  params: TelegramNotificationParams,
+  overrideToken?: string
+): Promise<{ ok: boolean; error?: string }> {
+  const token = overrideToken || (await getTelegramBotToken());
+  if (!token) return { ok: false, error: 'توكن البوت غير موجود' };
+  const timeStr = new Date().toLocaleTimeString('ar-EG', { hour: '2-digit', minute: '2-digit' });
+  const lines = [
+    `<b>طلب تسليم على الهارد 💾⏳</b>`,
+    params.taskCode ? `<b>كود التاسك:</b> <code>${escapeHtml(params.taskCode)}</code>` : '',
+    params.taskTitle && params.taskTitle !== params.taskCode ? `<b>اسم التاسك:</b> ${escapeHtml(params.taskTitle)}` : '',
+    params.sourceSheet ? `<b>القسم:</b> ${escapeHtml(params.sourceSheet)}` : '',
+    params.editorName ? `<b>المحرر:</b> ${escapeHtml(params.editorName)}` : '',
+    `<b>الوقت:</b> ${timeStr}`,
+    `<b>الحالة:</b> تم تعيين المهمة كـ Done بانتظار موافقة أو رفض المشرف ⚖️`
+  ].filter(Boolean);
+  return sendTelegramMessage(token, params.chatId, lines.join('\n'));
+}
+
+/**
+ * Format and send hard drive approval or rejection notification to editor
+ */
+export async function notifyHardDriveDecision(
+  params: TelegramNotificationParams & { decision: 'approved' | 'rejected'; supervisorName?: string },
+  overrideToken?: string
+): Promise<{ ok: boolean; error?: string }> {
+  const token = overrideToken || (await getTelegramBotToken());
+  if (!token) return { ok: false, error: 'توكن البوت غير موجود' };
+  const isApproved = params.decision === 'approved';
+  const lines = [
+    isApproved ? `<b>تم اعتماد التسليم على الهارد ✅💾</b>` : `<b>تم رفض التسليم على الهارد ❌↩️</b>`,
+    params.taskCode ? `<b>كود التاسك:</b> <code>${escapeHtml(params.taskCode)}</code>` : '',
+    params.taskTitle && params.taskTitle !== params.taskCode ? `<b>اسم التاسك:</b> ${escapeHtml(params.taskTitle)}` : '',
+    params.supervisorName ? `<b>المشرف:</b> ${escapeHtml(params.supervisorName)}` : '',
+    isApproved 
+      ? `<b>القرار:</b> تمت الموافقة على بقاء الملف على الهارد واكتمال المهمة.`
+      : `<b>القرار:</b> تم إرجاع المهمة كمطلوبة، يرجى رفع الملف على Google Drive وإرفاق الرابط.`
+  ].filter(Boolean);
+  return sendTelegramMessage(token, params.chatId, lines.join('\n'));
 }
 
 function escapeHtml(text: string): string {

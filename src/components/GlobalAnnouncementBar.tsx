@@ -20,15 +20,27 @@ import {
   RotateCcw,
   Users,
   Lock,
-  Check
+  Check,
+  Lightbulb,
+  MessageSquare,
+  MessageSquarePlus,
+  Send,
+  HelpCircle,
+  Image as ImageIcon,
+  Upload,
+  Maximize2,
+  ExternalLink
 } from 'lucide-react';
-import type { GlobalAnnouncement, AnnouncementColor, PollOption, PollData } from '../lib/announcements';
+import type { GlobalAnnouncement, AnnouncementColor, PollOption, PollData, QaData, SuggestionEntry } from '../lib/announcements';
 import { 
   getGlobalAnnouncement, 
   saveGlobalAnnouncement, 
   deleteGlobalAnnouncement,
   castPollVote,
-  resetPollVotes
+  resetPollVotes,
+  submitBroadcastSuggestion,
+  fetchBroadcastSuggestions,
+  deleteBroadcastSuggestion
 } from '../lib/announcements';
 import { supabase, type Role } from '../lib/supabase';
 import { toast } from '../lib/toast';
@@ -156,11 +168,13 @@ export const GlobalAnnouncementBar: React.FC<GlobalAnnouncementBarProps> = ({
   const [showVotersModal, setShowVotersModal] = useState<boolean>(false);
 
   // Edit Modal form state
-  const [announcementKind, setAnnouncementKind] = useState<'text' | 'poll'>('text');
+  const [announcementKind, setAnnouncementKind] = useState<'text' | 'poll' | 'qa'>('text');
 
   // Text Announcement Form
   const [formTitle, setFormTitle] = useState<string>('📢 إشعار عام لجميع الأقسام');
   const [formMessage, setFormMessage] = useState<string>('');
+  const [formImageUrl, setFormImageUrl] = useState<string>('');
+  const [showImageLightbox, setShowImageLightbox] = useState<boolean>(false);
 
   // Poll Form
   const [pollTitle, setPollTitle] = useState<string>('🗳️ استطلاع رأي الفريق');
@@ -171,11 +185,65 @@ export const GlobalAnnouncementBar: React.FC<GlobalAnnouncementBarProps> = ({
     { id: 'opt_3', text: 'غير موافق' }
   ]);
 
+  // QA / Suggestions Form
+  const [qaTitle, setQaTitle] = useState<string>('💡 سؤال ومقترحات الفريق');
+  const [qaQuestion, setQaQuestion] = useState<string>('');
+
+  // Suggestion Client Interaction State
+  const [userSuggestionInput, setUserSuggestionInput] = useState<string>('');
+  const [isSubmittingSuggestion, setIsSubmittingSuggestion] = useState<boolean>(false);
+  const [showSuggestionsListModal, setShowSuggestionsListModal] = useState<boolean>(false);
+  const [loadedSuggestions, setLoadedSuggestions] = useState<SuggestionEntry[]>([]);
+  const [isLoadingSuggestions, setIsLoadingSuggestions] = useState<boolean>(false);
+
   const [formColor, setFormColor] = useState<AnnouncementColor>('purple');
   const [isSaving, setIsSaving] = useState<boolean>(false);
 
   // Management permissions: Admin or Manager only
   const canManage = userRole === 'admin' || userRole === 'manager';
+
+  const handleImageFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      toast.error('يرجى اختيار ملف صورة صالح (PNG, JPG, WebP, GIF)');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const rawDataUrl = event.target?.result as string;
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        let width = img.width;
+        let height = img.height;
+        const MAX_SIZE = 1200;
+        if (width > MAX_SIZE || height > MAX_SIZE) {
+          if (width > height) {
+            height = Math.round((height * MAX_SIZE) / width);
+            width = MAX_SIZE;
+          } else {
+            width = Math.round((width * MAX_SIZE) / height);
+            height = MAX_SIZE;
+          }
+        }
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, width, height);
+          const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.85);
+          setFormImageUrl(compressedDataUrl);
+          toast.success('تم تحميل وتجهيز الصورة بنجاح! 🖼️');
+        } else {
+          setFormImageUrl(rawDataUrl);
+          toast.success('تم تحميل الصورة بنجاح! 🖼️');
+        }
+      };
+      img.src = rawDataUrl;
+    };
+    reader.readAsDataURL(file);
+  };
 
   const loadAnnouncement = useCallback(async () => {
     try {
@@ -183,7 +251,12 @@ export const GlobalAnnouncementBar: React.FC<GlobalAnnouncementBarProps> = ({
       setAnnouncement(data);
       if (data) {
         setFormColor(data.color || 'purple');
-        if (data.is_poll && data.poll_data) {
+        setFormImageUrl(data.imageUrl || '');
+        if (data.is_qa && data.qa_data) {
+          setAnnouncementKind('qa');
+          setQaTitle(data.title || '💡 سؤال ومقترحات الفريق');
+          setQaQuestion(data.qa_data.question || data.message || '');
+        } else if (data.is_poll && data.poll_data) {
           setAnnouncementKind('poll');
           setPollTitle(data.title || '🗳️ استطلاع رأي الفريق');
           setPollQuestion(data.poll_data.question || data.message || '');
@@ -207,7 +280,7 @@ export const GlobalAnnouncementBar: React.FC<GlobalAnnouncementBarProps> = ({
   useEffect(() => {
     loadAnnouncement();
 
-    // Setup realtime subscription to page_announcements table
+    // Setup realtime subscription to page_announcements and broadcast_suggestions tables
     const channel = supabase
       .channel('global_announcements_channel')
       .on(
@@ -220,6 +293,18 @@ export const GlobalAnnouncementBar: React.FC<GlobalAnnouncementBarProps> = ({
         },
         () => {
           loadAnnouncement();
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'broadcast_suggestions'
+        },
+        () => {
+          loadAnnouncement();
+          fetchBroadcastSuggestions('__global__').then(list => setLoadedSuggestions(list));
         }
       )
       .on('broadcast', { event: 'poll_update' }, () => {
@@ -235,7 +320,12 @@ export const GlobalAnnouncementBar: React.FC<GlobalAnnouncementBarProps> = ({
   const handleOpenEdit = () => {
     if (announcement) {
       setFormColor(announcement.color || 'purple');
-      if (announcement.is_poll && announcement.poll_data) {
+      setFormImageUrl(announcement.imageUrl || '');
+      if (announcement.is_qa && announcement.qa_data) {
+        setAnnouncementKind('qa');
+        setQaTitle(announcement.title || '💡 سؤال ومقترحات الفريق');
+        setQaQuestion(announcement.qa_data.question || announcement.message || '');
+      } else if (announcement.is_poll && announcement.poll_data) {
         setAnnouncementKind('poll');
         setPollTitle(announcement.title || '🗳️ استطلاع رأي الفريق');
         setPollQuestion(announcement.poll_data.question || announcement.message || '');
@@ -257,6 +347,7 @@ export const GlobalAnnouncementBar: React.FC<GlobalAnnouncementBarProps> = ({
       setAnnouncementKind('text');
       setFormTitle('📢 إشعار عام لجميع الأقسام');
       setFormMessage('');
+      setFormImageUrl('');
       setPollTitle('🗳️ استطلاع رأي الفريق');
       setPollQuestion('');
       setPollOptions([
@@ -264,6 +355,8 @@ export const GlobalAnnouncementBar: React.FC<GlobalAnnouncementBarProps> = ({
         { id: 'opt_2', text: 'أقترح تعديلاً' },
         { id: 'opt_3', text: 'غير موافق' }
       ]);
+      setQaTitle('💡 سؤال ومقترحات الفريق');
+      setQaQuestion('');
       setFormColor('purple');
     }
     setIsEditing(true);
@@ -301,12 +394,15 @@ export const GlobalAnnouncementBar: React.FC<GlobalAnnouncementBarProps> = ({
 
       setIsSaving(true);
       const titleToSave = formTitle.trim() || '📢 إشعار عام لجميع الأقسام';
+      const cleanImg = formImageUrl.trim() || undefined;
       const res = await saveGlobalAnnouncement(
         {
           title: titleToSave,
           message: formMessage.trim(),
+          imageUrl: cleanImg,
           color: formColor,
-          is_poll: false
+          is_poll: false,
+          is_qa: false
         },
         currentUserName
       );
@@ -316,9 +412,11 @@ export const GlobalAnnouncementBar: React.FC<GlobalAnnouncementBarProps> = ({
         setAnnouncement({
           title: titleToSave,
           message: formMessage.trim(),
+          imageUrl: cleanImg,
           color: formColor,
           is_active: true,
           is_poll: false,
+          is_qa: false,
           updated_by: currentUserName,
           updated_at: new Date().toISOString()
         });
@@ -328,6 +426,56 @@ export const GlobalAnnouncementBar: React.FC<GlobalAnnouncementBarProps> = ({
         toast.success('🌐 تم نشر الإشعار العام لجميع الصفحات بنجاح!');
       } else {
         toast.error(res.error || 'حدث خطأ أثناء حفظ الإشعار العام');
+      }
+    } else if (announcementKind === 'qa') {
+      // Q&A / Suggestions Announcement
+      if (!qaQuestion.trim()) {
+        toast.error('يرجى كتابة السؤال أو موضوع الاقتراحات أولاً');
+        return;
+      }
+
+      setIsSaving(true);
+      const titleToSave = qaTitle.trim() || '💡 سؤال ومقترحات الفريق';
+      const cleanImg = formImageUrl.trim() || undefined;
+
+      const existingSuggestions = (announcement?.is_qa && announcement.qa_data?.suggestions) || [];
+      const qaDataToSave: QaData = {
+        question: qaQuestion.trim(),
+        totalResponses: existingSuggestions.length,
+        suggestions: existingSuggestions,
+        createdAt: announcement?.qa_data?.createdAt || new Date().toISOString()
+      };
+
+      const res = await saveGlobalAnnouncement(
+        {
+          title: titleToSave,
+          message: qaQuestion.trim(),
+          imageUrl: cleanImg,
+          color: formColor,
+          is_qa: true,
+          qa_data: qaDataToSave
+        },
+        currentUserName
+      );
+      setIsSaving(false);
+
+      if (res.success) {
+        setAnnouncement({
+          title: titleToSave,
+          message: qaQuestion.trim(),
+          imageUrl: cleanImg,
+          color: formColor,
+          is_active: true,
+          is_qa: true,
+          qa_data: qaDataToSave,
+          updated_by: currentUserName,
+          updated_at: new Date().toISOString()
+        });
+        setIsEditing(false);
+        setIsCollapsed(false);
+        toast.success('💡 تم نشر السؤال وفتح باب الاقتراحات لجميع المستخدمين!');
+      } else {
+        toast.error(res.error || 'حدث خطأ أثناء حفظ السؤال والاقتراحات');
       }
     } else {
       // Poll Announcement
@@ -347,6 +495,7 @@ export const GlobalAnnouncementBar: React.FC<GlobalAnnouncementBarProps> = ({
 
       setIsSaving(true);
       const titleToSave = pollTitle.trim() || '🗳️ استطلاع رأي الفريق';
+      const cleanImg = formImageUrl.trim() || undefined;
 
       // Keep existing votes if editing, or start fresh
       const existingVoters = (announcement?.is_poll && announcement.poll_data?.voters) || {};
@@ -375,6 +524,7 @@ export const GlobalAnnouncementBar: React.FC<GlobalAnnouncementBarProps> = ({
         {
           title: titleToSave,
           message: pollQuestion.trim(),
+          imageUrl: cleanImg,
           color: formColor,
           is_poll: true,
           poll_data: pollDataToSave
@@ -387,6 +537,7 @@ export const GlobalAnnouncementBar: React.FC<GlobalAnnouncementBarProps> = ({
         setAnnouncement({
           title: titleToSave,
           message: pollQuestion.trim(),
+          imageUrl: cleanImg,
           color: formColor,
           is_active: true,
           is_poll: true,
@@ -401,6 +552,45 @@ export const GlobalAnnouncementBar: React.FC<GlobalAnnouncementBarProps> = ({
       } else {
         toast.error(res.error || 'حدث خطأ أثناء حفظ التصويت');
       }
+    }
+  };
+
+  const handleSubmitSuggestion = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const clean = userSuggestionInput.trim();
+    if (!clean) {
+      toast.error('يرجى كتابة إجابتك أو اقتراحك أولاً');
+      return;
+    }
+
+    setIsSubmittingSuggestion(true);
+    const res = await submitBroadcastSuggestion(clean, currentUserId, currentUserName);
+    setIsSubmittingSuggestion(false);
+
+    if (res.success) {
+      setUserSuggestionInput('');
+      toast.success('🎉 تم إرسال اقتراحك للإدارة وحفظه في Supabase بنجاح!');
+      loadAnnouncement();
+    } else {
+      toast.error(res.error || 'حدث خطأ أثناء إرسال الاقتراح');
+    }
+  };
+
+  const handleOpenSuggestionsModal = async () => {
+    setShowSuggestionsListModal(true);
+    setIsLoadingSuggestions(true);
+    const list = await fetchBroadcastSuggestions('__global__');
+    setLoadedSuggestions(list);
+    setIsLoadingSuggestions(false);
+  };
+
+  const handleDeleteSuggestionItem = async (sugId: string) => {
+    if (!canManage) return;
+    const ok = await deleteBroadcastSuggestion(sugId);
+    if (ok) {
+      setLoadedSuggestions(prev => prev.filter(s => s.id !== sugId));
+      loadAnnouncement();
+      toast.success('تم حذف الاقتراح');
     }
   };
 
@@ -537,6 +727,7 @@ export const GlobalAnnouncementBar: React.FC<GlobalAnnouncementBarProps> = ({
   }
 
   const isPollMode = announcement.is_poll === true && !!announcement.poll_data;
+  const isQaMode = announcement.is_qa === true && !!announcement.qa_data;
 
   // Active Global Announcement Render
   return (
@@ -562,19 +753,33 @@ export const GlobalAnnouncementBar: React.FC<GlobalAnnouncementBarProps> = ({
               className="p-2 rounded-xl bg-white/10 border border-white/15 shadow-sm shrink-0"
               style={{ boxShadow: `0 0 15px ${activeColor.accentHex}40` }}
             >
-              {isPollMode ? <Vote size={18} style={{ color: activeColor.accentHex }} /> : activeColor.icon}
+              {isQaMode ? (
+                <Lightbulb size={18} style={{ color: activeColor.accentHex }} />
+              ) : isPollMode ? (
+                <Vote size={18} style={{ color: activeColor.accentHex }} />
+              ) : (
+                activeColor.icon
+              )}
             </div>
 
             <div className="flex items-center gap-2 flex-wrap min-w-0">
               {/* Title */}
               <span className={`text-xs md:text-sm font-black tracking-wide ${activeColor.titleColor} flex items-center gap-1.5`}>
-                <span>{announcement.title || (isPollMode ? '🗳️ تصويت عام' : '📢 إشعار عام')}</span>
+                <span>{announcement.title || (isQaMode ? '💡 سؤال ومقترحات الفريق' : isPollMode ? '🗳️ تصويت عام' : '📢 إشعار عام')}</span>
               </span>
 
               {/* Color Label Badge */}
               <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-bold border ${activeColor.badge}`}>
-                {isPollMode ? 'استطلاع رأي مباشر 🗳️' : activeColor.label}
+                {isQaMode ? 'سؤال ومقترحات 💡' : isPollMode ? 'استطلاع رأي مباشر 🗳️' : activeColor.label}
               </span>
+
+              {/* Suggestions count badge for Q&A */}
+              {isQaMode && (
+                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 border border-amber-500/30 text-amber-200">
+                  <MessageSquare size={11} className="text-amber-300" />
+                  <span>{announcement.qa_data?.totalResponses || announcement.qa_data?.suggestions?.length || 0} اقتراح</span>
+                </span>
+              )}
 
               {/* Total votes badge for polls */}
               {isPollMode && (
@@ -623,6 +828,16 @@ export const GlobalAnnouncementBar: React.FC<GlobalAnnouncementBarProps> = ({
                       <span className="hidden md:inline text-[11px] font-bold">تصفير</span>
                     </button>
                   </>
+                )}
+                {isQaMode && (
+                  <button
+                    onClick={handleOpenSuggestionsModal}
+                    className="p-1.5 px-2.5 rounded-lg bg-amber-500/10 hover:bg-amber-500/25 border border-amber-500/20 hover:border-amber-500/40 text-amber-300 transition-all text-xs flex items-center gap-1 cursor-pointer"
+                    title="عرض وإدارة الاقتراحات والإجابات"
+                  >
+                    <MessageSquare size={13} />
+                    <span className="hidden md:inline text-[11px] font-bold">الاقتراحات ({announcement.qa_data?.totalResponses || announcement.qa_data?.suggestions?.length || 0})</span>
+                  </button>
                 )}
                 <button
                   onClick={handleOpenEdit}
@@ -674,9 +889,29 @@ export const GlobalAnnouncementBar: React.FC<GlobalAnnouncementBarProps> = ({
               className="px-6 py-4"
             >
               {/* CASE 1: Standard Text Announcement */}
-              {!isPollMode && (
-                <div className="text-sm md:text-[15px] font-medium text-white/95 leading-relaxed whitespace-pre-wrap select-text">
-                  {announcement.message}
+              {!isPollMode && !isQaMode && (
+                <div className="space-y-4">
+                  <div className="text-sm md:text-[15px] font-medium text-white/95 leading-relaxed whitespace-pre-wrap select-text">
+                    {announcement.message}
+                  </div>
+                  {announcement.imageUrl && (
+                    <div className="relative group inline-block max-w-xl rounded-2xl overflow-hidden border border-white/15 bg-black/40 shadow-2xl">
+                      <img 
+                        src={announcement.imageUrl} 
+                        alt="مرفق التحديث" 
+                        onClick={() => setShowImageLightbox(true)}
+                        className="max-h-[360px] w-auto max-w-full rounded-2xl object-contain cursor-pointer hover:scale-[1.01] hover:brightness-105 transition-all"
+                      />
+                      <button 
+                        type="button"
+                        onClick={() => setShowImageLightbox(true)}
+                        className="absolute bottom-3 left-3 bg-black/80 hover:bg-black text-white px-3 py-1.5 rounded-xl border border-white/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1.5 text-xs font-bold cursor-pointer shadow-lg"
+                      >
+                        <Maximize2 size={13} />
+                        <span>تكبير الصورة</span>
+                      </button>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -688,6 +923,25 @@ export const GlobalAnnouncementBar: React.FC<GlobalAnnouncementBarProps> = ({
                     <span className="text-lg">❓</span>
                     <span className="flex-1">{announcement.poll_data.question}</span>
                   </div>
+
+                  {announcement.imageUrl && (
+                    <div className="relative group inline-block max-w-xl rounded-2xl overflow-hidden border border-white/15 bg-black/40 shadow-2xl my-2">
+                      <img 
+                        src={announcement.imageUrl} 
+                        alt="مرفق استطلاع الرأي" 
+                        onClick={() => setShowImageLightbox(true)}
+                        className="max-h-[300px] w-auto max-w-full rounded-2xl object-contain cursor-pointer hover:scale-[1.01] hover:brightness-105 transition-all"
+                      />
+                      <button 
+                        type="button"
+                        onClick={() => setShowImageLightbox(true)}
+                        className="absolute bottom-3 left-3 bg-black/80 hover:bg-black text-white px-3 py-1.5 rounded-xl border border-white/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1.5 text-xs font-bold cursor-pointer shadow-lg"
+                      >
+                        <Maximize2 size={13} />
+                        <span>تكبير الصورة</span>
+                      </button>
+                    </div>
+                  )}
 
                   {/* Subview 1: User has NOT voted and NOT peeking results -> Show Voting Buttons */}
                   {!hasVoted && !showResultsOverride ? (
@@ -829,6 +1083,87 @@ export const GlobalAnnouncementBar: React.FC<GlobalAnnouncementBarProps> = ({
                 </div>
               )}
 
+              {/* CASE 3: Q&A / Suggestions */}
+              {isQaMode && announcement.qa_data && (
+                <div className="space-y-4">
+                  {/* Question Banner */}
+                  <div className="p-4 rounded-2xl bg-white/[0.04] border border-white/10 shadow-sm flex items-start gap-3">
+                    <div className="w-10 h-10 rounded-2xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center shrink-0 text-amber-300 text-lg shadow-sm">
+                      💡
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-xs font-bold text-amber-300/90 mb-1 flex items-center gap-1.5">
+                        <HelpCircle size={13} />
+                        <span>سؤال الإدارة ومطلوب مشاركة أفكاركم واقتراحاتكم:</span>
+                      </div>
+                      <div className="text-sm md:text-base font-black text-white leading-relaxed select-text">
+                        {announcement.qa_data.question}
+                      </div>
+                      {announcement.imageUrl && (
+                        <div className="relative group inline-block max-w-xl rounded-2xl overflow-hidden border border-white/15 bg-black/40 shadow-2xl mt-3">
+                          <img 
+                            src={announcement.imageUrl} 
+                            alt="مرفق السؤال" 
+                            onClick={() => setShowImageLightbox(true)}
+                            className="max-h-[300px] w-auto max-w-full rounded-2xl object-contain cursor-pointer hover:scale-[1.01] hover:brightness-105 transition-all"
+                          />
+                          <button 
+                            type="button"
+                            onClick={() => setShowImageLightbox(true)}
+                            className="absolute bottom-3 left-3 bg-black/80 hover:bg-black text-white px-3 py-1.5 rounded-xl border border-white/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1.5 text-xs font-bold cursor-pointer shadow-lg"
+                          >
+                            <Maximize2 size={13} />
+                            <span>تكبير الصورة</span>
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Submission Form for all users */}
+                  <form onSubmit={handleSubmitSuggestion} className="space-y-2">
+                    <div className="flex items-center justify-between text-xs text-white/80">
+                      <span className="font-bold flex items-center gap-1.5">
+                        <Lightbulb size={13} className="text-amber-400" />
+                        <span>اكتب إجابتك أو اقتراحك هنا (ستسجل باسمك فوراً):</span>
+                      </span>
+                      <button
+                        type="button"
+                        onClick={handleOpenSuggestionsModal}
+                        className="text-amber-300 hover:text-amber-200 text-[11px] font-bold hover:underline flex items-center gap-1 cursor-pointer transition-colors"
+                      >
+                        <MessageSquare size={12} />
+                        <span>عرض مقترحات الفريق ({announcement.qa_data.totalResponses || announcement.qa_data.suggestions?.length || 0})</span>
+                      </button>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        value={userSuggestionInput}
+                        onChange={(e) => setUserSuggestionInput(e.target.value)}
+                        placeholder="اكتب اقتراحك بوضوح..."
+                        className="flex-1 bg-black/40 border border-white/15 focus:border-amber-400 rounded-xl px-4 py-2.5 text-sm text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-amber-400/30 transition-all font-medium"
+                      />
+                      <button
+                        type="submit"
+                        disabled={isSubmittingSuggestion || !userSuggestionInput.trim()}
+                        className="px-5 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-slate-950 font-black text-xs transition-all shadow-lg shadow-amber-500/20 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2 shrink-0 cursor-pointer"
+                      >
+                        {isSubmittingSuggestion ? (
+                          <span>جاري الإرسال...</span>
+                        ) : (
+                          <>
+                            <span>إرسال</span>
+                            <Send size={13} />
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              )}
+
               {/* Footer with author and timestamp */}
               <div className="mt-3.5 pt-3 border-t border-white/[0.06] flex items-center justify-between text-[11px] text-muted/80 flex-wrap gap-2">
                 <span className="flex items-center gap-1.5">
@@ -841,6 +1176,17 @@ export const GlobalAnnouncementBar: React.FC<GlobalAnnouncementBarProps> = ({
                     <Users size={12} className="text-purple-300" />
                     <span>إجمالي الأصوات: {announcement.poll_data?.totalVotes || 0} مشارك</span>
                   </span>
+                )}
+
+                {isQaMode && (
+                  <button
+                    type="button"
+                    onClick={handleOpenSuggestionsModal}
+                    className="flex items-center gap-1 font-bold text-amber-300 hover:text-amber-200 hover:underline cursor-pointer transition-colors"
+                  >
+                    <MessageSquare size={12} />
+                    <span>إجمالي الاقتراحات: {announcement.qa_data?.totalResponses || announcement.qa_data?.suggestions?.length || 0} اقتراح</span>
+                  </button>
                 )}
 
                 {announcement.updated_at && (
@@ -868,7 +1214,18 @@ export const GlobalAnnouncementBar: React.FC<GlobalAnnouncementBarProps> = ({
             className="px-6 py-2.5 bg-black/20 hover:bg-black/30 cursor-pointer flex items-center justify-between gap-4 text-xs text-white/80 transition-colors"
           >
             <span className="truncate flex-1 font-medium flex items-center gap-2">
-              {isPollMode ? (
+              {announcement.imageUrl && (
+                <span className="px-2 py-0.5 rounded-md bg-white/10 text-white/80 text-[10px] font-bold flex items-center gap-1 shrink-0">
+                  <ImageIcon size={11} />
+                  <span>صورة مرفقة</span>
+                </span>
+              )}
+              {isQaMode ? (
+                <>
+                  <span className="text-amber-400 font-black">💡 [سؤال ومقترحات]:</span>
+                  <span>{announcement.qa_data?.question || announcement.message}</span>
+                </>
+              ) : isPollMode ? (
                 <>
                   <span className="text-purple-400 font-black">🗳️ [تصويت]:</span>
                   <span>{announcement.poll_data?.question || announcement.message}</span>
@@ -889,6 +1246,48 @@ export const GlobalAnnouncementBar: React.FC<GlobalAnnouncementBarProps> = ({
 
       {/* Voters List Modal (Admin/Manager) */}
       {showVotersModal && renderVotersModal()}
+
+      {/* Suggestions List Modal */}
+      {showSuggestionsListModal && renderSuggestionsModal()}
+
+      {/* Full-Screen Image Lightbox Modal */}
+      {showImageLightbox && announcement.imageUrl && (
+        <div 
+          onClick={() => setShowImageLightbox(false)}
+          className="fixed inset-0 z-[20000] flex items-center justify-center p-4 bg-black/90 backdrop-blur-md cursor-pointer animate-fadeIn"
+          dir="rtl"
+        >
+          <div className="relative max-w-5xl max-h-[92vh] flex flex-col items-center" onClick={e => e.stopPropagation()}>
+            <div className="absolute -top-12 left-0 right-0 flex items-center justify-between z-10 px-2">
+              <span className="text-xs text-white/80 font-bold">معاينة الصورة بالحجم الكامل</span>
+              <div className="flex items-center gap-2">
+                <a
+                  href={announcement.imageUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white border border-white/20 transition-all cursor-pointer flex items-center gap-1.5 text-xs font-bold"
+                  title="فتح في تبويب جديد"
+                >
+                  <ExternalLink size={14} />
+                  <span>فتح في تبويب مستقل</span>
+                </a>
+                <button
+                  onClick={() => setShowImageLightbox(false)}
+                  className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white border border-white/20 transition-all cursor-pointer"
+                  title="إغلاق"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+            </div>
+            <img 
+              src={announcement.imageUrl} 
+              alt="صورة مكبرة" 
+              className="max-h-[85vh] max-w-full rounded-2xl border border-white/20 shadow-2xl object-contain bg-black/40"
+            />
+          </div>
+        </div>
+      )}
     </div>
   );
 
@@ -967,6 +1366,112 @@ export const GlobalAnnouncementBar: React.FC<GlobalAnnouncementBarProps> = ({
     );
   }
 
+  // Render Suggestions List Modal (Q&A / Ideas from Supabase)
+  function renderSuggestionsModal() {
+    return (
+      <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fadeIn" dir="rtl">
+        <motion.div
+          initial={{ scale: 0.95, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          exit={{ scale: 0.95, opacity: 0 }}
+          className="bg-[#0f172a] border border-white/20 rounded-3xl p-6 md:p-8 max-w-2xl w-full shadow-2xl relative text-white space-y-4 max-h-[85vh] flex flex-col"
+        >
+          {/* Header */}
+          <div className="flex items-center justify-between border-b border-white/10 pb-4 shrink-0">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-2xl bg-amber-500/20 border border-amber-500/30 text-amber-300 flex items-center justify-center shadow-md">
+                <Lightbulb size={20} />
+              </div>
+              <div>
+                <h3 className="text-base font-black text-white flex items-center gap-2">
+                  <span>سجل المقترحات والإجابات 💡</span>
+                  <span className="text-xs px-2 py-0.5 rounded-full bg-amber-500/20 text-amber-200 border border-amber-500/30">
+                    {loadedSuggestions.length} مشاركة
+                  </span>
+                </h3>
+                <p className="text-xs text-muted truncate max-w-md">
+                  {announcement?.qa_data?.question || 'إجابات وأفكار الفريق المباشرة'}
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => setShowSuggestionsListModal(false)}
+              className="w-8 h-8 rounded-full bg-white/5 hover:bg-white/15 text-muted hover:text-white flex items-center justify-center transition-colors cursor-pointer"
+            >
+              <X size={18} />
+            </button>
+          </div>
+
+          {/* List */}
+          <div className="flex-1 overflow-y-auto space-y-2.5 pr-1 min-h-[200px]">
+            {isLoadingSuggestions ? (
+              <div className="flex flex-col items-center justify-center py-12 text-muted text-xs gap-2">
+                <div className="w-6 h-6 border-2 border-amber-400 border-t-transparent rounded-full animate-spin" />
+                <span>جاري تحميل المقترحات من Supabase...</span>
+              </div>
+            ) : loadedSuggestions.length === 0 ? (
+              <div className="text-center py-12 text-muted text-xs space-y-2">
+                <p className="text-3xl">📭</p>
+                <p className="font-bold text-white/70">لا توجد اقتراحات مسجلة حتى الآن.</p>
+                <p className="text-[11px] text-muted">كن أول من يشارك فكرته أو إجابته على السؤال المطروح!</p>
+              </div>
+            ) : (
+              loadedSuggestions.map((sug) => (
+                <div
+                  key={sug.id}
+                  className="p-3.5 rounded-2xl bg-white/[0.03] hover:bg-white/[0.06] border border-white/10 transition-colors flex items-start justify-between gap-3 group"
+                >
+                  <div className="space-y-1.5 flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-xs font-black text-white/90 flex items-center gap-1.5">
+                        <span className="w-2 h-2 rounded-full bg-amber-400" />
+                        <span>{sug.user_name}</span>
+                      </span>
+                      {sug.created_at && (
+                        <span className="text-[10px] text-muted font-mono">
+                          {new Date(sug.created_at).toLocaleDateString('ar-EG', {
+                            day: 'numeric',
+                            month: 'short',
+                            hour: '2-digit',
+                            minute: '2-digit'
+                          })}
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs md:text-sm text-white/95 leading-relaxed whitespace-pre-wrap select-text font-medium bg-black/20 p-2.5 rounded-xl border border-white/5">
+                      {sug.response}
+                    </p>
+                  </div>
+
+                  {canManage && (
+                    <button
+                      onClick={() => handleDeleteSuggestionItem(sug.id)}
+                      className="p-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/25 text-rose-400 opacity-0 group-hover:opacity-100 transition-all cursor-pointer shrink-0 mt-1"
+                      title="حذف هذا الاقتراح"
+                    >
+                      <Trash2 size={13} />
+                    </button>
+                  )}
+                </div>
+              ))
+            )}
+          </div>
+
+          {/* Footer */}
+          <div className="pt-3 border-t border-white/10 flex items-center justify-between text-xs text-muted shrink-0">
+            <span>💡 مربوط بقاعدة بيانات Supabase وتحديث حي فوراً</span>
+            <button
+              onClick={() => setShowSuggestionsListModal(false)}
+              className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/15 text-white font-bold transition-colors cursor-pointer"
+            >
+              إغلاق
+            </button>
+          </div>
+        </motion.div>
+      </div>
+    );
+  }
+
   // Render Edit / Create Modal
   function renderEditModal() {
     const previewConfig = COLOR_CONFIGS[formColor] || COLOR_CONFIGS.purple;
@@ -986,16 +1491,26 @@ export const GlobalAnnouncementBar: React.FC<GlobalAnnouncementBarProps> = ({
                 className="w-11 h-11 rounded-2xl flex items-center justify-center shadow-lg border border-white/10"
                 style={{ backgroundColor: `${previewConfig.accentHex}25`, color: previewConfig.accentHex }}
               >
-                {announcementKind === 'poll' ? <Vote size={22} /> : <Globe2 size={22} />}
+                {announcementKind === 'qa' ? <Lightbulb size={22} /> : announcementKind === 'poll' ? <Vote size={22} /> : <Globe2 size={22} />}
               </div>
               <div>
                 <h3 className="text-lg font-black text-white flex items-center gap-2">
-                  <span>{announcementKind === 'poll' ? 'إنشاء استطلاع رأي وتصويت' : 'إشعار عام لكل الصفحات'}</span>
+                  <span>
+                    {announcementKind === 'qa'
+                      ? 'طرح سؤال واستقبال اقتراحات الفريق 💡'
+                      : announcementKind === 'poll'
+                        ? 'إنشاء استطلاع رأي وتصويت 🗳️'
+                        : 'إشعار عام لكل الصفحات 📢'}
+                  </span>
                   <span className="text-[10px] px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-300 border border-purple-500/30">
                     Live Broadcast
                   </span>
                 </h3>
-                <p className="text-xs text-muted">سيظهر هذا التحديث في شريط علوي موحد لجميع الصفحات والمستخدمين</p>
+                <p className="text-xs text-muted">
+                  {announcementKind === 'qa'
+                    ? 'سؤال موجه للجميع مع صندوق إدخال فوري وتخزين حي في Supabase'
+                    : 'سيظهر هذا التحديث في شريط علوي موحد لجميع الصفحات والمستخدمين'}
+                </p>
               </div>
             </div>
             <button
@@ -1006,31 +1521,43 @@ export const GlobalAnnouncementBar: React.FC<GlobalAnnouncementBarProps> = ({
             </button>
           </div>
 
-          {/* Mode Switcher Tabs: Standard Text vs Poll */}
-          <div className="grid grid-cols-2 p-1.5 rounded-2xl bg-[#090d16] border border-white/15 gap-1.5">
+          {/* Mode Switcher Tabs: Standard Text vs Poll vs QA */}
+          <div className="grid grid-cols-3 p-1.5 rounded-2xl bg-[#090d16] border border-white/15 gap-1.5">
             <button
               type="button"
               onClick={() => setAnnouncementKind('text')}
-              className={`py-2.5 px-4 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 cursor-pointer ${
+              className={`py-2 px-3 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
                 announcementKind === 'text'
                   ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-lg'
                   : 'text-muted hover:text-white hover:bg-white/5'
               }`}
             >
-              <Megaphone size={15} />
-              <span>إشعار نصي عام (الحالي)</span>
+              <Megaphone size={14} />
+              <span>إشعار نصي</span>
             </button>
             <button
               type="button"
               onClick={() => setAnnouncementKind('poll')}
-              className={`py-2.5 px-4 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-2 cursor-pointer ${
+              className={`py-2 px-3 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
                 announcementKind === 'poll'
                   ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-lg'
                   : 'text-muted hover:text-white hover:bg-white/5'
               }`}
             >
-              <Vote size={15} />
-              <span>تصويت واستطلاع رأي (Poll) 🗳️</span>
+              <Vote size={14} />
+              <span>استطلاع رأي 🗳️</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setAnnouncementKind('qa')}
+              className={`py-2 px-3 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+                announcementKind === 'qa'
+                  ? 'bg-gradient-to-r from-amber-500 to-amber-600 text-slate-950 font-black shadow-lg'
+                  : 'text-muted hover:text-white hover:bg-white/5'
+              }`}
+            >
+              <Lightbulb size={14} />
+              <span>سؤال ومقترحات 💡</span>
             </button>
           </div>
 
@@ -1230,37 +1757,167 @@ export const GlobalAnnouncementBar: React.FC<GlobalAnnouncementBarProps> = ({
               </>
             )}
 
+            {/* CASE C: Q&A / SUGGESTIONS INPUTS */}
+            {announcementKind === 'qa' && (
+              <>
+                {/* Title & QA Presets */}
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <label className="text-xs font-bold text-white/90">عنوان صندوق الأسئلة والمقترحات:</label>
+                    <div className="flex items-center gap-1.5 text-[10px] text-muted overflow-x-auto">
+                      <span>نماذج سريعة:</span>
+                      {[
+                        '💡 سؤال ومقترحات الفريق',
+                        '🎯 عصف ذهني واقتراحات',
+                        '💬 شاركنا رأيك وفكرتك',
+                        '🚀 تطوير بيئة العمل'
+                      ].map((preset) => (
+                        <button
+                          key={preset}
+                          type="button"
+                          onClick={() => setQaTitle(preset)}
+                          className="px-2 py-0.5 rounded-md bg-white/5 hover:bg-white/15 text-white/80 hover:text-white transition-colors cursor-pointer"
+                        >
+                          {preset}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <input
+                    type="text"
+                    value={qaTitle}
+                    onChange={(e) => setQaTitle(e.target.value)}
+                    placeholder="عنوان السؤال..."
+                    className="w-full bg-[#090d16] border border-white/15 focus:border-amber-400 rounded-xl px-4 py-2.5 text-sm text-white focus:outline-none focus:ring-2 focus:ring-amber-400/30 transition-all font-bold"
+                  />
+                </div>
+
+                {/* QA Question Prompt */}
+                <div>
+                  <label className="block text-xs font-bold text-white/90 mb-2">
+                    السؤال أو الموضوع المطلوب جمع اقتراحات وأفكار حوله:
+                  </label>
+                  <textarea
+                    value={qaQuestion}
+                    onChange={(e) => setQaQuestion(e.target.value)}
+                    placeholder="مثال: ما هي اقتراحاتكم لتحسين تسليمات ريلز شهر أكتوبر؟ اكتبوا أفكاركم..."
+                    rows={3}
+                    className="w-full bg-[#090d16] border border-white/15 focus:border-amber-400 rounded-xl p-3 text-sm text-white focus:outline-none focus:ring-2 focus:ring-amber-400/30 transition-all resize-none leading-relaxed font-medium"
+                    autoFocus
+                  />
+                  <p className="text-[11px] text-muted mt-1.5">
+                    ✨ سيظهر صندوق إدخال فوري للجميع، وتُسجّل ردود الأعضاء في Supabase مع أسمائهم وتحديث فوري.
+                  </p>
+                </div>
+              </>
+            )}
+
+            {/* Image Attachment (Optional) */}
+            <div className="p-4 rounded-2xl bg-[#090d16] border border-white/15 space-y-3">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-bold text-white/90 flex items-center gap-2">
+                  <ImageIcon size={16} className="text-purple-400" />
+                  <span>إرفاق صورة بالتحديث / الإعلان (اختياري):</span>
+                </label>
+                {formImageUrl && (
+                  <button
+                    type="button"
+                    onClick={() => setFormImageUrl('')}
+                    className="text-xs text-rose-400 hover:text-rose-300 font-bold flex items-center gap-1 cursor-pointer transition-colors"
+                  >
+                    <Trash2 size={13} />
+                    <span>إزالة الصورة</span>
+                  </button>
+                )}
+              </div>
+
+              <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+                <input
+                  type="url"
+                  value={formImageUrl}
+                  onChange={(e) => setFormImageUrl(e.target.value)}
+                  placeholder="ضع رابط الصورة هنا (URL) أو ارفع من جهازك..."
+                  className="flex-1 bg-black/40 border border-white/15 focus:border-purple-500 rounded-xl px-3.5 py-2.5 text-xs text-white placeholder-white/40 focus:outline-none transition-all font-mono"
+                  dir="ltr"
+                />
+                <label className="px-4 py-2.5 rounded-xl bg-purple-500/20 hover:bg-purple-500/30 text-purple-300 border border-purple-500/30 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shrink-0">
+                  <Upload size={14} />
+                  <span>رفع من الجهاز</span>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={handleImageFileUpload}
+                  />
+                </label>
+              </div>
+
+              {formImageUrl && (
+                <div className="relative rounded-2xl overflow-hidden border border-white/15 max-h-52 bg-black/50 flex items-center justify-center p-2">
+                  <img
+                    src={formImageUrl}
+                    alt="معاينة الصورة المرفقة"
+                    className="max-h-48 rounded-xl object-contain shadow-lg"
+                  />
+                </div>
+              )}
+            </div>
+
             {/* Live Preview Box */}
             <div>
               <div className="text-[11px] font-bold text-muted mb-2 flex items-center gap-1.5">
                 <Sparkles size={12} className="text-amber-400" />
-                <span>معاينة حية لشكل {announcementKind === 'poll' ? 'التصويت' : 'الإشعار'} بالألوان المختارة:</span>
+                <span>
+                  معاينة حية لشكل {announcementKind === 'qa' ? 'صندوق السؤال والمقترحات' : announcementKind === 'poll' ? 'التصويت' : 'الإشعار'} بالألوان المختارة:
+                </span>
               </div>
               <div className={`p-4 rounded-2xl border ${previewConfig.bg} ${previewConfig.border} ${previewConfig.glow} transition-all`}>
                 <div className="flex items-center justify-between gap-2 border-b border-white/10 pb-2 mb-2">
                   <div className="flex items-center gap-2">
                     <div className="p-1 rounded-lg bg-white/10">
-                      {announcementKind === 'poll' ? <Vote size={14} style={{ color: previewConfig.accentHex }} /> : previewConfig.icon}
+                      {announcementKind === 'qa' ? (
+                        <Lightbulb size={14} style={{ color: previewConfig.accentHex }} />
+                      ) : announcementKind === 'poll' ? (
+                        <Vote size={14} style={{ color: previewConfig.accentHex }} />
+                      ) : (
+                        previewConfig.icon
+                      )}
                     </div>
                     <span className={`text-xs font-bold ${previewConfig.titleColor}`}>
-                      {announcementKind === 'poll' ? (pollTitle || '🗳️ تصويت الفريق') : (formTitle || '📢 إشعار عام')}
+                      {announcementKind === 'qa'
+                        ? (qaTitle || '💡 سؤال ومقترحات الفريق')
+                        : announcementKind === 'poll'
+                          ? (pollTitle || '🗳️ تصويت الفريق')
+                          : (formTitle || '📢 إشعار عام')}
                     </span>
                     <span className={`px-2 py-0.2 rounded-full text-[9px] font-bold border ${previewConfig.badge}`}>
-                      {announcementKind === 'poll' ? 'تصويت مباشر' : previewConfig.label}
+                      {announcementKind === 'qa' ? 'سؤال ومقترحات' : announcementKind === 'poll' ? 'تصويت مباشر' : previewConfig.label}
                     </span>
                   </div>
                   <span className="text-[10px] text-muted">معاينة قبل النشر</span>
                 </div>
 
                 {announcementKind === 'text' ? (
-                  <p className="text-xs text-white/90 leading-relaxed whitespace-pre-wrap">
-                    {formMessage || 'هنا سيظهر نص الإشعار العام الذي تكتبه فوراً لجميع أعضاء الفريق...'}
-                  </p>
-                ) : (
+                  <div className="space-y-3">
+                    <p className="text-xs text-white/90 leading-relaxed whitespace-pre-wrap">
+                      {formMessage || 'هنا سيظهر نص الإشعار العام الذي تكتبه فوراً لجميع أعضاء الفريق...'}
+                    </p>
+                    {formImageUrl && (
+                      <div className="rounded-xl overflow-hidden border border-white/15 max-h-40 bg-black/40 flex items-center justify-center p-1">
+                        <img src={formImageUrl} alt="معاينة" className="max-h-36 rounded-lg object-contain" />
+                      </div>
+                    )}
+                  </div>
+                ) : announcementKind === 'poll' ? (
                   <div className="space-y-2">
                     <p className="text-xs font-black text-white">
                       {pollQuestion || 'سؤال التصويت سيظهر هنا بشكل بارز...'}
                     </p>
+                    {formImageUrl && (
+                      <div className="rounded-xl overflow-hidden border border-white/15 max-h-36 bg-black/40 flex items-center justify-center p-1">
+                        <img src={formImageUrl} alt="معاينة" className="max-h-32 rounded-lg object-contain" />
+                      </div>
+                    )}
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 pt-1">
                       {pollOptions.map((o, idx) => (
                         <div key={o.id} className="p-2.5 rounded-xl bg-white/5 border border-white/10 text-xs font-bold text-white/80 flex items-center gap-2">
@@ -1270,6 +1927,26 @@ export const GlobalAnnouncementBar: React.FC<GlobalAnnouncementBarProps> = ({
                           <span className="truncate">{o.text || `خيار ${idx + 1}`}</span>
                         </div>
                       ))}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    <div className="p-3 rounded-xl bg-white/5 border border-white/10 text-xs font-bold text-white flex items-center gap-2">
+                      <span className="text-amber-400 font-black">❓ السؤال:</span>
+                      <span className="truncate">{qaQuestion || 'اكتب السؤال هنا...'}</span>
+                    </div>
+                    {formImageUrl && (
+                      <div className="rounded-xl overflow-hidden border border-white/15 max-h-36 bg-black/40 flex items-center justify-center p-1">
+                        <img src={formImageUrl} alt="معاينة" className="max-h-32 rounded-lg object-contain" />
+                      </div>
+                    )}
+                    <div className="flex items-center gap-2 opacity-70">
+                      <div className="flex-1 bg-black/40 border border-white/10 rounded-lg px-3 py-1.5 text-xs text-muted">
+                        اكتب اقتراحك هنا...
+                      </div>
+                      <div className="px-3 py-1.5 rounded-lg bg-amber-500/40 text-[10px] font-bold text-white">
+                        إرسال
+                      </div>
                     </div>
                   </div>
                 )}
@@ -1285,7 +1962,7 @@ export const GlobalAnnouncementBar: React.FC<GlobalAnnouncementBarProps> = ({
                   className="px-4 py-2.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-300 border border-rose-500/30 hover:border-rose-500/50 text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"
                 >
                   <Trash2 size={14} />
-                  <span>حذف {announcement.is_poll ? 'التصويت' : 'الإشعار'}</span>
+                  <span>حذف {announcement.is_qa ? 'السؤال' : announcement.is_poll ? 'التصويت' : 'الإشعار'}</span>
                 </button>
               ) : (
                 <div />
@@ -1309,7 +1986,11 @@ export const GlobalAnnouncementBar: React.FC<GlobalAnnouncementBarProps> = ({
                   ) : (
                     <>
                       <span>
-                        {announcementKind === 'poll' ? 'نشر استطلاع الرأي والتصويت 🗳️' : 'نشر الإشعار العام لجميع المستخدمين 🚀'}
+                        {announcementKind === 'qa'
+                          ? 'نشر السؤال وفتح باب الاقتراحات 💡'
+                          : announcementKind === 'poll'
+                            ? 'نشر استطلاع الرأي والتصويت 🗳️'
+                            : 'نشر الإشعار العام لجميع المستخدمين 🚀'}
                       </span>
                     </>
                   )}

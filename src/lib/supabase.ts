@@ -76,6 +76,10 @@ export const PERMISSIONS = {
             (lowerTab === 'operations' || lowerTab === 'op 25/26' || lowerTab === 'op 25 / 26')) {
           return true;
         }
+        if ((lowerTab === 'calendar' || lowerTab === 'التقويم' || lowerTab === 'الكالندر' || lowerTab.includes('calendar')) && 
+            (lowerT === 'calendar' || lowerT === 'التقويم' || lowerT === 'الكالندر' || lowerT.includes('calendar'))) {
+          return true;
+        }
         return false;
       });
     }

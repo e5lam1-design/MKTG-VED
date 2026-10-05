@@ -173,3 +173,56 @@ body {
 .chip-base {
   @apply px-4 py-1.5 rounded-full text-[10px] font-extrabold uppercase tracking-[0.1em] border transition-all duration-300 shadow-sm inline-block whitespace-nowrap;
 }
+
+/* ========================================================
+   CANCELED ROW STRIKETHROUGH & STYLING
+======================================================== */
+.canceled-row {
+  opacity: 0.78 !important;
+  background-color: rgba(239, 68, 68, 0.09) !important;
+  border-color: rgba(239, 68, 68, 0.3) !important;
+}
+
+.canceled-row:hover {
+  opacity: 0.95 !important;
+  background-color: rgba(239, 68, 68, 0.14) !important;
+}
+
+/* Red strikethrough line crossing through text across all elements in canceled rows */
+.canceled-row td,
+.canceled-row td span:not(.no-strike):not(.cancel-btn-icon),
+.canceled-row td p,
+.canceled-row td a,
+.canceled-row td input,
+.canceled-row td textarea,
+.canceled-row td button:not(.cancel-action-btn) span,
+.canceled-row td button:not(.cancel-action-btn) div,
+.canceled-row .chip-base,
+.canceled-row .strike-target {
+  text-decoration: line-through !important;
+  text-decoration-color: #ef4444 !important;
+  text-decoration-thickness: 2.5px !important;
+}
+
+/* Ensure the cancel toggle button itself is clean and not crossed out */
+.canceled-row button.cancel-action-btn,
+.canceled-row button.cancel-action-btn *,
+.canceled-row button[title*="ملغي"],
+.canceled-row button[title*="كنسل"],
+.canceled-row button[title*="Cancel"],
+.canceled-row .no-strike {
+  text-decoration: none !important;
+}
+
+/* Disable interactions on canceled row fields so nobody accidentally works on them */
+.canceled-row td:not(.cancel-cell) input,
+.canceled-row td:not(.cancel-cell) textarea,
+.canceled-row td:not(.cancel-cell) select,
+.canceled-row td:not(.cancel-cell) a,
+.canceled-row td:not(.cancel-cell) button:not(.cancel-action-btn) {
+  pointer-events: none !important;
+  opacity: 0.55 !important;
+  cursor: not-allowed !important;
+}
+
+

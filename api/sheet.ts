@@ -101,9 +101,71 @@ const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.
 const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
-  // Allow CORS for local dev
+  // Allow CORS
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
+
+  // Google Calendar Sync Handler (merged to stay within Vercel Hobby 12 serverless function limit)
+  if (req.query.action === 'gcal-sync' || req.body?.action === 'gcal-sync' || req.url?.includes('google-calendar-sync')) {
+    try {
+      const rawUrl = req.method === 'POST' ? req.body?.url : req.query?.url;
+      const url = typeof rawUrl === 'string' ? rawUrl.trim() : '';
+
+      if (!url || !url.startsWith('http')) {
+        return res.status(400).json({ error: 'يرجى إدخال رابط تقويم Google صالح يبدأ بـ http أو https' });
+      }
+
+      const parsed = new URL(url);
+      const host = parsed.hostname.toLowerCase();
+      if (host === 'localhost' || host === '127.0.0.1' || host.startsWith('192.168.') || host.startsWith('10.')) {
+        return res.status(400).json({ error: 'عفواً، لا يمكن استدعاء عناوين الشبكة المحلية.' });
+      }
+
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 15000);
+
+      const gcalResp = await fetch(url, {
+        method: 'GET',
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+          'Accept': 'text/calendar, text/plain, */*'
+        },
+        signal: controller.signal
+      });
+
+      clearTimeout(timeout);
+
+      if (!gcalResp.ok) {
+        return res.status(gcalResp.status).json({
+          error: `تعذر جلب التقويم من Google (كود الخطأ ${gcalResp.status}: ${gcalResp.statusText}). تأكد من صحة الرابط وأنه "العنوان السري بتنسيق iCal" أو تقويم عام.`
+        });
+      }
+
+      const icsText = await gcalResp.text();
+
+      if (!icsText || !icsText.includes('BEGIN:VCALENDAR')) {
+        return res.status(400).json({
+          error: 'الرابط لا يحتوي على بيانات تقويم Google صالحة (لم يتم العثور على BEGIN:VCALENDAR). تأكد من نسخ رابط iCal (ينتهي بـ .ics).'
+        });
+      }
+
+      return res.status(200).json({
+        success: true,
+        ics: icsText,
+        bytes: icsText.length
+      });
+    } catch (err: any) {
+      console.error('Google Calendar Sync Error:', err);
+      return res.status(500).json({
+        error: `حدث خطأ أثناء الاتصال بتقويم Google: ${err.message || 'خطأ غير معروف'}`
+      });
+    }
+  }
 
   const { gid } = req.query;
   if (!gid) {

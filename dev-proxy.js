@@ -1022,6 +1022,62 @@ function detectImportColumnMapping(headers) {
   return mapping;
 }
 
+app.all('/api/google-calendar-sync', async (req, res) => {
+  try {
+    const rawUrl = req.method === 'POST' ? req.body?.url : req.query?.url;
+    const url = typeof rawUrl === 'string' ? rawUrl.trim() : '';
+
+    if (!url || !url.startsWith('http')) {
+      return res.status(400).json({ error: 'يرجى إدخال رابط تقويم Google صالح يبدأ بـ http أو https' });
+    }
+
+    const parsed = new URL(url);
+    const host = parsed.hostname.toLowerCase();
+    if (host === 'localhost' || host === '127.0.0.1' || host.startsWith('192.168.') || host.startsWith('10.')) {
+      return res.status(400).json({ error: 'عفواً، لا يمكن استدعاء عناوين الشبكة المحلية.' });
+    }
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 15000);
+
+    const gcalResp = await fetch(url, {
+      method: 'GET',
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/calendar, text/plain, */*'
+      },
+      signal: controller.signal
+    });
+
+    clearTimeout(timeout);
+
+    if (!gcalResp.ok) {
+      return res.status(gcalResp.status).json({
+        error: `تعذر جلب التقويم من Google (كود الخطأ ${gcalResp.status}: ${gcalResp.statusText}). تأكد من صحة الرابط وأنه "العنوان السري بتنسيق iCal" أو تقويم عام.`
+      });
+    }
+
+    const icsText = await gcalResp.text();
+
+    if (!icsText || !icsText.includes('BEGIN:VCALENDAR')) {
+      return res.status(400).json({
+        error: 'الرابط لا يحتوي على بيانات تقويم Google صالحة (لم يتم العثور على BEGIN:VCALENDAR). تأكد من نسخ رابط iCal (ينتهي بـ .ics).'
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      ics: icsText,
+      bytes: icsText.length
+    });
+  } catch (err) {
+    console.error('Google Calendar Sync Dev Proxy Error:', err);
+    return res.status(500).json({
+      error: `حدث خطأ أثناء الاتصال بتقويم Google: ${err.message || 'خطأ غير معروف'}`
+    });
+  }
+});
+
 app.post('/api/google-sheet-import', async (req, res) => {
   try {
     const { action, url, csvText, tabName, gid: requestedGid, rowsToImport, targetSpreadsheetId } = req.body || {};

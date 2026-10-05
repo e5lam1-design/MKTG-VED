@@ -55,7 +55,9 @@ import {
   Home,
   Calendar,
   Send,
-  Loader2
+  Loader2,
+  HardDrive,
+  AlertTriangle
 } from 'lucide-react';
 import { useGoogleSheets } from './hooks/useGoogleSheets';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
@@ -67,6 +69,7 @@ import DesignersDashboard from './components/DesignersDashboard';
 import { DesignAnalytics } from './components/DesignAnalytics';
 import { DesignersTeamManagement } from './components/DesignersTeamManagement';
 import { EditorsManagement } from './components/EditorsManagement';
+import { StudioCalendarView } from './components/StudioCalendarView';
 import { useEditorsOptions, getGlobalEditorColor } from './hooks/useEditorsOptions';
 import { Op27View, getTargetStage26 } from './components/Op27View';
 import { PageAnnouncementBar } from './components/PageAnnouncementBar';
@@ -80,7 +83,7 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { GoogleSheetImportModal } from './components/GoogleSheetImportModal';
 import { sortTasksByChunkAscending, sortMultiLineLessonName, sortCombinedFilingName } from './lib/chunkSort';
 import { supabase, PERMISSIONS, ROLE_LABELS, ROLE_COLORS, DEFAULT_ROLE_PERMISSIONS, setRuntimeRolePermissions } from './lib/supabase';
-import { notifyTaskCompleted, notifyTaskEditRequested, getUserTelegramChatId } from './lib/telegram';
+import { notifyTaskCompleted, notifyTaskEditRequested, getUserTelegramChatId, notifyHardDriveRequest, notifyHardDriveDecision } from './lib/telegram';
 
 
 const yearLabels: Record<string, string> = {
@@ -119,6 +122,11 @@ function parseDriveLink(val: string) {
       url = 'https://' + url;
     }
     return { url, text };
+  }
+
+  // Hard Drive local delivery exception
+  if (s.includes('هارد') || s.toLowerCase().includes('hard')) {
+    return { url: '', text: s, isHardDrive: true };
   }
   
   let url = s;
@@ -1017,6 +1025,7 @@ const SidebarItem = ({
   isPinned, 
   onTogglePin, 
   badgeCount, 
+  missingDetailsCount,
   showDoneGreenBadge 
 }: any) => {
   const cHex = colorHex || '#3b82f6';
@@ -1038,6 +1047,7 @@ const SidebarItem = ({
         : { backgroundColor: `rgba(255,255,255,0.05)`, color: '#94a3b8' });
 
   const hasPending = typeof badgeCount === 'number' && badgeCount > 0;
+  const hasMissing = typeof missingDetailsCount === 'number' && missingDetailsCount > 0;
   const isAllDone = showDoneGreenBadge && typeof badgeCount === 'number' && badgeCount === 0;
 
   return (
@@ -1055,47 +1065,76 @@ const SidebarItem = ({
       </div>
       <span className="font-bold text-sm tracking-tight truncate text-left text-white flex-1">{label}</span>
       
-      {/* Dynamic Task Badge: Red count for pending, Glowing Green Check for 100% Done */}
-      <AnimatePresence mode="wait">
-        {hasPending ? (
-          <motion.span 
-            key="badge-pending"
-            initial={{ scale: 0.6, opacity: 0 }}
-            animate={{ scale: 1, opacity: 1 }}
-            exit={{ scale: 0.5, opacity: 0 }}
-            transition={{ type: 'spring', stiffness: 500, damping: 25 }}
-            className="px-2 py-0.5 min-w-[22px] h-[22px] rounded-full bg-rose-500 text-white text-[11px] font-mono font-black flex items-center justify-center shadow-[0_0_12px_rgba(244,63,94,0.7)] border border-rose-400/40 shrink-0"
-            title={`${badgeCount} مهام متبقية`}
-          >
-            {badgeCount}
-          </motion.span>
-        ) : isAllDone ? (
-          <motion.span
-            key="badge-done"
-            initial={{ scale: 0, rotate: -25, opacity: 0 }}
-            animate={{ 
-              scale: [0, 1.35, 0.9, 1.08, 1], 
-              rotate: [-25, 8, -4, 0],
-              opacity: 1
-            }}
-            exit={{ scale: 0.5, opacity: 0 }}
-            transition={{ duration: 0.55, ease: 'easeOut' }}
-            className="relative flex items-center justify-center shrink-0"
-            title="اكتملت جميع المهام (All Done)! 🎉"
-          >
-            {/* Celebratory Reward Ripple Ring */}
+      {/* Badges Container: Amber badge for missing details + Red badge for pending / Green checkmark for done */}
+      <div className="flex items-center gap-1.5 shrink-0">
+        <AnimatePresence>
+          {hasMissing && (
+            <motion.span 
+              key="badge-missing"
+              initial={{ scale: 0.6, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.5, opacity: 0 }}
+              transition={{ type: 'spring', stiffness: 500, damping: 25 }}
+              className="px-2 py-0.5 min-w-[22px] h-[22px] rounded-full bg-amber-500 text-slate-950 text-[11px] font-mono font-black flex items-center justify-center shadow-[0_0_12px_rgba(245,158,11,0.85)] border border-amber-300/60 shrink-0"
+              title={`${missingDetailsCount} مهام بها تفاصيل ناقصة ⚠️`}
+            >
+              {missingDetailsCount}
+            </motion.span>
+          )}
+        </AnimatePresence>
+
+        <AnimatePresence mode="wait">
+          {hasPending ? (
+            <motion.span 
+              key="badge-pending"
+              initial={{ scale: 0.6, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.5, opacity: 0 }}
+              transition={{ type: 'spring', stiffness: 500, damping: 25 }}
+              className="px-2 py-0.5 min-w-[22px] h-[22px] rounded-full bg-rose-500 text-white text-[11px] font-mono font-black flex items-center justify-center shadow-[0_0_12px_rgba(244,63,94,0.7)] border border-rose-400/40 shrink-0"
+              title={`${badgeCount} مهام متبقية للعمل عليها`}
+            >
+              {badgeCount}
+            </motion.span>
+          ) : isAllDone ? (
             <motion.span
-              initial={{ scale: 0.8, opacity: 0.8 }}
-              animate={{ scale: [1, 1.85, 2.3], opacity: [0.8, 0.35, 0] }}
-              transition={{ duration: 0.8, ease: 'easeOut' }}
-              className="absolute inset-0 rounded-full bg-emerald-400 pointer-events-none"
-            />
-            <span className="w-[22px] h-[22px] rounded-full bg-gradient-to-tr from-emerald-600 to-emerald-400 text-white flex items-center justify-center shadow-[0_0_14px_rgba(16,185,129,0.85)] border border-emerald-300/50 relative z-10">
-              <Check size={12} strokeWidth={3.5} className="text-white drop-shadow-sm" />
-            </span>
-          </motion.span>
-        ) : null}
-      </AnimatePresence>
+              key="badge-done"
+              initial={{ scale: 0, rotate: -25, opacity: 0 }}
+              animate={{ 
+                scale: [0, 1.35, 0.9, 1.08, 1], 
+                rotate: [-25, 8, -4, 0],
+                opacity: 1
+              }}
+              exit={{ scale: 0.5, opacity: 0 }}
+              transition={{ duration: 0.55, ease: 'easeOut' }}
+              className="relative flex items-center justify-center shrink-0"
+              title="اكتملت جميع المهام (All Done)! 🎉"
+            >
+              {/* Celebratory Reward Ripple Ring */}
+              <motion.span
+                initial={{ scale: 0.8, opacity: 0.8 }}
+                animate={{ scale: [1, 1.85, 2.3], opacity: [0.8, 0.35, 0] }}
+                transition={{ duration: 0.8, ease: 'easeOut' }}
+                className="absolute inset-0 rounded-full bg-emerald-400 pointer-events-none"
+              />
+              <span className="w-[22px] h-[22px] rounded-full bg-gradient-to-tr from-emerald-600 to-emerald-400 text-white flex items-center justify-center shadow-[0_0_14px_rgba(16,185,129,0.85)] border border-emerald-300/50 relative z-10">
+                <Check size={12} strokeWidth={3.5} className="text-white drop-shadow-sm" />
+              </span>
+            </motion.span>
+          ) : typeof badgeCount === 'number' ? (
+            <motion.span
+              key="badge-zero"
+              initial={{ scale: 0.6, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.5, opacity: 0 }}
+              className="w-[22px] h-[22px] rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center justify-center shrink-0 shadow-[0_0_8px_rgba(16,185,129,0.2)]"
+              title="0 مهام متبقية"
+            >
+              <Check size={12} strokeWidth={3.5} className="text-emerald-400" />
+            </motion.span>
+          ) : null}
+        </AnimatePresence>
+      </div>
 
       {onTogglePin && (
         <span
@@ -1119,7 +1158,7 @@ const SidebarItem = ({
 };
 
 // ─── Collapsible Sidebar Group ────────────────────────────────────────────────
-const SidebarGroup = ({ title, iconEmoji, colorHex, stagesList, activeGid, onSelectStage, pinnedTabs, togglePinTab, colorful, profile, stageUncompletedCounts }: any) => {
+const SidebarGroup = ({ title, iconEmoji, colorHex, stagesList, activeGid, onSelectStage, pinnedTabs, togglePinTab, colorful, profile, stageUncompletedCounts, stageMissingDetailsCounts }: any) => {
   const visibleStages = stagesList.filter((stage: any) =>
     !profile?.role || PERMISSIONS.canViewTab(profile.role, stage.label, profile.allowed_tabs || [])
   );
@@ -1171,6 +1210,7 @@ const SidebarGroup = ({ title, iconEmoji, colorHex, stagesList, activeGid, onSel
                 colorful={colorful}
                 active={activeGid === stage.gid}
                 badgeCount={STAGE_WITH_BADGE_MAP[stage.gid] ? stageUncompletedCounts?.[stage.gid] : undefined}
+                missingDetailsCount={STAGE_WITH_BADGE_MAP[stage.gid] ? stageMissingDetailsCounts?.[stage.gid] : undefined}
                 showDoneGreenBadge={GREEN_DONE_BADGE_GIDS.has(stage.gid)}
                 isPinned={pinnedTabs.includes(stage.gid)}
                 onTogglePin={() => togglePinTab(stage.gid)}
@@ -1781,6 +1821,9 @@ const TagmeRow = ({
   const { profile } = useAuth();
   const done = statusOverride?.done === true || item.done === true || String(item.done) === 'true';
   const cancel = statusOverride?.cancel === true || item.cancel === true || String(item.cancel) === 'true';
+  const isMissing = statusOverride?.missingDetails !== undefined
+    ? statusOverride.missingDetails === true
+    : (item.missingDetails === true || item.missing_details === true || cancel);
   const priority = !done && (priorityOverride === true || item.priority === true || String(item.priority) === 'true');
   const [copied, setCopied] = useState(false);
 
@@ -1854,7 +1897,7 @@ const TagmeRow = ({
             ? 'bg-emerald-500/[0.03]' 
             : priority 
               ? 'bg-purple-600/[0.05]' 
-              : cancel 
+              : isMissing 
                 ? 'bg-amber-500/[0.03]' 
                 : ''
       }`}
@@ -1873,7 +1916,7 @@ const TagmeRow = ({
                 ? 'bg-emerald-500 shadow-[0_0_12px_rgba(16,185,129,0.6)]' 
                 : priority 
                 ? 'bg-purple-600 shadow-[0_0_16px_rgba(147,51,234,0.9)] animate-pulse' 
-                : cancel 
+                : isMissing 
                 ? 'bg-amber-500 shadow-[0_0_12px_rgba(245,158,11,0.6)]' 
                 : 'bg-white/15'
             }`} />
@@ -2040,17 +2083,17 @@ const TagmeRow = ({
           </button>
           <button
             onClick={() => {
-              const newCancel = !cancel;
+              const newMissing = !isMissing;
               if (onStatusChange) {
-                onStatusChange(item.uniqueKey || generateKey(item), item.name, item.editor || '', newCancel ? 'cancel' : 'uncancel');
+                onStatusChange(item.uniqueKey || generateKey(item), item.name, item.editor || '', newMissing ? 'missing_details' : 'unmissing_details');
               }
             }}
             className={`w-11 h-11 rounded-2xl flex items-center justify-center transition-all duration-300 cursor-pointer ${
-              cancel 
+              isMissing 
                 ? 'bg-amber-500 text-white shadow-lg shadow-amber-500/20 scale-105' 
                 : 'bg-white/5 text-muted hover:bg-amber-500/10 hover:text-amber-400 hover:scale-105 active:scale-95'
             }`}
-            title="Cancel"
+            title={isMissing ? "إلغاء تفاصيل ناقصة" : "تفاصيل ناقصة"}
           >
             <AlertCircle size={20} />
           </button>
@@ -2729,11 +2772,26 @@ const ShootingRow = ({ item, index, activeGid, onToggleFilmed, loadingFilmedCode
   const [isEditingFinal, setIsEditingFinal] = useState(false);
   const [copied, setCopied] = useState(false);
   const [optimisticDone, setOptimisticDone] = useState<boolean | null>(null);
+  const [optimisticCanceled, setOptimisticCanceled] = useState<boolean | null>(null);
+  const [optimisticMissing, setOptimisticMissing] = useState<boolean | null>(null);
+  const [optimisticHardDriveStatus, setOptimisticHardDriveStatus] = useState<string | null | undefined>(undefined);
   const { profile } = useAuth();
 
   useEffect(() => {
     setOptimisticDone(null);
   }, [item.done]);
+
+  useEffect(() => {
+    setOptimisticCanceled(null);
+  }, [item.canceled]);
+
+  useEffect(() => {
+    setOptimisticMissing(null);
+  }, [item.missingDetails, item.missing_details]);
+
+  useEffect(() => {
+    setOptimisticHardDriveStatus(undefined);
+  }, [item.hardDriveStatus]);
 
   // Sync editForm if item changes from outside (e.g. after save or realtime sync)
   useEffect(() => {
@@ -2813,15 +2871,81 @@ const ShootingRow = ({ item, index, activeGid, onToggleFilmed, loadingFilmedCode
       }
     }
 
-    // Done status logic: if fieldName is 'driveFinal' and the value is empty/invalid,
-    // we automatically uncheck done for everyone!
+    // Done status logic: if fieldName is 'driveFinal', automatically set done=true when a valid final link is added, or uncheck done if cleared/invalid!
     let nextDoneStatus = item.done;
-    if (fieldName === 'driveFinal' && item.done) {
+    let nextHardDriveStatus: string | null | undefined = undefined; // undefined = unchanged
+    const isPrivileged = profile?.role === 'admin' || profile?.role === 'manager' || profile?.role === 'supervisor';
+
+    if (fieldName === 'driveFinal') {
       const val = String(value || '').trim();
       const driveIdRegex = /^[a-zA-Z0-9_-]{25,55}$/;
-      const isValidLink = val && (val.toLowerCase() === 'تم' || val.includes('http://') || val.includes('https://') || val.includes('drive.google.com') || val.includes('docs.google.com') || driveIdRegex.test(val));
-      if (!isValidLink) {
+      const isHardDrive = val.includes('هارد') || val.toLowerCase().includes('hard');
+      const isValidLink = Boolean(
+        val && (
+          isHardDrive ||
+          val.toLowerCase() === 'تم' || 
+          val.includes('http://') || 
+          val.includes('https://') || 
+          val.includes('drive.google.com') || 
+          val.includes('docs.google.com') || 
+          val.includes('mega.nz') ||
+          val.includes('dropbox.com') ||
+          driveIdRegex.test(val) ||
+          (val.length >= 10 && (val.includes('.') && (val.includes('/') || val.includes(':'))))
+        )
+      );
+
+      if (isValidLink) {
+        if (isHardDrive && !isPrivileged) {
+          // Non-privileged: create pending request, CANNOT be marked Done yet!
+          nextDoneStatus = false;
+          setOptimisticDone(false);
+          nextHardDriveStatus = 'pending';
+          setOptimisticHardDriveStatus('pending');
+          if (toast && toast.info) {
+            toast.info('تم إرسال طلب التسليم على الهارد! ⏳💾 — لن تُعتبر المهمة مكتملة إلا بعد موافقة المشرف');
+          }
+          // Notify admins/supervisors via Telegram (fire and forget)
+          const tbl = activeGid === '0' ? 'reels_cuts_26' : 'reels_ve_26';
+          const taskCode = item.code || item.id || '';
+          const sourceSheet = activeGid === '1939073164' ? 'Reels (Ve)' : 'Cuts';
+          getUserTelegramChatId(profile?.id, profile?.name).then(async (myChatId) => {
+            // Notify admin
+            const adminChatId = await getUserTelegramChatId(undefined, 'admin') || await getUserTelegramChatId(undefined, 'eslam');
+            if (adminChatId) {
+              notifyHardDriveRequest({
+                chatId: adminChatId,
+                taskCode,
+                taskTitle: item.script || item.extraName || taskCode,
+                sourceSheet,
+                editorName: profile?.name || item.editorCol || item.editor || 'غير محدد'
+              }).catch(console.error);
+            }
+          }).catch(console.error);
+        } else if (isHardDrive && isPrivileged) {
+          // Privileged: direct done approved
+          nextDoneStatus = true;
+          setOptimisticDone(true);
+          nextHardDriveStatus = 'approved';
+          setOptimisticHardDriveStatus('approved');
+          if (toast && toast.success) {
+            toast.success('تم اعتماد التسليم على الهارد وتحديد المهمة كـ Done! 💾✅');
+          }
+        } else {
+          // Valid Drive Link: direct done
+          nextDoneStatus = true;
+          setOptimisticDone(true);
+          nextHardDriveStatus = null;
+          setOptimisticHardDriveStatus(null);
+          if (toast && toast.success) {
+            toast.success('تم حفظ رابط الفاينال وتحديد المهمة كـ Done تلقائياً! 🎉');
+          }
+        }
+      } else {
         nextDoneStatus = false;
+        setOptimisticDone(false);
+        nextHardDriveStatus = null;
+        setOptimisticHardDriveStatus(null);
       }
     }
 
@@ -2850,7 +2974,8 @@ const ShootingRow = ({ item, index, activeGid, onToggleFilmed, loadingFilmedCode
       updatedForm.driveFinal,
       item.canceled ? 'TRUE' : 'FALSE',
       item.missingDetails ? 'TRUE' : 'FALSE',
-      updatedForm.editorNotes || ''
+      updatedForm.editorNotes || '',
+      nextHardDriveStatus // index 21: hard_drive_status (only set when changed)
     ];
     try {
       await onUpdateShootingRow(rowCode, rowData, { fieldName, value, time, author });
@@ -2863,11 +2988,16 @@ const ShootingRow = ({ item, index, activeGid, onToggleFilmed, loadingFilmedCode
 
   const inputStyle = "w-full bg-white/5 border border-white/10 hover:bg-white/10 rounded-xl px-3 py-1.5 text-xs font-bold text-center text-white/90 outline-none transition-all focus:bg-[#0b1019] focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/30";
 
-  const isCanceled = item.canceled === true || item.canceled === 'TRUE';
-  const isMissing = item.missingDetails === true || item.missingDetails === 'TRUE';
-  const isDone = optimisticDone !== null ? optimisticDone : (item.done === true || item.done === 'TRUE');
+  const isCanceled = optimisticCanceled !== null ? optimisticCanceled : (item.canceled === true || item.canceled === 'TRUE');
+  const isMissing = optimisticMissing !== null ? optimisticMissing : (item.missingDetails === true || item.missingDetails === 'TRUE' || item.missing_details === true);
+  const hardDriveStatus = optimisticHardDriveStatus !== undefined ? optimisticHardDriveStatus : (item.hardDriveStatus || null);
+  const isHardDrive = String(editForm.driveFinal || item.driveFinal || '').includes('هارد') || String(editForm.driveFinal || item.driveFinal || '').toLowerCase().includes('hard');
+  const isDone = optimisticDone !== null 
+    ? optimisticDone 
+    : (isHardDrive ? hardDriveStatus === 'approved' : (item.done === true || item.done === 'TRUE'));
   const isFilmed = item.filmed === true || item.filmed === 'TRUE';
   const isRowActive = activeCell?.rowIndex === index;
+  const isPrivilegedUser = profile?.role === 'admin' || profile?.role === 'manager' || profile?.role === 'supervisor';
 
   return (
     <motion.tr
@@ -2877,26 +3007,31 @@ const ShootingRow = ({ item, index, activeGid, onToggleFilmed, loadingFilmedCode
       style={
         isGlowing
           ? {}
-          : isDone
+          : isCanceled
             ? { 
-                background: 'linear-gradient(90deg, rgba(16, 185, 129, 0.28) 0%, rgba(5, 150, 105, 0.16) 50%, rgba(16, 185, 129, 0.22) 100%)', 
-                borderLeft: '5px solid #10b981',
-                boxShadow: 'inset 0 0 35px rgba(16, 185, 129, 0.20)'
+                background: 'linear-gradient(90deg, rgba(239, 68, 68, 0.22) 0%, rgba(185, 28, 28, 0.14) 50%, rgba(239, 68, 68, 0.18) 100%)', 
+                borderLeft: '5px solid #ef4444',
+                boxShadow: 'inset 0 0 35px rgba(239, 68, 68, 0.18)'
               }
-            : isFilmed
-              ? { background: 'rgba(16, 185, 129, 0.09)', borderLeft: '3px solid rgba(16,185,129,0.35)' }
-              : isCanceled
-                ? { background: 'rgba(239, 68, 68, 0.08)' }
+            : isDone
+              ? { 
+                  background: 'linear-gradient(90deg, rgba(16, 185, 129, 0.28) 0%, rgba(5, 150, 105, 0.16) 50%, rgba(16, 185, 129, 0.22) 100%)', 
+                  borderLeft: '5px solid #10b981',
+                  boxShadow: 'inset 0 0 35px rgba(16, 185, 129, 0.20)'
+                }
+              : isFilmed
+                ? { background: 'rgba(16, 185, 129, 0.09)', borderLeft: '3px solid rgba(16,185,129,0.35)' }
                 : isMissing
                   ? { background: 'rgba(245, 158, 11, 0.08)' }
                   : {}
       }
       className={`transition-all duration-300 border-b ${
-        isDone 
-          ? 'border-emerald-500/30 text-emerald-50 hover:bg-emerald-950/40' 
-          : isCanceled ? 'border-white/[0.03] text-rose-100/90' 
-          : isMissing ? 'border-white/[0.03] text-amber-100/90' 
-          : 'border-white/[0.03]'
+        isCanceled 
+          ? 'canceled-row border-rose-500/40 text-rose-100/90'
+          : isDone 
+            ? 'border-emerald-500/30 text-emerald-50 hover:bg-emerald-950/40' 
+            : isMissing ? 'border-white/[0.03] text-amber-100/90' 
+            : 'border-white/[0.03]'
       } row-hover ${isGlowing ? 'bg-emerald-500/20 shadow-[inset_0_0_25px_rgba(16,185,129,0.4)] ring-2 ring-emerald-500/50 border-emerald-500/50 animate-pulse relative z-10' : isRowActive ? 'relative z-20' : ''}`}
     >
       {!isSimple && (
@@ -3123,7 +3258,7 @@ const ShootingRow = ({ item, index, activeGid, onToggleFilmed, loadingFilmedCode
           fallbackAuthor={item.extraName || item.teacher}
           onChange={(val: string, time?: string, author?: string) => handleFieldChange('notes', val, time, author)}
           placeholder="اكتب ملاحظة..."
-          disabled={false}
+          disabled={isCanceled}
         />
       </AutofillCell>
       {activeGid === '1939073164' && (
@@ -3137,7 +3272,7 @@ const ShootingRow = ({ item, index, activeGid, onToggleFilmed, loadingFilmedCode
             fallbackAuthor={item.editorCol && item.editorCol !== 'غير محدد' ? item.editorCol : undefined}
             onChange={(val: string, time?: string, author?: string) => handleFieldChange('editorNotes', val, time, author)}
             placeholder="ملاحظات المونتير..."
-            disabled={false}
+            disabled={isCanceled}
           />
         </AutofillCell>
       )}
@@ -3211,6 +3346,7 @@ const ShootingRow = ({ item, index, activeGid, onToggleFilmed, loadingFilmedCode
                 if (!onUpdateShootingRow) return;
                 setIsSaving(true);
                 const nextMissing = !isMissing;
+                setOptimisticMissing(nextMissing);
                 const rowData = [
                   item.date,
                   editForm.branch,
@@ -3228,14 +3364,15 @@ const ShootingRow = ({ item, index, activeGid, onToggleFilmed, loadingFilmedCode
                   editForm.notes,
                   editForm.driveRaw,
                   editForm.editorCol,
-                  item.done ? 'TRUE' : 'FALSE',
+                  isDone ? 'TRUE' : 'FALSE',
                   editForm.driveFinal,
-                  item.canceled ? 'TRUE' : 'FALSE',
+                  isCanceled ? 'TRUE' : 'FALSE',
                   nextMissing ? 'TRUE' : 'FALSE'
                 ];
                 try {
                   await onUpdateShootingRow(rowCode, rowData);
                 } catch(e) {
+                  setOptimisticMissing(null);
                   console.error(e);
                 } finally {
                   setIsSaving(false);
@@ -3252,18 +3389,29 @@ const ShootingRow = ({ item, index, activeGid, onToggleFilmed, loadingFilmedCode
           {/* DONE Checkmark */}
           <td className="px-3 py-5 text-center">
             <button
+              disabled={isCanceled}
               onClick={async () => {
+                if (isCanceled) return;
                 const rowCode = item.code || item.id;
                 if (!rowCode) { alert("لا يمكن تعديل هذا الصف لعدم وجود كود (Code)"); return; }
                 const nextDone = !isDone;
                 if (nextDone) {
                   const finalVal = String(editForm.driveFinal || '').trim();
                   const driveIdRegex = /^[a-zA-Z0-9_-]{25,55}$/;
-                  if (!finalVal || (finalVal.toLowerCase() !== 'تم' && !finalVal.includes('http://') && !finalVal.includes('https://') && !finalVal.includes('drive.google.com') && !finalVal.includes('docs.google.com') && !driveIdRegex.test(finalVal))) {
+                  const isHardDrive = finalVal.includes('هارد') || finalVal.toLowerCase().includes('hard');
+                  if (!finalVal || (!isHardDrive && finalVal.toLowerCase() !== 'تم' && !finalVal.includes('http://') && !finalVal.includes('https://') && !finalVal.includes('drive.google.com') && !finalVal.includes('docs.google.com') && !driveIdRegex.test(finalVal))) {
                     if (toast && toast.error) {
-                      toast.error("لا يمكن تحديد المهمة كمكتملة (Done) إلا بعد إضافة رابط المونتاج النهائي (Final Link) أو كتابة 'تم'");
+                      toast.error("لا يمكن تحديد المهمة كمكتملة (Done) إلا بعد إضافة رابط المونتاج النهائي!");
                     } else {
-                      alert("لا يمكن تحديد المهمة كمكتملة (Done) إلا بعد إضافة رابط المونتاج النهائي (Final Link) أو كتابة 'تم'");
+                      alert("لا يمكن تحديد المهمة كمكتملة (Done) إلا بعد إضافة رابط المونتاج النهائي!");
+                    }
+                    return;
+                  }
+                  if (isHardDrive && !isPrivilegedUser && hardDriveStatus !== 'approved') {
+                    if (toast && toast.error) {
+                      toast.error("لا يمكن تحديد المهمة كمكتملة (Done) — طلب التسليم على الهارد ما زال بانتظار موافقة المشرف! ⏳");
+                    } else {
+                      alert("لا يمكن تحديد المهمة كمكتملة (Done) — طلب التسليم على الهارد ما زال بانتظار موافقة المشرف! ⏳");
                     }
                     return;
                   }
@@ -3302,18 +3450,20 @@ const ShootingRow = ({ item, index, activeGid, onToggleFilmed, loadingFilmedCode
                   setIsSaving(false);
                 }
               }}
-              className={`w-7 h-7 rounded-lg flex items-center justify-center mx-auto transition-all duration-300 cursor-pointer ${
-                isDone 
-                  ? 'bg-emerald-500 text-white shadow-[0_0_20px_rgba(16,185,129,0.95)] ring-2 ring-emerald-300 scale-110' 
-                  : 'bg-white/10 text-muted hover:bg-emerald-500/30 hover:text-emerald-300'
+              className={`w-7 h-7 rounded-lg flex items-center justify-center mx-auto transition-all duration-300 ${
+                isCanceled
+                  ? 'opacity-20 cursor-not-allowed bg-white/5 text-muted/40'
+                  : isDone 
+                    ? 'bg-emerald-500 text-white shadow-[0_0_20px_rgba(16,185,129,0.95)] ring-2 ring-emerald-300 scale-110 cursor-pointer' 
+                    : 'bg-white/10 text-muted hover:bg-emerald-500/30 hover:text-emerald-300 cursor-pointer'
               }`}
-              title="تم الإنجاز"
+              title={isCanceled ? "المهمة ملغية - لا يمكن إنجازها" : "تم الإنجاز"}
             >
               {isDone && <CheckCircle2 size={16} className="stroke-[2.5]" />}
             </button>
           </td>
           {/* Cancel Checkmark */}
-          <td className="px-3 py-5 text-center">
+          <td className="px-3 py-5 text-center cancel-cell">
             <button
               onClick={async () => {
                 const rowCode = item.code || item.id;
@@ -3321,6 +3471,12 @@ const ShootingRow = ({ item, index, activeGid, onToggleFilmed, loadingFilmedCode
                 if (!onUpdateShootingRow) return;
                 setIsSaving(true);
                 const nextCanceled = !isCanceled;
+                setOptimisticCanceled(nextCanceled);
+                let nextDone = item.done;
+                if (nextCanceled) {
+                  nextDone = false;
+                  setOptimisticDone(false);
+                }
                 const rowData = [
                   item.date,
                   editForm.branch,
@@ -3338,7 +3494,7 @@ const ShootingRow = ({ item, index, activeGid, onToggleFilmed, loadingFilmedCode
                   editForm.notes,
                   editForm.driveRaw,
                   editForm.editorCol,
-                  item.done ? 'TRUE' : 'FALSE',
+                  nextDone ? 'TRUE' : 'FALSE',
                   editForm.driveFinal,
                   nextCanceled ? 'TRUE' : 'FALSE',
                   item.missingDetails ? 'TRUE' : 'FALSE'
@@ -3346,21 +3502,22 @@ const ShootingRow = ({ item, index, activeGid, onToggleFilmed, loadingFilmedCode
                 try {
                   await onUpdateShootingRow(rowCode, rowData);
                 } catch(e) {
+                  setOptimisticCanceled(null);
                   console.error(e);
                 } finally {
                   setIsSaving(false);
                 }
               }}
-              className={`w-6 h-6 rounded-md flex items-center justify-center mx-auto transition-all duration-300 cursor-pointer ${
+              className={`w-6 h-6 rounded-md flex items-center justify-center mx-auto transition-all duration-300 cursor-pointer cancel-action-btn no-strike ${
                 isCanceled 
                   ? activeGid === '798246690' 
-                    ? 'bg-amber-500 text-white shadow-[0_0_10px_rgba(245,158,11,0.5)]' 
-                    : 'bg-rose-500 text-white shadow-[0_0_10px_rgba(244,63,94,0.5)]'
+                    ? 'bg-amber-500 text-white shadow-[0_0_10px_rgba(245,158,11,0.5)] ring-2 ring-amber-300' 
+                    : 'bg-rose-500 text-white shadow-[0_0_10px_rgba(244,63,94,0.5)] ring-2 ring-rose-400'
                   : activeGid === '798246690'
                     ? 'bg-white/10 text-muted hover:bg-amber-500/30 hover:text-amber-300'
                     : 'bg-white/10 text-muted hover:bg-rose-500/30 hover:text-rose-300'
               }`}
-              title={activeGid === '798246690' ? "مشكلة" : "ملغي"}
+              title={activeGid === '798246690' ? (isCanceled ? "إلغاء تحديد المشكلة" : "تحديد كمشكلة") : (isCanceled ? "إلغاء الكنسلة" : "كنسل الصف")}
             >
               {isCanceled && (activeGid === '798246690' ? <AlertCircle size={14} /> : <XCircle size={14} />)}
             </button>
@@ -3393,32 +3550,200 @@ const ShootingRow = ({ item, index, activeGid, onToggleFilmed, loadingFilmedCode
           )}
         </>
       )}
+      {/* Cancel Checkmark for Shooting */}
+      {activeGid === '1436746012' && (
+        <td className="px-3 py-5 text-center cancel-cell">
+          <button
+            onClick={async () => {
+              const rowCode = item.code || item.id;
+              if (!rowCode) { alert("لا يمكن تعديل هذا الصف لعدم وجود كود (Code)"); return; }
+              if (!onUpdateShootingRow) return;
+              setIsSaving(true);
+              const nextCanceled = !isCanceled;
+              setOptimisticCanceled(nextCanceled);
+              const rowData = [
+                item.date,
+                editForm.branch,
+                editForm.year,
+                editForm.teacher,
+                editForm.extraName,
+                rowCode,
+                editForm.script,
+                editForm.type,
+                editForm.format,
+                item.filmed ? 'TRUE' : 'FALSE',
+                item.filmingDate,
+                editForm.by,
+                editForm.storage,
+                editForm.notes,
+                editForm.driveRaw,
+                editForm.editorCol,
+                item.done ? 'TRUE' : 'FALSE',
+                editForm.driveFinal,
+                nextCanceled ? 'TRUE' : 'FALSE',
+                isMissing ? 'TRUE' : 'FALSE'
+              ];
+              try {
+                await onUpdateShootingRow(rowCode, rowData);
+              } catch(e) {
+                setOptimisticCanceled(null);
+                console.error(e);
+              } finally {
+                setIsSaving(false);
+              }
+            }}
+            className={`w-6 h-6 rounded-md flex items-center justify-center mx-auto transition-all duration-300 cursor-pointer cancel-action-btn no-strike ${
+              isCanceled 
+                ? 'bg-rose-500 text-white shadow-[0_0_10px_rgba(244,63,94,0.5)] ring-2 ring-rose-400' 
+                : 'bg-white/10 text-muted hover:bg-rose-500/30 hover:text-rose-300'
+            }`}
+            title={isCanceled ? "إلغاء الكنسلة" : "كنسل المهمة"}
+          >
+            {isCanceled && <XCircle size={14} />}
+          </button>
+        </td>
+      )}
       <td className="px-4 py-5 text-center">
         <div className="flex flex-col gap-2 items-center justify-center">
           {isEditingFinal ? (
-            <input 
-              autoFocus
-              type="text" 
-              value={editForm.driveFinal} 
-              onChange={e => setEditForm({...editForm, driveFinal: e.target.value})}
-              onBlur={() => {
-                setIsEditingFinal(false);
-                if (editForm.driveFinal !== item.driveFinal) {
-                  handleFieldChange('driveFinal', editForm.driveFinal);
-                }
-              }}
-              onKeyDown={e => {
-                if (e.key === 'Enter') {
-                  e.currentTarget.blur();
-                }
-              }}
-              className="w-full max-w-[150px] bg-white/5 border border-white/10 hover:bg-white/10 rounded-xl px-3 py-1.5 text-xs font-bold text-center text-white/90 outline-none transition-all focus:bg-[#0b1019] focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/30 text-left" 
-              placeholder="Paste Final Drive Link..."
-            />
+            <div className="flex flex-col items-center gap-1.5 w-full max-w-[190px]">
+              <input 
+                autoFocus
+                type="text" 
+                value={editForm.driveFinal} 
+                onChange={e => setEditForm({...editForm, driveFinal: e.target.value})}
+                onBlur={() => {
+                  setIsEditingFinal(false);
+                  const clean = editForm.driveFinal.trim();
+                  if (clean !== (item.driveFinal || '').trim() || (clean && !item.done)) {
+                    handleFieldChange('driveFinal', clean);
+                  }
+                }}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') {
+                    e.currentTarget.blur();
+                  }
+                }}
+                className="w-full bg-white/5 border border-white/10 hover:bg-white/10 rounded-xl px-3 py-1.5 text-xs font-bold text-center text-white/90 outline-none transition-all focus:bg-[#0b1019] focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/30 text-left" 
+                placeholder="Paste Final Drive Link..."
+              />
+              <button
+                type="button"
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  setIsEditingFinal(false);
+                  const hardVal = 'على الهارد';
+                  setEditForm(prev => ({ ...prev, driveFinal: hardVal }));
+                  handleFieldChange('driveFinal', hardVal);
+                }}
+                className="w-full px-2.5 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-[11px] font-bold flex items-center justify-center gap-1.5 transition-all shadow-sm cursor-pointer"
+                title={isPrivilegedUser ? "تسليم كملف ضخم (+2GB) على الهارد" : "إرسال طلب تسليم على الهارد (+2GB) للمشرف"}
+              >
+                <HardDrive size={12} className="text-amber-400" />
+                <span>{isPrivilegedUser ? '💾 تسليم على الهارد' : '📤 طلب تسليم على الهارد'}</span>
+              </button>
+            </div>
           ) : (
             <div className="flex items-center justify-center gap-1.5">
               {item.driveFinal ? (
                 (() => {
+                  const s = String(item.driveFinal).trim();
+                  const isHard = s.includes('هارد') || s.toLowerCase().includes('hard');
+                  if (isHard) {
+                    return (
+                      <div className="flex flex-col items-center gap-1 w-full">
+                        <span 
+                          className={`px-3 py-1.5 rounded-xl font-bold text-xs flex items-center gap-1.5 shrink-0 truncate max-w-[200px] ${
+                            hardDriveStatus === 'pending'
+                              ? 'bg-gradient-to-r from-yellow-500/20 to-amber-500/20 text-yellow-300 border border-yellow-500/40 shadow-[0_0_12px_rgba(234,179,8,0.25)]'
+                              : hardDriveStatus === 'approved'
+                                ? 'bg-gradient-to-r from-emerald-500/20 to-green-500/20 text-emerald-300 border border-emerald-500/40 shadow-[0_0_12px_rgba(16,185,129,0.25)]'
+                                : 'bg-gradient-to-r from-amber-500/20 to-orange-500/20 text-amber-300 border border-amber-500/40 shadow-[0_0_12px_rgba(245,158,11,0.25)]'
+                          }`}
+                          title={`تسليم محلي على الهارد: ${s}${hardDriveStatus ? ' — ' + (hardDriveStatus === 'pending' ? 'بانتظار الموافقة' : hardDriveStatus === 'approved' ? 'تمت الموافقة' : '') : ''}`}
+                        >
+                          <HardDrive size={13} className={hardDriveStatus === 'pending' ? 'text-yellow-400 shrink-0' : hardDriveStatus === 'approved' ? 'text-emerald-400 shrink-0' : 'text-amber-400 shrink-0'} />
+                          <span>{hardDriveStatus === 'pending' ? '⏳ طلب هارد' : hardDriveStatus === 'approved' ? '✅ هارد (معتمد)' : s}</span>
+                        </span>
+                        {/* Approve / Reject buttons for privileged users when pending */}
+                        {hardDriveStatus === 'pending' && isPrivilegedUser && (
+                          <div className="flex items-center gap-1 mt-0.5">
+                            <button
+                              onClick={async () => {
+                                const tbl = activeGid === '1939073164' ? 'reels_ve_26' : 'reels_cuts_26';
+                                const rowCode = item.code || item.id;
+                                setOptimisticHardDriveStatus('approved');
+                                try {
+                                  await supabase.from(tbl).update({ hard_drive_status: 'approved', done: true, updated_at: new Date().toISOString() }).eq('code', rowCode);
+                                  // Notify editor
+                                  const editorName = item.editorCol || item.editor || '';
+                                  if (editorName) {
+                                    const editorChatId = await getUserTelegramChatId(undefined, editorName);
+                                    if (editorChatId) {
+                                      notifyHardDriveDecision({
+                                        chatId: editorChatId,
+                                        taskCode: rowCode,
+                                        taskTitle: item.script || item.extraName || rowCode,
+                                        decision: 'approved',
+                                        supervisorName: profile?.name
+                                      }).catch(console.error);
+                                    }
+                                  }
+                                  if (toast?.success) toast.success('تمت الموافقة على التسليم على الهارد ✅');
+                                } catch(e) {
+                                  setOptimisticHardDriveStatus('pending');
+                                  console.error(e);
+                                }
+                              }}
+                              className="px-2 py-0.5 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 text-[10px] font-bold flex items-center gap-1 cursor-pointer transition-all"
+                              title="اعتماد التسليم على الهارد"
+                            >
+                              <Check size={10} /> موافقة
+                            </button>
+                            <button
+                              onClick={async () => {
+                                const tbl = activeGid === '1939073164' ? 'reels_ve_26' : 'reels_cuts_26';
+                                const rowCode = item.code || item.id;
+                                setOptimisticHardDriveStatus(null);
+                                setOptimisticDone(false);
+                                setEditForm(prev => ({ ...prev, driveFinal: '' }));
+                                try {
+                                  await supabase.from(tbl).update({ hard_drive_status: null, drive_final: '', done: false, updated_at: new Date().toISOString() }).eq('code', rowCode);
+                                  // Notify editor
+                                  const editorName = item.editorCol || item.editor || '';
+                                  if (editorName) {
+                                    const editorChatId = await getUserTelegramChatId(undefined, editorName);
+                                    if (editorChatId) {
+                                      notifyHardDriveDecision({
+                                        chatId: editorChatId,
+                                        taskCode: rowCode,
+                                        taskTitle: item.script || item.extraName || rowCode,
+                                        decision: 'rejected',
+                                        supervisorName: profile?.name
+                                      }).catch(console.error);
+                                    }
+                                  }
+                                  if (toast?.success) toast.success('تم رفض التسليم على الهارد — يرجى رفع الملف على Drive ↩️');
+                                } catch(e) {
+                                  setOptimisticHardDriveStatus('pending');
+                                  setOptimisticDone(true);
+                                  console.error(e);
+                                }
+                              }}
+                              className="px-2 py-0.5 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 text-[10px] font-bold flex items-center gap-1 cursor-pointer transition-all"
+                              title="رفض التسليم على الهارد وإرجاع المهمة"
+                            >
+                              <X size={10} /> رفض
+                            </button>
+                          </div>
+                        )}
+                        {/* Pending indicator for non-privileged */}
+                        {hardDriveStatus === 'pending' && !isPrivilegedUser && (
+                          <span className="text-[10px] text-yellow-400/80 font-medium">⏳ في انتظار الموافقة</span>
+                        )}
+                      </div>
+                    );
+                  }
                   const parsed = parseDriveLink(item.driveFinal);
                   return (
                     <a 
@@ -3433,7 +3758,21 @@ const ShootingRow = ({ item, index, activeGid, onToggleFilmed, loadingFilmedCode
                   );
                 })()
               ) : (
-                <span className="text-muted/40 text-xs px-2 shrink-0">---</span>
+                <div className="flex items-center gap-1">
+                  <span className="text-muted/40 text-xs px-2 shrink-0">---</span>
+                  <button
+                    onClick={() => {
+                      const hardVal = 'على الهارد';
+                      setEditForm(prev => ({ ...prev, driveFinal: hardVal }));
+                      handleFieldChange('driveFinal', hardVal);
+                    }}
+                    className="p-1 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-400/80 hover:text-amber-300 border border-amber-500/20 text-[10px] flex items-center gap-1 transition-all cursor-pointer"
+                    title={isPrivilegedUser ? "تسليم على الهارد (+2GB)" : "طلب تسليم على الهارد (+2GB)"}
+                  >
+                    <HardDrive size={11} />
+                    <span>{isPrivilegedUser ? 'هارد' : 'طلب هارد'}</span>
+                  </button>
+                </div>
               )}
               <button 
                 onClick={() => setIsEditingFinal(true)} 
@@ -3587,7 +3926,12 @@ const CutsRow = ({
   const [isEditingScript, setIsEditingScript] = useState(false);
   const [isEditingFinal, setIsEditingFinal] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [optimisticHardDriveStatus, setOptimisticHardDriveStatus] = useState<string | null | undefined>(undefined);
   const { profile } = useAuth();
+
+  useEffect(() => {
+    setOptimisticHardDriveStatus(undefined);
+  }, [item.hardDriveStatus]);
 
   const parseCutsLink = (val: string, fallbackText: string) => {
     if (!val) return null;
@@ -3605,6 +3949,16 @@ const CutsRow = ({
         url,
         text: formulaMatch[4].trim(),
         isLink: true
+      };
+    }
+
+    // Hard Drive local delivery exception
+    if (s.includes('هارد') || s.toLowerCase().includes('hard')) {
+      return {
+        url: null,
+        text: s,
+        isLink: false,
+        isHardDrive: true
       };
     }
     
@@ -3726,16 +4080,75 @@ const CutsRow = ({
 
     // Done status logic: if fieldName is 'driveFinal', automatically set done=true when valid link is added, or uncheck done if invalid
     let nextDoneStatus = item.done;
+    let nextHardDriveStatus: string | null | undefined = undefined;
+    const isPriv = profile?.role === 'admin' || profile?.role === 'manager' || profile?.role === 'supervisor';
+
     if (fieldName === 'driveFinal') {
       const val = String(value || '').trim();
       const driveIdRegex = /^[a-zA-Z0-9_-]{25,55}$/;
-      const isValidLink = val && (val.toLowerCase() === 'تم' || val.includes('http://') || val.includes('https://') || val.includes('drive.google.com') || val.includes('docs.google.com') || driveIdRegex.test(val));
+      const isHardDrive = val.includes('هارد') || val.toLowerCase().includes('hard');
+      const isValidLink = Boolean(
+        val && (
+          isHardDrive ||
+          val.toLowerCase() === 'تم' || 
+          val.includes('http://') || 
+          val.includes('https://') || 
+          val.includes('drive.google.com') || 
+          val.includes('docs.google.com') || 
+          val.includes('mega.nz') ||
+          val.includes('dropbox.com') ||
+          driveIdRegex.test(val) ||
+          (val.length >= 10 && (val.includes('.') && (val.includes('/') || val.includes(':'))))
+        )
+      );
       if (isValidLink) {
-        nextDoneStatus = true;
-        saveCutsOverrideLocally(item.id, 'done', true);
+        if (isHardDrive && !isPriv) {
+          // Non-privileged: pending request, CANNOT be marked Done yet!
+          nextDoneStatus = false;
+          saveCutsOverrideLocally(item.id, 'done', false);
+          nextHardDriveStatus = 'pending';
+          setOptimisticHardDriveStatus('pending');
+          if (toast && toast.info) {
+            toast.info('تم إرسال طلب التسليم على الهارد! ⏳💾 — لن تُعتبر المهمة مكتملة إلا بعد موافقة المشرف');
+          }
+          // Notify admins
+          const taskCode = item.code || item.id || '';
+          getUserTelegramChatId(profile?.id, profile?.name).then(async () => {
+            const adminChatId = await getUserTelegramChatId(undefined, 'admin') || await getUserTelegramChatId(undefined, 'eslam');
+            if (adminChatId) {
+              notifyHardDriveRequest({
+                chatId: adminChatId,
+                taskCode,
+                taskTitle: item.script || taskCode,
+                sourceSheet: 'Cuts',
+                editorName: profile?.name || item.editor || 'غير محدد'
+              }).catch(console.error);
+            }
+          }).catch(console.error);
+        } else if (isHardDrive && isPriv) {
+          // Privileged: direct done approved
+          nextDoneStatus = true;
+          saveCutsOverrideLocally(item.id, 'done', true);
+          nextHardDriveStatus = 'approved';
+          setOptimisticHardDriveStatus('approved');
+          if (toast && toast.success) {
+            toast.success('تم اعتماد التسليم على الهارد وتحديد المهمة كـ Done! 💾✅');
+          }
+        } else {
+          // Valid Drive Link: direct done
+          nextDoneStatus = true;
+          saveCutsOverrideLocally(item.id, 'done', true);
+          nextHardDriveStatus = null;
+          setOptimisticHardDriveStatus(null);
+          if (toast && toast.success) {
+            toast.success('تم حفظ رابط الفاينال وتحديد المهمة كـ Done تلقائياً! 🎉');
+          }
+        }
       } else {
         nextDoneStatus = false;
         saveCutsOverrideLocally(item.id, 'done', false);
+        nextHardDriveStatus = null;
+        setOptimisticHardDriveStatus(null);
       }
     }
 
@@ -3757,7 +4170,11 @@ const CutsRow = ({
       nextDoneStatus ? 'TRUE' : 'FALSE',
       updatedForm.editor,
       updatedForm.driveFinal,
-      item.canceled ? 'TRUE' : 'FALSE'
+      item.canceled ? 'TRUE' : 'FALSE',
+      undefined, // index 18 unused
+      undefined, // index 19 unused
+      undefined, // index 20 unused
+      nextHardDriveStatus // index 21: hard_drive_status
     ];
     try {
       await onUpdateShootingRow(item.id, rowData, { fieldName, value, time, author });
@@ -3778,11 +4195,23 @@ const CutsRow = ({
     if (fieldName === 'done' && newVal) {
       const finalVal = String(editForm.driveFinal || '').trim();
       const driveIdRegex = /^[a-zA-Z0-9_-]{25,55}$/;
-      if (!finalVal || (finalVal.toLowerCase() !== 'تم' && !finalVal.includes('http://') && !finalVal.includes('https://') && !finalVal.includes('drive.google.com') && !finalVal.includes('docs.google.com') && !driveIdRegex.test(finalVal))) {
+      const isHardDrive = finalVal.includes('هارد') || finalVal.toLowerCase().includes('hard');
+      if (!finalVal || (!isHardDrive && finalVal.toLowerCase() !== 'تم' && !finalVal.includes('http://') && !finalVal.includes('https://') && !finalVal.includes('drive.google.com') && !finalVal.includes('docs.google.com') && !driveIdRegex.test(finalVal))) {
         if (toast && toast.error) {
-          toast.error("لا يمكن تحديد المهمة كمكتملة (Done) إلا بعد إضافة رابط المونتاج النهائي (Final Link) أو كتابة 'تم'");
+          toast.error("لا يمكن تحديد المهمة كمكتملة (Done) إلا بعد إضافة رابط المونتاج النهائي!");
         } else {
-          alert("لا يمكن تحديد المهمة كمكتملة (Done) إلا بعد إضافة رابط المونتاج النهائي (Final Link) أو كتابة 'تم'");
+          alert("لا يمكن تحديد المهمة كمكتملة (Done) إلا بعد إضافة رابط المونتاج النهائي!");
+        }
+        setIsSaving(false);
+        return;
+      }
+      const isPriv = profile?.role === 'admin' || profile?.role === 'manager' || profile?.role === 'supervisor';
+      const curHardStatus = optimisticHardDriveStatus !== undefined ? optimisticHardDriveStatus : (item.hardDriveStatus || null);
+      if (isHardDrive && !isPriv && curHardStatus !== 'approved') {
+        if (toast && toast.error) {
+          toast.error("لا يمكن تحديد المهمة كمكتملة (Done) — طلب التسليم على الهارد ما زال بانتظار موافقة المشرف! ⏳");
+        } else {
+          alert("لا يمكن تحديد المهمة كمكتملة (Done) — طلب التسليم على الهارد ما زال بانتظار موافقة المشرف! ⏳");
         }
         setIsSaving(false);
         return;
@@ -3838,8 +4267,11 @@ const CutsRow = ({
   const isCanceled = getOverrideVal('canceled', item.canceled === true || item.canceled === 'TRUE');
   const isProblem = getOverrideVal('problem', item.problem === true || item.problem === 'TRUE');
   const isMissing = getOverrideVal('missingDetails', item.missingDetails === true || item.missingDetails === 'TRUE');
-  const isDone = getOverrideVal('done', item.done === true || item.done === 'TRUE');
+  const hardDriveStatus = optimisticHardDriveStatus !== undefined ? optimisticHardDriveStatus : (item.hardDriveStatus || null);
+  const isHardDrive = String(editForm.driveFinal || item.driveFinal || '').includes('هارد') || String(editForm.driveFinal || item.driveFinal || '').toLowerCase().includes('hard');
+  const isDone = isHardDrive ? hardDriveStatus === 'approved' : getOverrideVal('done', item.done === true || item.done === 'TRUE');
   const isRowActive = activeCell?.rowIndex === index;
+  const isPrivilegedUser = profile?.role === 'admin' || profile?.role === 'manager' || profile?.role === 'supervisor';
 
   return (
     <motion.tr
@@ -3847,7 +4279,9 @@ const CutsRow = ({
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay: index * 0.01 }}
       className={`transition-all duration-300 border-b border-white/[0.03] row-hover ${
-        isCanceled || isProblem
+        isCanceled
+          ? 'canceled-row bg-rose-500/[0.09] hover:bg-rose-500/[0.14] border-rose-500/30 text-rose-100/90'
+          : isProblem
           ? 'bg-rose-500/[0.06] hover:bg-rose-500/[0.12] border-rose-500/20 text-rose-100/90' 
           : isMissing 
             ? 'bg-amber-500/[0.06] hover:bg-amber-500/[0.12] border-amber-500/20 text-amber-100/90' 
@@ -4106,29 +4540,136 @@ const CutsRow = ({
       <td className="px-4 py-5 text-center">
         <div className="flex flex-col gap-2 items-center justify-center">
           {isEditingFinal ? (
-            <input 
-              autoFocus
-              type="text" 
-              value={editForm.driveFinal} 
-              onChange={e => setEditForm({...editForm, driveFinal: e.target.value})}
-              onBlur={() => {
-                setIsEditingFinal(false);
-                if (editForm.driveFinal !== item.driveFinal) {
-                  handleFieldChange('driveFinal', editForm.driveFinal);
-                }
-              }}
-              onKeyDown={e => {
-                if (e.key === 'Enter') {
-                  e.currentTarget.blur();
-                }
-              }}
-              className="w-full max-w-[150px] bg-white/5 border border-white/10 hover:bg-white/10 rounded-xl px-3 py-1.5 text-xs font-bold text-center text-white/90 outline-none transition-all focus:bg-[#0b1019] focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/30 text-left" 
-              placeholder="Paste Final Link..."
-            />
+            <div className="flex flex-col items-center gap-1.5 w-full max-w-[190px]">
+              <input 
+                autoFocus
+                type="text" 
+                value={editForm.driveFinal} 
+                onChange={e => setEditForm({...editForm, driveFinal: e.target.value})}
+                onBlur={() => {
+                  setIsEditingFinal(false);
+                  const clean = editForm.driveFinal.trim();
+                  if (clean !== (item.driveFinal || '').trim() || (clean && !item.done)) {
+                    handleFieldChange('driveFinal', clean);
+                  }
+                }}
+                onKeyDown={e => {
+                  if (e.key === 'Enter') {
+                    e.currentTarget.blur();
+                  }
+                }}
+                className="w-full bg-white/5 border border-white/10 hover:bg-white/10 rounded-xl px-3 py-1.5 text-xs font-bold text-center text-white/90 outline-none transition-all focus:bg-[#0b1019] focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/30 text-left" 
+                placeholder="Paste Final Link..."
+              />
+              <button
+                type="button"
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  setIsEditingFinal(false);
+                  const hardVal = 'على الهارد';
+                  setEditForm(prev => ({ ...prev, driveFinal: hardVal }));
+                  handleFieldChange('driveFinal', hardVal);
+                }}
+                className="w-full px-2.5 py-1 rounded-lg bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 border border-amber-500/40 text-[11px] font-bold flex items-center justify-center gap-1.5 transition-all shadow-sm cursor-pointer"
+                title={isPrivilegedUser ? "تسليم كملف ضخم (+2GB) على الهارد" : "إرسال طلب تسليم على الهارد (+2GB) للمشرف"}
+              >
+                <HardDrive size={12} className="text-amber-400" />
+                <span>{isPrivilegedUser ? '💾 تسليم على الهارد' : '📤 طلب تسليم على الهارد'}</span>
+              </button>
+            </div>
           ) : (
             <div className="flex items-center justify-center gap-1.5">
               {editForm.driveFinal ? (
                 (() => {
+                  const s = String(editForm.driveFinal).trim();
+                  const isHard = s.includes('هارد') || s.toLowerCase().includes('hard');
+                  if (isHard) {
+                    return (
+                      <div className="flex flex-col items-center gap-1 w-full">
+                        <span 
+                          className={`px-3 py-1.5 rounded-xl font-bold text-xs flex items-center gap-1.5 shrink-0 truncate max-w-[200px] ${
+                            hardDriveStatus === 'pending'
+                              ? 'bg-gradient-to-r from-yellow-500/20 to-amber-500/20 text-yellow-300 border border-yellow-500/40 shadow-[0_0_12px_rgba(234,179,8,0.25)]'
+                              : hardDriveStatus === 'approved'
+                                ? 'bg-gradient-to-r from-emerald-500/20 to-green-500/20 text-emerald-300 border border-emerald-500/40 shadow-[0_0_12px_rgba(16,185,129,0.25)]'
+                                : 'bg-gradient-to-r from-amber-500/20 to-orange-500/20 text-amber-300 border border-amber-500/40 shadow-[0_0_12px_rgba(245,158,11,0.25)]'
+                          }`}
+                          title={`تسليم محلي على الهارد: ${s}${hardDriveStatus ? ' — ' + (hardDriveStatus === 'pending' ? 'بانتظار الموافقة' : hardDriveStatus === 'approved' ? 'تمت الموافقة' : '') : ''}`}
+                        >
+                          <HardDrive size={13} className={hardDriveStatus === 'pending' ? 'text-yellow-400 shrink-0' : hardDriveStatus === 'approved' ? 'text-emerald-400 shrink-0' : 'text-amber-400 shrink-0'} />
+                          <span>{hardDriveStatus === 'pending' ? '⏳ طلب هارد' : hardDriveStatus === 'approved' ? '✅ هارد (معتمد)' : s}</span>
+                        </span>
+                        {hardDriveStatus === 'pending' && isPrivilegedUser && (
+                          <div className="flex items-center gap-1 mt-0.5">
+                            <button
+                              onClick={async () => {
+                                const rowCode = item.code || item.id;
+                                setOptimisticHardDriveStatus('approved');
+                                try {
+                                  await supabase.from('reels_cuts_26').update({ hard_drive_status: 'approved', done: true, updated_at: new Date().toISOString() }).eq('code', rowCode);
+                                  const editorName = item.editor || '';
+                                  if (editorName) {
+                                    const editorChatId = await getUserTelegramChatId(undefined, editorName);
+                                    if (editorChatId) {
+                                      notifyHardDriveDecision({
+                                        chatId: editorChatId,
+                                        taskCode: rowCode,
+                                        taskTitle: item.script || rowCode,
+                                        decision: 'approved',
+                                        supervisorName: profile?.name
+                                      }).catch(console.error);
+                                    }
+                                  }
+                                  if (toast?.success) toast.success('تمت الموافقة على التسليم على الهارد ✅');
+                                } catch(e) {
+                                  setOptimisticHardDriveStatus('pending');
+                                  console.error(e);
+                                }
+                              }}
+                              className="px-2 py-0.5 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 text-[10px] font-bold flex items-center gap-1 cursor-pointer transition-all"
+                              title="اعتماد التسليم على الهارد"
+                            >
+                              <Check size={10} /> موافقة
+                            </button>
+                            <button
+                              onClick={async () => {
+                                const rowCode = item.code || item.id;
+                                setOptimisticHardDriveStatus(null);
+                                setEditForm(prev => ({ ...prev, driveFinal: '' }));
+                                try {
+                                  await supabase.from('reels_cuts_26').update({ hard_drive_status: null, drive_final: '', done: false, updated_at: new Date().toISOString() }).eq('code', rowCode);
+                                  const editorName = item.editor || '';
+                                  if (editorName) {
+                                    const editorChatId = await getUserTelegramChatId(undefined, editorName);
+                                    if (editorChatId) {
+                                      notifyHardDriveDecision({
+                                        chatId: editorChatId,
+                                        taskCode: rowCode,
+                                        taskTitle: item.script || rowCode,
+                                        decision: 'rejected',
+                                        supervisorName: profile?.name
+                                      }).catch(console.error);
+                                    }
+                                  }
+                                  if (toast?.success) toast.success('تم رفض التسليم على الهارد — يرجى رفع الملف على Drive ↩️');
+                                } catch(e) {
+                                  setOptimisticHardDriveStatus('pending');
+                                  console.error(e);
+                                }
+                              }}
+                              className="px-2 py-0.5 rounded-lg bg-rose-500/20 hover:bg-rose-500/30 text-rose-300 border border-rose-500/40 text-[10px] font-bold flex items-center gap-1 cursor-pointer transition-all"
+                              title="رفض التسليم على الهارد"
+                            >
+                              <X size={10} /> رفض
+                            </button>
+                          </div>
+                        )}
+                        {hardDriveStatus === 'pending' && !isPrivilegedUser && (
+                          <span className="text-[10px] text-yellow-400/80 font-medium">⏳ في انتظار الموافقة</span>
+                        )}
+                      </div>
+                    );
+                  }
                   const parsed = parseCutsLink(editForm.driveFinal, 'Final');
                   return (
                     <a 
@@ -4143,7 +4684,21 @@ const CutsRow = ({
                   );
                 })()
               ) : (
-                <span className="text-muted/40 text-xs px-2 shrink-0">---</span>
+                <div className="flex items-center gap-1">
+                  <span className="text-muted/40 text-xs px-2 shrink-0">---</span>
+                  <button
+                    onClick={() => {
+                      const hardVal = 'على الهارد';
+                      setEditForm(prev => ({ ...prev, driveFinal: hardVal }));
+                      handleFieldChange('driveFinal', hardVal);
+                    }}
+                    className="p-1 rounded-lg bg-amber-500/10 hover:bg-amber-500/20 text-amber-400/80 hover:text-amber-300 border border-amber-500/20 text-[10px] flex items-center gap-1 transition-all cursor-pointer"
+                    title={isPrivilegedUser ? "تسليم على الهارد (+2GB)" : "طلب تسليم على الهارد (+2GB)"}
+                  >
+                    <HardDrive size={11} />
+                    <span>{isPrivilegedUser ? 'هارد' : 'طلب هارد'}</span>
+                  </button>
+                </div>
               )}
               <button 
                 onClick={() => setIsEditingFinal(true)} 
@@ -4164,7 +4719,7 @@ const CutsRow = ({
       <td className="px-3 py-5 text-center">
         <button
           onClick={() => toggleStatus('canceled', isCanceled)}
-          className={`w-6 h-6 rounded-md flex items-center justify-center mx-auto transition-all duration-300 cursor-pointer ${
+          className={`w-6 h-6 rounded-md flex items-center justify-center mx-auto transition-all duration-300 cursor-pointer cancel-action-btn no-strike ${
             isCanceled ? 'bg-red-500 text-white shadow-[0_0_10px_rgba(239,68,68,0.5)]' : 'bg-white/10 text-muted hover:bg-red-500/30 hover:text-red-300'
           }`}
           title="ملغي"
@@ -4888,6 +5443,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
   const isTagme3at = activeGid === '1535230545';
   const isAnalyticsTagme = activeGid === 'analytics_tagme3at';
   const isReelsAnalytics = activeGid === 'reels-analytics';
+  const isStudioCalendar = activeGid === 'reels-calendar';
   const isDesignersPage = activeGid === '501319673';
   const isDesignAnalytics = activeGid === 'design-analytics';
   const isDesignersTeamPage = activeGid === 'designers-team-management';
@@ -4895,7 +5451,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
   const isDesignersMode = isDesignersPage || isDesignAnalytics || isDesignersTeamPage;
 
   const isReelsStage = ['1436746012', '1939073164', '0', '798246690'].includes(activeGid);
-  const isStage = !isHome && !isOperations && !isOp27 && !isTagme3at && !isAnalyticsTagme && !isReelsAnalytics && !isDesignersMode && !isEditorsTeamPage;
+  const isStage = !isHome && !isOperations && !isOp27 && !isTagme3at && !isAnalyticsTagme && !isReelsAnalytics && !isStudioCalendar && !isDesignersMode && !isEditorsTeamPage;
 
   const isSupabaseLiveTab = !isDemo && (
     activeGid === '1535230545' || 
@@ -4904,6 +5460,8 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
   );
 
   const sheetGidToFetch = isSupabaseLiveTab
+    ? ''
+    : isStudioCalendar
     ? ''
     : isAnalyticsTagme 
     ? '1535230545' 
@@ -5406,6 +5964,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
           done: i.done === true,
           priority: i.priority === true,
           cancel: i.cancel === true,
+          missingDetails: i.missing_details === true,
           thumbnailLink: i.thumbnail_link || '',
           time: i.time || '',
           youtubeLink: i.youtube_link || '',
@@ -5468,6 +6027,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
               done: payload.new.done === true,
               priority: payload.new.priority === true,
               cancel: payload.new.cancel === true,
+              missingDetails: payload.new.missing_details === true,
               thumbnailLink: payload.new.thumbnail_link || '',
               time: payload.new.time || '',
               youtubeLink: payload.new.youtube_link || '',
@@ -5496,6 +6056,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
               done: payload.new.done === true,
               priority: payload.new.priority === true,
               cancel: payload.new.cancel === true,
+              missingDetails: payload.new.missing_details === true,
               thumbnailLink: payload.new.thumbnail_link || '',
               time: payload.new.time || '',
               youtubeLink: payload.new.youtube_link || '',
@@ -5537,6 +6098,8 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
       done: 'done',
       priority: 'priority',
       cancel: 'cancel',
+      missingDetails: 'missing_details',
+      missing_details: 'missing_details',
       uploaded: 'uploaded',
       thumbnailLink: 'thumbnail_link',
       youtubeLink: 'youtube_link',
@@ -5560,6 +6123,11 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
         if (field === 'done' && value) {
           next.doneUpdatedAt = nowIso;
         }
+        if (field === 'missing_details' || field === 'missingDetails' || field === 'cancel') {
+          next.missing_details = value;
+          next.missingDetails = value;
+          next.cancel = value;
+        }
         if (field === 'notesMarketing') {
           next.notesMarketingUpdatedAt = nowIso;
           next.notesMarketingUpdatedBy = currentUser;
@@ -5578,6 +6146,10 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
         [col]: value,
         updated_at: nowIso
       };
+      if (field === 'missing_details' || field === 'missingDetails' || field === 'cancel') {
+        updatePayload.missing_details = value;
+        updatePayload.cancel = value;
+      }
       if (field === 'notesMarketing') {
         updatePayload.notes_marketing_updated_at = nowIso;
         updatePayload.notes_marketing_updated_by = currentUser;
@@ -5608,7 +6180,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
           .eq('name', itemKey);
       }
 
-      if (field === 'done' || field === 'cancel') {
+      if (field === 'done' || field === 'cancel' || field === 'missingDetails' || field === 'missing_details') {
         notifyCoreCountsChanged(['1535230545']);
       }
     } catch (err) {
@@ -5622,6 +6194,14 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
   const [stageUncompletedCounts, setStageUncompletedCounts] = useState<Record<string, number>>(() => {
     try {
       const cached = localStorage.getItem('stage_uncompleted_counts_cache_v1');
+      return cached ? JSON.parse(cached) : {};
+    } catch {
+      return {};
+    }
+  });
+  const [stageMissingDetailsCounts, setStageMissingDetailsCounts] = useState<Record<string, number>>(() => {
+    try {
+      const cached = localStorage.getItem('stage_missing_counts_cache_v1');
       return cached ? JSON.parse(cached) : {};
     } catch {
       return {};
@@ -5756,52 +6336,62 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
             const { count, error } = await supabase
               .from(tbl)
               .select('*', { count: 'exact', head: true })
-              .or('is_tagme3a.is.null,is_tagme3a.eq.false')
               .or('delivered.is.null,delivered.eq.false');
-            if (error) return [gid, 0] as const;
-            return [gid, count ?? 0] as const;
+            if (error) return { gid, pending: 0, missing: 0 };
+            return { gid, pending: count ?? 0, missing: 0 };
           }
           if (gid === '1939073164') {
-            const { count, error } = await supabase
+            // For Ve: query done, canceled, missing_details to separate actionable pending vs missing details tasks
+            const { data, error } = await supabase
               .from('reels_ve_26')
-              .select('*', { count: 'exact', head: true })
-              .or('done.is.null,done.eq.false')
-              .or('canceled.is.null,canceled.eq.false');
-            if (error) return [gid, 0] as const;
-            return [gid, count ?? 0] as const;
+              .select('done, canceled, missing_details');
+            if (error || !data) return { gid, pending: 0, missing: 0 };
+            const pending = data.filter(r => !r.done && !r.canceled && !r.missing_details).length;
+            const missing = data.filter(r => !r.done && !r.canceled && r.missing_details === true).length;
+            return { gid, pending, missing };
           }
           if (gid === '0') {
-            const { count, error } = await supabase
+            // For CUTS: query done, canceled, missing_details
+            const { data, error } = await supabase
               .from('reels_cuts_26')
-              .select('*', { count: 'exact', head: true })
-              .or('done.is.null,done.eq.false')
-              .or('canceled.is.null,canceled.eq.false');
-            if (error) return [gid, 0] as const;
-            return [gid, count ?? 0] as const;
+              .select('done, canceled, missing_details');
+            if (error || !data) return { gid, pending: 0, missing: 0 };
+            const pending = data.filter(r => !r.done && !r.canceled && !r.missing_details).length;
+            const missing = data.filter(r => !r.done && !r.canceled && r.missing_details === true).length;
+            return { gid, pending, missing };
           }
           if (gid === '1535230545') {
-            const { count, error } = await supabase
+            const { data, error } = await supabase
               .from('tagme3at_26')
-              .select('*', { count: 'exact', head: true })
-              .or('done.is.null,done.eq.false')
-              .or('cancel.is.null,cancel.eq.false');
-            if (error) return [gid, 0] as const;
-            return [gid, count ?? 0] as const;
+              .select('done, cancel, missing_details');
+            if (error || !data) return { gid, pending: 0, missing: 0 };
+            const pending = data.filter(r => !r.done && !r.cancel && !r.missing_details).length;
+            const missing = data.filter(r => !r.done && (r.missing_details === true || r.cancel === true)).length;
+            return { gid, pending, missing };
           }
         } catch {
-          return [gid, 0] as const;
+          return { gid, pending: 0, missing: 0 };
         }
-        return [gid, 0] as const;
+        return { gid, pending: 0, missing: 0 };
       });
 
       const results = await Promise.all(promises);
-      const updateMap: Record<string, number> = {};
-      results.forEach(([gid, count]) => {
-        if (gid) updateMap[gid] = count;
+      const updatePendingMap: Record<string, number> = {};
+      const updateMissingMap: Record<string, number> = {};
+      results.forEach((res) => {
+        if (res && res.gid) {
+          updatePendingMap[res.gid] = res.pending;
+          updateMissingMap[res.gid] = res.missing;
+        }
       });
       setStageUncompletedCounts(prev => {
-        const next = { ...prev, ...updateMap };
+        const next = { ...prev, ...updatePendingMap };
         try { localStorage.setItem('stage_uncompleted_counts_cache_v1', JSON.stringify(next)); } catch {}
+        return next;
+      });
+      setStageMissingDetailsCounts(prev => {
+        const next = { ...prev, ...updateMissingMap };
+        try { localStorage.setItem('stage_missing_counts_cache_v1', JSON.stringify(next)); } catch {}
         return next;
       });
     } catch (err) {
@@ -5824,7 +6414,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
   // Keep uncompleted count for active stage in sync with stageDbRows immediately in-memory
   useEffect(() => {
     if (isStageTab && activeGid && STAGE_TABLE_MAP[activeGid]) {
-      const count = stageDbRows.filter(r => !r.isTagme3a && !r.delivered).length;
+      const count = stageDbRows.filter(r => !r.delivered).length;
       setStageUncompletedCounts(prev => {
         if (prev[activeGid] === count) return prev;
         const next = { ...prev, [activeGid]: count };
@@ -5837,24 +6427,36 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
   // Keep uncompleted count for Tagme3at stage in sync with tagmeDbRows immediately in-memory
   useEffect(() => {
     if (tagmeDbRows.length > 0 || activeGid === '1535230545') {
-      const count = tagmeDbRows.filter(r => r.done !== true && r.cancel !== true).length;
+      const pendingCount = tagmeDbRows.filter(r => r.done !== true && r.cancel !== true && r.missingDetails !== true && r.missing_details !== true).length;
+      const missingCount = tagmeDbRows.filter(r => r.done !== true && (r.missingDetails === true || r.missing_details === true || r.cancel === true)).length;
       setStageUncompletedCounts(prev => {
-        if (prev['1535230545'] === count) return prev;
-        const next = { ...prev, ['1535230545']: count };
+        if (prev['1535230545'] === pendingCount) return prev;
+        const next = { ...prev, ['1535230545']: pendingCount };
         try { localStorage.setItem('stage_uncompleted_counts_cache_v1', JSON.stringify(next)); } catch {}
+        return next;
+      });
+      setStageMissingDetailsCounts(prev => {
+        if (prev['1535230545'] === missingCount) return prev;
+        const next = { ...prev, ['1535230545']: missingCount };
+        try { localStorage.setItem('stage_missing_counts_cache_v1', JSON.stringify(next)); } catch {}
         return next;
       });
     }
   }, [tagmeDbRows, activeGid]);
 
-  // Primary core production tabs that ALWAYS load their counts on startup and stay updated in Realtime
-  const PRIMARY_CORE_GIDS = useMemo(() => ['1535230545', '1939073164', '0'], []); // تجميعات, Ve, CUTS
+  // Core tabs + all stages that ALWAYS load their counts on startup and stay updated
+  const ALL_BADGE_GIDS = useMemo(() => [
+    '1535230545', '1939073164', '0',
+    '497207661', '96752860', '346788121',
+    '458352282', '2113852114', '2089699920',
+    '1640460225', '595027661', '286303232'
+  ], []);
 
-  // 1. Initial startup sync: pull counts for the 3 core tabs (تجميعات, Ve, CUTS) ONCE on startup
+  // 1. Initial startup sync: pull counts for all tabs ONCE on startup
   useEffect(() => {
     if (isDemo) return;
-    fetchCountsForGids(PRIMARY_CORE_GIDS);
-  }, [isDemo, fetchCountsForGids, PRIMARY_CORE_GIDS]);
+    fetchCountsForGids(ALL_BADGE_GIDS);
+  }, [isDemo, fetchCountsForGids, ALL_BADGE_GIDS]);
 
   // 2. On-demand: when user clicks/switches to any specific stage tab, ONLY refresh that single stage
   useEffect(() => {
@@ -6096,14 +6698,22 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
   const reelsTable = REELS_TABLE_MAP[activeGid];
   const isReelsTableTab = !!reelsTable;
 
-  // Keep uncompleted count for active Reels stage (VE / CUTS) in sync with reelsDbRows immediately
+  // Keep uncompleted count and missing details count for active Reels stage (VE / CUTS) in sync with reelsDbRows immediately
   useEffect(() => {
     if ((activeGid === '1939073164' || activeGid === '0') && (reelsDbRows.length > 0 || !isReelsDbLoading)) {
-      const count = reelsDbRows.filter(r => r.done !== true && r.canceled !== true).length;
+      const pendingCount = reelsDbRows.filter(r => r.done !== true && r.canceled !== true && r.missingDetails !== true && r.missing_details !== true).length;
+      const missingCount = reelsDbRows.filter(r => r.done !== true && r.canceled !== true && (r.missingDetails === true || r.missing_details === true)).length;
+
       setStageUncompletedCounts(prev => {
-        if (prev[activeGid] === count) return prev;
-        const next = { ...prev, [activeGid]: count };
+        if (prev[activeGid] === pendingCount) return prev;
+        const next = { ...prev, [activeGid]: pendingCount };
         try { localStorage.setItem('stage_uncompleted_counts_cache_v1', JSON.stringify(next)); } catch {}
+        return next;
+      });
+      setStageMissingDetailsCounts(prev => {
+        if (prev[activeGid] === missingCount) return prev;
+        const next = { ...prev, [activeGid]: missingCount };
+        try { localStorage.setItem('stage_missing_counts_cache_v1', JSON.stringify(next)); } catch {}
         return next;
       });
     }
@@ -6160,6 +6770,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
             editor: i.editor || i.editor_col || '',
             driveFinal: i.drive_final || '',
             canceled: i.canceled === true,
+            hardDriveStatus: i.hard_drive_status || null,
             uniqueKey: i.code,
             createdAt: i.created_at,
             updatedAt: i.updated_at
@@ -6191,6 +6802,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
             editCheck: i.edit_check === true,
             publish: i.publish === true || i.is_published === true || i.check === true,
             sharedLink: i.shared_link || '',
+            hardDriveStatus: i.hard_drive_status || null,
             uniqueKey: i.code,
             createdAt: i.created_at,
             updatedAt: i.updated_at
@@ -6253,6 +6865,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
                 editor: i.editor || '',
                 driveFinal: i.drive_final || '',
                 canceled: i.canceled === true,
+                hardDriveStatus: i.hard_drive_status || null,
                 uniqueKey: i.code,
                 createdAt: i.created_at,
                 updatedAt: i.updated_at
@@ -6284,6 +6897,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
                 editCheck: i.edit_check === true,
                 publish: i.publish === true || i.is_published === true || i.check === true,
                 sharedLink: i.shared_link || '',
+                hardDriveStatus: i.hard_drive_status || null,
                 uniqueKey: i.code,
                 createdAt: i.created_at,
                 updatedAt: i.updated_at
@@ -6315,6 +6929,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
                 editor: i.editor || '',
                 driveFinal: i.drive_final || '',
                 canceled: i.canceled === true,
+                hardDriveStatus: i.hard_drive_status || null,
                 uniqueKey: i.code,
                 createdAt: i.created_at,
                 updatedAt: i.updated_at
@@ -6346,6 +6961,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
                 editCheck: i.edit_check === true,
                 publish: i.publish === true || i.is_published === true || i.check === true,
                 sharedLink: i.shared_link || '',
+                hardDriveStatus: i.hard_drive_status || null,
                 uniqueKey: i.code,
                 createdAt: i.created_at,
                 updatedAt: i.updated_at
@@ -7191,6 +7807,8 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
       uncancel: '↩️ تم إلغاء تحديد التجميعة كملغاة',
       priority: '⚠️ تم تحديد التجميعة كأولوية قصوى',
       unpriority: '➖ تم إزالة الأولوية القصوى عن التجميعة',
+      missing_details: '⚠️ تم تحديد تفاصيل ناقصة على التجميعة',
+      unmissing_details: '↩️ تم إزالة تفاصيل ناقصة عن التجميعة',
     };
     const message = msgMap[type] || `تغيير في التجميعة`;
 
@@ -7202,8 +7820,14 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
       else if (type === 'undone') updateTagme3atDbField(itemKey, 'done', false);
       else if (type === 'priority') updateTagme3atDbField(itemKey, 'priority', true);
       else if (type === 'unpriority') updateTagme3atDbField(itemKey, 'priority', false);
-      else if (type === 'cancel') updateTagme3atDbField(itemKey, 'cancel', true);
-      else if (type === 'uncancel') updateTagme3atDbField(itemKey, 'cancel', false);
+      else if (type === 'cancel' || type === 'missing_details') {
+        updateTagme3atDbField(itemKey, 'missing_details', true);
+        updateTagme3atDbField(itemKey, 'cancel', true);
+      }
+      else if (type === 'uncancel' || type === 'unmissing_details') {
+        updateTagme3atDbField(itemKey, 'missing_details', false);
+        updateTagme3atDbField(itemKey, 'cancel', false);
+      }
     }
 
     if (type === 'done') {
@@ -7251,14 +7875,15 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
        });
     } else {
        setTaskStatuses(prev => {
-          const current = prev[itemKey] || { done: false, cancel: false };
+          const current = prev[itemKey] || { done: false, cancel: false, missingDetails: false };
           let d = current.done;
           let c = current.cancel;
+          let m = (current as any).missingDetails;
           if (type === 'done') d = true;
           else if (type === 'undone') d = false;
-          else if (type === 'cancel') c = true;
-          else if (type === 'uncancel') c = false;
-          const n = { ...prev, [itemKey]: { done: d, cancel: c, updatedAt: new Date().toISOString() } };
+          else if (type === 'cancel' || type === 'missing_details') { c = true; m = true; }
+          else if (type === 'uncancel' || type === 'unmissing_details') { c = false; m = false; }
+          const n = { ...prev, [itemKey]: { done: d, cancel: c, missingDetails: m, updatedAt: new Date().toISOString() } };
           syncState('task_statuses', n, itemKey, taskName, type, message);
           return n;
        });
@@ -7273,7 +7898,8 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
       updatedItem: {
         uniqueKey: itemKey,
         done: type === 'done' ? true : type === 'undone' ? false : undefined,
-        cancel: type === 'cancel' ? true : type === 'uncancel' ? false : undefined,
+        cancel: (type === 'cancel' || type === 'missing_details') ? true : (type === 'uncancel' || type === 'unmissing_details') ? false : undefined,
+        missingDetails: (type === 'missing_details' || type === 'cancel') ? true : (type === 'unmissing_details' || type === 'uncancel') ? false : undefined,
         priority: type === 'priority' ? true : (type === 'unpriority' || type === 'done') ? false : undefined,
       }
     });
@@ -8450,6 +9076,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
         editor: newRowData[15] || '',
         driveFinal: newRowData[16] || '',
         canceled: isCanceled,
+        hardDriveStatus: newRowData[21] !== undefined ? newRowData[21] : undefined,
         uniqueKey: newCode
       };
 
@@ -8472,6 +9099,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
         editor: updatedItem.editor,
         drive_final: updatedItem.driveFinal,
         canceled: isCanceled,
+        ...(newRowData[21] !== undefined ? { hard_drive_status: newRowData[21] } : {}),
         updated_at: new Date().toISOString()
       };
     } else {
@@ -8503,6 +9131,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
         driveFinal: newRowData[17] || '',
         canceled: isCanceled,
         missingDetails: isMissing,
+        hardDriveStatus: newRowData[21] !== undefined ? newRowData[21] : undefined,
         uniqueKey: newCode
       };
 
@@ -8528,6 +9157,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
         drive_final: updatedItem.driveFinal,
         canceled: isCanceled,
         missing_details: isMissing,
+        ...(newRowData[21] !== undefined ? { hard_drive_status: newRowData[21] } : {}),
         updated_at: new Date().toISOString()
       };
     }
@@ -9656,6 +10286,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
     { label: 'CUTS', gid: '0', icon: Video, colorHex: '#ff7843' },
     { label: 'إدارة المحررين والقوائم', gid: 'editors-team-management', icon: Users, colorHex: '#f43f5e' },
     { label: 'احصائيات الريلز', gid: 'reels-analytics', icon: BarChart3, colorHex: '#818cf8' },
+    { label: 'Calendar', gid: 'reels-calendar', icon: Calendar, colorHex: '#10b981' },
   ];
 
   useEffect(() => {
@@ -9739,10 +10370,10 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
   }, [yearFilter, teachers, teacherFilter, isOperations]);
 
   const availableWeeks = useMemo(() => {
-    if (isOperations || isTagme3at || isAnalyticsTagme || isReelsAnalytics) return [];
+    if (isOperations || isTagme3at || isAnalyticsTagme || isReelsAnalytics || isStudioCalendar) return [];
     const set = new Set(liveData.map((i: any) => i.week ? String(i.week).trim() : '').filter(Boolean));
     return Array.from(set) as string[];
-  }, [liveData, isOperations, isTagme3at, isAnalyticsTagme, isReelsAnalytics]);
+  }, [liveData, isOperations, isTagme3at, isAnalyticsTagme, isReelsAnalytics, isStudioCalendar]);
 
 
   const reelsStatusCounts = useMemo(() => {
@@ -10210,6 +10841,9 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
             <th className="px-3 py-4 text-center th-style" id="tour-ve-edit-col">EDIT</th>
           </>
         )}
+        {activeGid === '1436746012' && (
+          <th className="px-3 py-4 text-center th-style"><ColFilter colKey="canceled" label="Cancel" /></th>
+        )}
         <th className="px-4 py-4 text-center th-style" id="tour-ve-final-col">Drive Link (Final)</th>
         <th className="px-3 py-4 text-center th-style">Publish</th>
         <th className="px-4 py-4 text-center th-style">Shared Link</th>
@@ -10409,7 +11043,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
     return Array.from(list);
   }, [uniqueTeachers]);
 
-  const colSpan = isOperations ? 7 : isTagme3at ? (tagmeViewMode === 'SIMPLE' ? 8 : 13) : activeGid === '0' ? 18 : activeGid === '1939073164' ? (veViewMode === 'SIMPLE' ? 17 : 22) : ['1436746012', '798246690'].includes(activeGid) ? 16 : 7;
+  const colSpan = isOperations ? 7 : isTagme3at ? (tagmeViewMode === 'SIMPLE' ? 8 : 13) : activeGid === '0' ? 18 : activeGid === '1939073164' ? (veViewMode === 'SIMPLE' ? 17 : 22) : activeGid === '1436746012' ? 17 : activeGid === '798246690' ? 16 : 7;
 
   const effectiveLoading = isTagme3at 
     ? (isTagmeDbLoading && tagmeDbRows.length === 0)
@@ -10458,6 +11092,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
               colorful={colorfulTabs}
               active={activeGid === stage.gid}
               badgeCount={STAGE_WITH_BADGE_MAP[stage.gid] ? stageUncompletedCounts[stage.gid] : undefined}
+              missingDetailsCount={STAGE_WITH_BADGE_MAP[stage.gid] ? stageMissingDetailsCounts[stage.gid] : undefined}
               showDoneGreenBadge={GREEN_DONE_BADGE_GIDS.has(stage.gid)}
               isPinned={pinnedTabs.includes(stage.gid)}
               onTogglePin={() => togglePinTab(stage.gid)}
@@ -10479,7 +11114,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
           {/* Mode Selector (Segmented control between Operations, Reels, and Designers) */}
           {(() => {
             const MARKETING_LABELS = ['OP 25/26','Operations','OP 26/27','تجميعات','إحصائيات التجميعات 📊','Junior 4','Junior 5','Junior 6','Middle 1','Middle 2','Middle 3','Senior 1','Senior 2','Senior 3'];
-            const REELS_LABELS = ['Shooting','Ve','CUTS','احصائيات الريلز'];
+            const REELS_LABELS = ['Shooting','Ve','CUTS','إدارة المحررين والقوائم','احصائيات الريلز','Calendar'];
             const DESIGNERS_LABELS = ['Designers','احصائيات تصاميم','إدارة الفريق والقوائم'];
             const tabs = profile?.allowed_tabs ?? [];
             const hasAnyTab = (labels: string[]) => {
@@ -10556,6 +11191,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
                 colorful={colorfulTabs}
                 active={activeGid === stage.gid}
                 badgeCount={STAGE_WITH_BADGE_MAP[stage.gid] ? stageUncompletedCounts[stage.gid] : undefined}
+                missingDetailsCount={STAGE_WITH_BADGE_MAP[stage.gid] ? stageMissingDetailsCounts[stage.gid] : undefined}
                 showDoneGreenBadge={GREEN_DONE_BADGE_GIDS.has(stage.gid)}
                 isPinned={pinnedTabs.includes(stage.gid)}
                 onTogglePin={() => togglePinTab(stage.gid)}
@@ -10575,34 +11211,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
             ))}
           </div>
 
-          {/* Bottom Static Tabs (Analytics) */}
-          <div className="mt-4">
-            {stages.filter(s => s.gid === 'analytics_tagme3at').filter(stage => {
-            if (!profile) return true;
-            return PERMISSIONS.canViewTab(profile.role, stage.label, profile.allowed_tabs ?? []);
-          }).map((stage) => (
-              <SidebarItem
-                key={stage.gid}
-                icon={stage.icon}
-                label={stage.label}
-                colorHex={stage.colorHex}
-                colorful={colorfulTabs}
-                active={activeGid === stage.gid}
-                onClick={() => {
-                  setActiveGid(stage.gid);
-                  setActiveLabel(stage.label);
-                  setStatusFilter('All');
-                  setTeacherFilter('All');
-                  setYearFilter('All');
-                  setTermFilter('All');
-                  setBypassYearTerm(false);
-                  setStageWeekFilter('All');
-                  setColFilters({});
-                  setSearchQuery('');
-                }}
-              />
-            ))}
-          </div>
+
           {/* Users tab for admin and manager */}
           {profile?.role && PERMISSIONS.canManageUsers(profile.role) && (
             <SidebarItem
@@ -11107,9 +11716,28 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
                         <input
                           type="text"
                           required
-                          placeholder="مثال: تجميعة مراجعة ليلة الامتحان..."
+                          placeholder="مثال: M2-T1-U1-L4-SCI-EN-... أو تجميعة مراجعة..."
                           value={addForm.name}
-                          onChange={e => setAddForm({...addForm, name: e.target.value})}
+                          onChange={e => {
+                            const val = e.target.value;
+                            const updates: any = { name: val };
+                            const up = val.toUpperCase().trim();
+                            if (up.startsWith('S3-') || up.includes('SENIOR 3') || up.includes('ثالثة ثانوي')) updates.val = 'Senior 3';
+                            else if (up.startsWith('S2-') || up.includes('SENIOR 2') || up.includes('تانية ثانوي')) updates.val = 'Senior 2';
+                            else if (up.startsWith('S1-') || up.includes('SENIOR 1') || up.includes('أولى ثانوي') || up.includes('اولى ثانوي')) updates.val = 'Senior 1';
+                            else if (up.startsWith('M3-') || up.includes('MIDDLE 3') || up.includes('تالتة اعدادي') || up.includes('ثالثة اعدادي')) updates.val = 'Middle 3';
+                            else if (up.startsWith('M2-') || up.includes('MIDDLE 2') || up.includes('تانية اعدادي')) updates.val = 'Middle 2';
+                            else if (up.startsWith('M1-') || up.includes('MIDDLE 1') || up.includes('أولى اعدادي') || up.includes('اولى اعدادي')) updates.val = 'Middle 1';
+                            else if (up.startsWith('J6-') || up.includes('JUNIOR 6') || up.includes('ساتة')) updates.val = 'Junior 6';
+                            else if (up.startsWith('J5-') || up.includes('JUNIOR 5') || up.includes('خامسة')) updates.val = 'Junior 5';
+                            else if (up.startsWith('J4-') || up.includes('JUNIOR 4') || up.includes('رابعة')) updates.val = 'Junior 4';
+
+                            if (!addForm.filingName || addForm.filingName === '') {
+                              const match = val.match(/^([A-Za-z0-9]+-[A-Za-z0-9]+-[A-Za-z0-9]+)/);
+                              if (match) updates.filingName = match[1];
+                            }
+                            setAddForm(prev => ({ ...prev, ...updates }));
+                          }}
                           className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white focus:outline-none focus:border-emerald-500 transition-colors font-bold arabic-text text-sm"
                         />
                       </div>
@@ -11455,6 +12083,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
                 if (!stage) return null;
                 const isActive = activeGid === gid;
                 const pinBadge = STAGE_WITH_BADGE_MAP[gid] ? stageUncompletedCounts[gid] : undefined;
+                const pinMissing = STAGE_WITH_BADGE_MAP[gid] ? stageMissingDetailsCounts[gid] : undefined;
                 return (
                   <button
                     key={gid}
@@ -11470,6 +12099,11 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
                   >
                     <span className="w-2 h-2 rounded-full" style={{ backgroundColor: stage.colorHex || '#8b5cf6' }} />
                     <span>{stage.label}</span>
+                    {typeof pinMissing === 'number' && pinMissing > 0 && (
+                      <span className="px-1.5 py-0.2 min-w-[18px] h-4 rounded-full bg-amber-500 text-slate-950 text-[10px] font-mono font-black flex items-center justify-center shadow-[0_0_8px_rgba(245,158,11,0.85)] border border-amber-300/60" title={`${pinMissing} مهام بها تفاصيل ناقصة ⚠️`}>
+                        {pinMissing}
+                      </span>
+                    )}
                     {typeof pinBadge === 'number' && pinBadge > 0 ? (
                       <span className="px-1.5 py-0.2 min-w-[18px] h-4 rounded-full bg-rose-500 text-white text-[10px] font-mono font-black flex items-center justify-center shadow-[0_0_8px_rgba(244,63,94,0.6)]">
                         {pinBadge}
@@ -11484,6 +12118,10 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
                       >
                         <Check size={10} strokeWidth={3.5} className="text-white" />
                       </motion.span>
+                    ) : typeof pinBadge === 'number' && pinBadge === 0 ? (
+                      <span className="w-4 h-4 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center justify-center shrink-0" title="0 مهام متبقية">
+                        <Check size={9} strokeWidth={3.5} className="text-emerald-400" />
+                      </span>
                     ) : null}
                     <span
                       onClick={(e) => {
@@ -11508,7 +12146,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
           />
 
           {/* Filters Bar */}
-          {!isOp27 && !isHome && (
+          {!isOp27 && !isHome && !isStudioCalendar && (
             <>
               <div className="flex gap-4 items-center flex-wrap">
             <div className="flex-1 min-w-[240px] relative group">
@@ -11632,7 +12270,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
               )}
 
               {/* Responsive Cards Mode Toggle Button */}
-              {!isReelsAnalytics && !isAnalyticsTagme && !isDesignAnalytics && !isDesignersPage && (
+              {!isReelsAnalytics && !isStudioCalendar && !isAnalyticsTagme && !isDesignAnalytics && !isDesignersPage && (
                 <button
                   onClick={() => setIsCardsView(prev => !prev)}
                   className={`flex items-center gap-2 px-3.5 py-2 rounded-2xl border text-xs font-bold transition-all cursor-pointer shadow-sm ${
@@ -12109,6 +12747,10 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
             />
           ) : isReelsAnalytics ? (
             <ReelsAnalytics isDemo={isDemo} />
+          ) : isStudioCalendar ? (
+            <ErrorBoundary>
+              <StudioCalendarView isDemo={isDemo} userProfile={profile} toast={toast} />
+            </ErrorBoundary>
           ) : isEditorsTeamPage ? (
             <ErrorBoundary>
               <EditorsManagement userRole={profile?.role} toast={toast} />
@@ -12163,7 +12805,9 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
                         </span>
                       </div>
 
-                      <h4 className="text-sm font-black text-white arabic-text leading-snug pt-1">
+                      <h4 className={`text-sm font-black text-white arabic-text leading-snug pt-1 ${
+                        isCanceled ? 'line-through decoration-rose-500 decoration-2 opacity-75' : ''
+                      }`}>
                         {taskName}
                       </h4>
                       {item.branch && (
@@ -12526,7 +13170,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
                           const candidates = [key, item.uniqueKey, item.id, item.name].filter(Boolean).map(c => String(c).trim().toLowerCase().replace(/^tgm-/, ''));
                           return candidates.some(c => c === ck || c.includes(ck) || ck.includes(c));
                         }) || (item.editor && item.editor.toLowerCase() === profile?.name?.toLowerCase());
-                        return <TagmeRow key={idx} item={item} index={idx} isSimple={tagmeViewMode === 'SIMPLE'} onUpdateEditor={handleUpdateEditor} editorsList={editorsList} onUpdateEditorNotes={handleUpdateEditorNotes} onUpdateMarketingNotes={handleUpdateMarketingNotes} opSheetsList={opSheetsList} branchesList={branchesList} onUpdateOpSheet={handleUpdateOpSheet} onUpdateBranch={handleUpdateBranch} onUpdateDate={handleUpdateDate} isGlowing={isGlowing} liveData={liveData} canRaisePriority={canRaisePriority || isItemPri} priorityLimit={tabLimit} onStatusChange={handleStatusChange} isSubscribed={isSubscribed} onToggleSubscribe={() => toggleSubscribe(item.uniqueKey || key)} priorityOverride={isItemPri} statusOverride={taskStatuses[key] || taskStatuses[item.uniqueKey] || taskStatuses[item.id] || (item.done !== undefined || item.cancel !== undefined ? { done: item.done === true, cancel: item.cancel === true } : undefined)} onUpdateThumbnailLink={handleUpdateThumbnailLink} onUpdateTime={handleUpdateTime} onUpdateYoutubeLink={handleUpdateYoutubeLink} onUpdateUploaded={handleUpdateUploaded} onShowPriorityLimitModal={(limit: number) => setPriorityLimitModal({ isOpen: true, limit })} />;
+                        return <TagmeRow key={idx} item={item} index={idx} isSimple={tagmeViewMode === 'SIMPLE'} onUpdateEditor={handleUpdateEditor} editorsList={editorsList} onUpdateEditorNotes={handleUpdateEditorNotes} onUpdateMarketingNotes={handleUpdateMarketingNotes} opSheetsList={opSheetsList} branchesList={branchesList} onUpdateOpSheet={handleUpdateOpSheet} onUpdateBranch={handleUpdateBranch} onUpdateDate={handleUpdateDate} isGlowing={isGlowing} liveData={liveData} canRaisePriority={canRaisePriority || isItemPri} priorityLimit={tabLimit} onStatusChange={handleStatusChange} isSubscribed={isSubscribed} onToggleSubscribe={() => toggleSubscribe(item.uniqueKey || key)} priorityOverride={isItemPri} statusOverride={taskStatuses[key] || taskStatuses[item.uniqueKey] || taskStatuses[item.id] || (item.done !== undefined || item.cancel !== undefined || item.missingDetails !== undefined || item.missing_details !== undefined ? { done: item.done === true, cancel: item.cancel === true || item.missingDetails === true || item.missing_details === true, missingDetails: item.missingDetails === true || item.missing_details === true || item.cancel === true } : undefined)} onUpdateThumbnailLink={handleUpdateThumbnailLink} onUpdateTime={handleUpdateTime} onUpdateYoutubeLink={handleUpdateYoutubeLink} onUpdateUploaded={handleUpdateUploaded} onShowPriorityLimitModal={(limit: number) => setPriorityLimitModal({ isOpen: true, limit })} />;
                       }
                       if (activeGid === '0') {
                         const isSubscribed = (subscribedTasks || []).some(k => {

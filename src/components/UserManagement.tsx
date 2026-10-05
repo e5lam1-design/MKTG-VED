@@ -6,7 +6,7 @@ import { useAuth } from '../contexts/AuthContext';
 import {
   Users, UserPlus, Shield, Search, X, Check,
   Loader2, AlertCircle, ChevronDown, ToggleLeft, ToggleRight, Trash2,
-  Key, Eye, EyeOff, Lock, Send, QrCode, Calendar
+  Key, Eye, EyeOff, Lock, Send, QrCode, Calendar, GraduationCap
 } from 'lucide-react';
 import { TelegramQrModal } from './TelegramQrModal';
 import { getAllTelegramActivations, type TelegramActivationRecord } from '../lib/telegram';
@@ -22,7 +22,8 @@ const MARKETING_TABS = [
 const VIDEO_TABS = [
   'Shooting', 'Ve', 'CUTS', 'احصائيات الريلز',
   'Designers', 'احصائيات تصاميم',
-  'Calendar'
+  'Calendar',
+  'Teachers'
 ];
 
 const ALL_TABS = [...MARKETING_TABS, ...VIDEO_TABS];
@@ -279,6 +280,8 @@ const EditUserModal = ({ user, initialTeam, onClose, onSave }: EditUserModalProp
       if (l === lower) return true;
       if ((lower === 'calendar' || lower === 'التقويم' || lower === 'الكالندر') &&
           (l === 'calendar' || l === 'التقويم' || l === 'الكالندر')) return true;
+      if ((lower === 'teachers' || lower === 'reels-teachers' || lower === 'المدرسين' || lower === 'تتبع المدرسين') &&
+          (l === 'teachers' || l === 'reels-teachers' || l === 'المدرسين' || l === 'تتبع المدرسين')) return true;
       return false;
     });
   };
@@ -291,6 +294,8 @@ const EditUserModal = ({ user, initialTeam, onClose, onSave }: EditUserModalProp
         if (l === lower) return true;
         if ((lower === 'calendar' || lower === 'التقويم' || lower === 'الكالندر') &&
             (l === 'calendar' || l === 'التقويم' || l === 'الكالندر')) return true;
+        if ((lower === 'teachers' || lower === 'reels-teachers' || lower === 'المدرسين' || lower === 'تتبع المدرسين') &&
+            (l === 'teachers' || l === 'reels-teachers' || l === 'المدرسين' || l === 'تتبع المدرسين')) return true;
         return false;
       });
       if (exists) {
@@ -299,6 +304,8 @@ const EditUserModal = ({ user, initialTeam, onClose, onSave }: EditUserModalProp
           if (l === lower) return false;
           if ((lower === 'calendar' || lower === 'التقويم' || lower === 'الكالندر') &&
               (l === 'calendar' || l === 'التقويم' || l === 'الكالندر')) return false;
+          if ((lower === 'teachers' || lower === 'reels-teachers' || lower === 'المدرسين' || lower === 'تتبع المدرسين') &&
+              (l === 'teachers' || l === 'reels-teachers' || l === 'المدرسين' || l === 'تتبع المدرسين')) return false;
           return true;
         });
       } else {
@@ -545,6 +552,7 @@ const EditUserModal = ({ user, initialTeam, onClose, onSave }: EditUserModalProp
             {ALL_TABS.map(tab => {
               const active = isTabActive(tab);
               const isCal = tab === 'Calendar';
+              const isTeachers = tab === 'Teachers';
               return (
                 <button
                   key={tab}
@@ -554,20 +562,25 @@ const EditUserModal = ({ user, initialTeam, onClose, onSave }: EditUserModalProp
                     active
                       ? isCal
                         ? 'bg-emerald-500/20 border-emerald-500/50 text-emerald-300 shadow-[0_0_12px_rgba(16,185,129,0.25)] ring-1 ring-emerald-500/40'
-                        : 'bg-blue-500/20 border-blue-500/40 text-blue-300 shadow-sm'
+                        : isTeachers
+                          ? 'bg-cyan-500/20 border-cyan-500/50 text-cyan-300 shadow-[0_0_12px_rgba(6,182,212,0.25)] ring-1 ring-cyan-500/40'
+                          : 'bg-blue-500/20 border-blue-500/40 text-blue-300 shadow-sm'
                       : isCal
                         ? 'bg-emerald-500/[0.04] border-emerald-500/20 text-emerald-400/60 hover:bg-emerald-500/10'
-                        : 'bg-white/[0.03] border-white/[0.06] text-white/40 hover:bg-white/[0.06]'
+                        : isTeachers
+                          ? 'bg-cyan-500/[0.04] border-cyan-500/20 text-cyan-400/60 hover:bg-cyan-500/10'
+                          : 'bg-white/[0.03] border-white/[0.06] text-white/40 hover:bg-white/[0.06]'
                   }`}
                 >
                   {active ? (
-                    <Check size={11} className={`shrink-0 ${isCal ? 'text-emerald-400' : 'text-blue-400'}`} />
+                    <Check size={11} className={`shrink-0 ${isCal ? 'text-emerald-400' : isTeachers ? 'text-cyan-400' : 'text-blue-400'}`} />
                   ) : (
-                    <div className={`w-2.5 h-2.5 rounded-sm border shrink-0 ${isCal ? 'border-emerald-500/40' : 'border-white/20'}`} />
+                    <div className={`w-2.5 h-2.5 rounded-sm border shrink-0 ${isCal ? 'border-emerald-500/40' : isTeachers ? 'border-cyan-500/40' : 'border-white/20'}`} />
                   )}
                   <span className="truncate flex items-center gap-1.5">
                     {isCal && <Calendar size={12} className="shrink-0 text-emerald-400" />}
-                    <span>{isCal ? 'Calendar 📅 (التقويم)' : tab}</span>
+                    {isTeachers && <GraduationCap size={12} className="shrink-0 text-cyan-400" />}
+                    <span>{isCal ? 'Calendar 📅 (التقويم)' : isTeachers ? 'Teachers 🎓 (تتبع المدرسين)' : tab}</span>
                   </span>
                 </button>
               );

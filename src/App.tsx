@@ -12986,9 +12986,17 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
               <StudioCalendarView isDemo={isDemo} userProfile={profile} toast={toast} />
             </ErrorBoundary>
           ) : isTeachersTab ? (
-            <ErrorBoundary>
-              <TeachersFollowUpView isDemo={isDemo} userProfile={profile} toast={toast} />
-            </ErrorBoundary>
+            PERMISSIONS.canViewTab(profile?.role || 'junior', 'Teachers', profile?.allowed_tabs || []) ? (
+              <ErrorBoundary>
+                <TeachersFollowUpView isDemo={isDemo} userProfile={profile} toast={toast} />
+              </ErrorBoundary>
+            ) : (
+              <div className="flex flex-col items-center justify-center py-24 text-center text-slate-400">
+                <Lock className="w-12 h-12 text-rose-500 mb-3" />
+                <h3 className="text-lg font-bold text-white mb-1">غير مسموح بالوصول</h3>
+                <p className="text-sm">ليس لديك صلاحية لعرض تاب متابعة المدرسين.</p>
+              </div>
+            )
           ) : isEditorsTeamPage ? (
             <ErrorBoundary>
               <EditorsManagement userRole={profile?.role} toast={toast} />

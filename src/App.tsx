@@ -78,7 +78,6 @@ import { GlobalAnnouncementBar } from './components/GlobalAnnouncementBar';
 import { HomeView } from './components/HomeView';
 import { FeedbackModal } from './components/FeedbackModal';
 import { SystemGuideModal } from './components/SystemGuideModal';
-import { TelegramQrModal } from './components/TelegramQrModal';
 import { InteractiveTour } from './components/InteractiveTour';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { GoogleSheetImportModal } from './components/GoogleSheetImportModal';
@@ -3042,7 +3041,7 @@ const ShootingRow = ({ item, index, activeGid, onToggleFilmed, loadingFilmedCode
   const isDone = optimisticDone !== null 
     ? optimisticDone 
     : (isHardDrive ? hardDriveStatus === 'approved' : (item.done === true || item.done === 'TRUE'));
-  const isFilmed = item.filmed === true || item.filmed === 'TRUE';
+  const isFilmed = Boolean(editForm.filmed || item.filmed === true || item.filmed === 'TRUE');
   const isRowActive = activeCell?.rowIndex === index;
   const isPrivilegedUser = profile?.role === 'admin' || profile?.role === 'manager' || profile?.role === 'supervisor';
   const isMarketingUser = profile?.team?.toLowerCase() === 'marketing' && profile?.role !== 'admin' && profile?.role !== 'manager';
@@ -3068,7 +3067,11 @@ const ShootingRow = ({ item, index, activeGid, onToggleFilmed, loadingFilmedCode
                   boxShadow: 'inset 0 0 35px rgba(16, 185, 129, 0.20)'
                 }
               : isFilmed
-                ? { background: 'rgba(16, 185, 129, 0.09)', borderLeft: '3px solid rgba(16,185,129,0.35)' }
+                ? { 
+                    background: 'linear-gradient(90deg, rgba(16, 185, 129, 0.25) 0%, rgba(5, 150, 105, 0.14) 50%, rgba(16, 185, 129, 0.20) 100%)', 
+                    borderLeft: '5px solid #10b981',
+                    boxShadow: 'inset 0 0 35px rgba(16, 185, 129, 0.18)'
+                  }
                 : isMissing
                   ? { background: 'rgba(245, 158, 11, 0.08)' }
                   : {}
@@ -3078,8 +3081,10 @@ const ShootingRow = ({ item, index, activeGid, onToggleFilmed, loadingFilmedCode
           ? 'canceled-row border-rose-500/40 text-rose-100/90'
           : isDone 
             ? 'border-emerald-500/30 text-emerald-50 hover:bg-emerald-950/40' 
-            : isMissing ? 'border-white/[0.03] text-amber-100/90' 
-            : 'border-white/[0.03]'
+            : isFilmed
+              ? 'border-emerald-500/40 text-emerald-50 bg-emerald-950/40 hover:bg-emerald-900/50'
+              : isMissing ? 'border-white/[0.03] text-amber-100/90' 
+              : 'border-white/[0.03]'
       } row-hover ${isGlowing ? 'bg-emerald-500/20 shadow-[inset_0_0_25px_rgba(16,185,129,0.4)] ring-2 ring-emerald-500/50 border-emerald-500/50 animate-pulse relative z-10' : isRowActive ? 'relative z-20' : ''}`}
     >
       {!isSimple && (
@@ -6013,7 +6018,6 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
   const [showMyNotifs, setShowMyNotifs] = useState(false);
   const [showFeedbackModal, setShowFeedbackModal] = useState(false);
   const [showGuideModal, setShowGuideModal] = useState(false);
-  const [showTelegramModal, setShowTelegramModal] = useState(false);
   const [showChangePasswordModal, setShowChangePasswordModal] = useState(false);
   const [showTour, setShowTour] = useState(false);
   const unreadCount = myNotifs.filter(n => !n.read).length;
@@ -11533,16 +11537,6 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
               <span className="hidden md:inline text-[11px] text-emerald-300/80 group-hover:text-emerald-200">متصل الآن 🟢</span>
             </button>
 
-            {/* Telegram Bot Button */}
-            <button
-              onClick={() => setShowTelegramModal(true)}
-              className="px-3.5 py-2.5 rounded-2xl border border-sky-500/30 bg-sky-500/10 hover:bg-sky-500/20 text-sky-300 font-bold text-xs transition-all flex items-center gap-2 shadow-sm cursor-pointer active:scale-95"
-              title="رابط تليجرام المخصص وكود QR للإشعارات"
-            >
-              <Send size={15} className="text-sky-400" />
-              <span className="hidden sm:inline">بوت تليجرام ✈️</span>
-            </button>
-
             {/* Personal Notifications Bell */}
             <div className="relative">
               <button
@@ -13152,9 +13146,9 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
               <div 
                 ref={tableScrollRef}
                 onScroll={syncScrollFromTable}
-                className="table-container overflow-x-auto rounded-2xl border border-white/10 shadow-2xl bg-[#0a0f1d]/40 backdrop-blur-sm pb-8"
+                className="table-container overflow-auto max-h-[calc(100vh-175px)] rounded-2xl border border-white/10 shadow-2xl bg-[#0a0f1d]/40 backdrop-blur-sm pb-8"
               >
-                <table className={`text-right border-collapse w-full ${isReelsTableTab ? 'min-w-[2600px]' : isOperations ? 'min-w-[1600px]' : 'min-w-[1400px]'}`}>
+                <table className={`text-right border-separate border-spacing-0 w-full ${isReelsTableTab ? 'min-w-[2600px]' : isOperations ? 'min-w-[1600px]' : 'min-w-[1400px]'}`}>
                   <thead className="sticky top-0 z-30 bg-[#0c1222] shadow-[0_4px_20px_rgba(0,0,0,0.5)] border-b border-white/10">
                     <tr className="bg-[#0c1222]/95 backdrop-blur-md">
                       {renderHeaders()}
@@ -13824,13 +13818,6 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
           onClose={() => setShowGuideModal(false)}
           currentGid={activeGid}
           currentLabel={activeLabel}
-        />
-
-        {/* Telegram QR & Deep Link Modal */}
-        <TelegramQrModal
-          isOpen={showTelegramModal}
-          onClose={() => setShowTelegramModal(false)}
-          user={profile}
         />
 
         {/* Change Password Modal */}

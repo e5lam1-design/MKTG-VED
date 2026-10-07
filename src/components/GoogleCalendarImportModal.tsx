@@ -21,7 +21,7 @@ import {
   ExternalLink
 } from 'lucide-react';
 import { parseIcsContent, type ParsedGoogleEvent } from '../lib/icalParser';
-import { BRANCH_DEFINITIONS } from './StudioCalendarView';
+import { BRANCH_DEFINITIONS, formatTime12h } from './StudioCalendarView';
 
 interface GoogleCalendarImportModalProps {
   isOpen: boolean;
@@ -523,7 +523,7 @@ export const GoogleCalendarImportModal: React.FC<GoogleCalendarImportModalProps>
                             </span>
                             <span className="text-[11px] font-mono text-muted flex items-center gap-1">
                               <Clock size={11} className="text-gray-400" />
-                              <span>{ev.startTime} - {ev.endTime}</span>
+                              <span>{formatTime12h(ev.startTime)} - {formatTime12h(ev.endTime)}</span>
                             </span>
                           </div>
 

@@ -161,11 +161,34 @@ export const formatHourLabel = (hour: number): string => {
   return `${hour} AM`;
 };
 
+export const formatTime12h = (timeStr?: string): string => {
+  if (!timeStr) return '';
+  const clean = String(timeStr).trim();
+  if (clean.toLowerCase().includes('am') || clean.toLowerCase().includes('pm')) {
+    return clean;
+  }
+  const parts = clean.split(':');
+  if (parts.length < 2) return clean;
+  let hour = parseInt(parts[0], 10);
+  const minute = parts[1].slice(0, 2);
+  if (isNaN(hour)) return clean;
+  
+  if (hour === 24) hour = 0;
+  const period = hour >= 12 ? 'PM' : 'AM';
+  const hour12 = hour % 12 === 0 ? 12 : hour % 12;
+  return `${hour12}:${minute} ${period}`;
+};
+
 export const parseTimeToMinutes = (timeStr?: string, isEndTime = false): number => {
   if (!timeStr) return 13 * 60;
-  const parts = String(timeStr).split(':').map(Number);
-  const hour = isNaN(parts[0]) ? 13 : parts[0];
+  const isPM = /pm/i.test(timeStr);
+  const isAM = /am/i.test(timeStr);
+  const clean = String(timeStr).replace(/am|pm/gi, '').trim();
+  const parts = clean.split(':').map(Number);
+  let hour = isNaN(parts[0]) ? 13 : parts[0];
   const minute = isNaN(parts[1]) ? 0 : parts[1];
+  if (isPM && hour < 12) hour += 12;
+  if (isAM && hour === 12) hour = 0;
   if (isEndTime && (hour === 0 || hour === 24) && minute === 0) {
     return 24 * 60;
   }
@@ -796,6 +819,9 @@ export const StudioCalendarView: React.FC<StudioCalendarViewProps> = ({
         if (!matchTeacher && !matchNotes && !matchBranch && !matchVideographer && !matchCode) return false;
       }
       return true;
+    }).sort((a, b) => {
+      if (a.date !== b.date) return a.date.localeCompare(b.date);
+      return parseTimeToMinutes(a.startTime) - parseTimeToMinutes(b.startTime);
     });
   }, [sessions, selectedTeacherFilter, selectedBranchFilter, searchQuery]);
 
@@ -1374,7 +1400,9 @@ export const StudioCalendarView: React.FC<StudioCalendarViewProps> = ({
   };
 
   const getSessionsForDate = (dateStr: string) => {
-    return filteredSessions.filter(s => s.date === dateStr);
+    return filteredSessions
+      .filter(s => s.date === dateStr)
+      .sort((a, b) => parseTimeToMinutes(a.startTime) - parseTimeToMinutes(b.startTime));
   };
 
   // Available tasks for teacher in form modal
@@ -2007,7 +2035,7 @@ export const StudioCalendarView: React.FC<StudioCalendarViewProps> = ({
                                 borderColor: color.hex
                               }}
                               className={`px-2 py-1 rounded-md text-xs font-semibold cursor-grab active:cursor-grabbing transition-all hover:brightness-110 shadow-sm flex flex-col gap-0.5 text-right border active:scale-95 group/chip relative ${color.text}`}
-                              title={`${session.teacher} (${session.startTime} - ${session.endTime}) - مدة الجلسة: ${formatDurationArabic(getDurationMinutes(session.startTime, session.endTime))} - فرع ${bNorm} - ${reelCount} ريلز`}
+                              title={`${session.teacher} (${formatTime12h(session.startTime)} - ${formatTime12h(session.endTime)}) - مدة الجلسة: ${formatDurationArabic(getDurationMinutes(session.startTime, session.endTime))} - فرع ${bNorm} - ${reelCount} ريلز`}
                             >
                               {/* Top Row: Teacher Name (prominent and full width) + Reel Count */}
                               <div className="flex items-center justify-between gap-1 w-full min-w-0">
@@ -2023,8 +2051,8 @@ export const StudioCalendarView: React.FC<StudioCalendarViewProps> = ({
 
                               {/* Bottom Row: Time Range + Quick Extend button */}
                               <div className="flex items-center justify-between gap-1 w-full text-[10px] text-white/80 font-mono" dir="ltr">
-                                <span className="truncate opacity-90 text-[9.5px]">
-                                  {session.startTime} - {session.endTime}
+                                <span className="truncate opacity-90 text-[9.5px] font-bold">
+                                  {formatTime12h(session.startTime)} - {formatTime12h(session.endTime)}
                                 </span>
                                 <button
                                   type="button"
@@ -2209,7 +2237,7 @@ export const StudioCalendarView: React.FC<StudioCalendarViewProps> = ({
                                   ? 'ring-2 ring-white shadow-2xl scale-[1.01] z-40' 
                                   : 'hover:brightness-110 hover:shadow-xl'
                               }`}
-                              title={`${session.teacher} (${session.startTime} - ${displayEnd}) - مدة الجلسة: ${formatDurationArabic(durationMin)}`}
+                               title={`${session.teacher} (${formatTime12h(session.startTime)} - ${formatTime12h(displayEnd)}) - مدة الجلسة: ${formatDurationArabic(durationMin)}`}
                             >
                               {/* Top Bar: Teacher Name & Branch */}
                               <div>
@@ -2222,7 +2250,7 @@ export const StudioCalendarView: React.FC<StudioCalendarViewProps> = ({
                                 {/* Time Range & Duration Badge */}
                                 <div className="flex items-center gap-1.5 text-[10px] opacity-90 font-mono" dir="ltr">
                                   <Clock size={11} className="opacity-80 shrink-0" />
-                                  <span>{session.startTime} - {displayEnd}</span>
+                                  <span className="font-bold">{formatTime12h(session.startTime)} - {formatTime12h(displayEnd)}</span>
                                   <span className="opacity-90 px-1 py-0.2 rounded bg-black/20 text-[9px] font-sans font-bold">
                                     {formatDurationArabic(durationMin)}
                                   </span>
@@ -2382,7 +2410,14 @@ export const StudioCalendarView: React.FC<StudioCalendarViewProps> = ({
                   </div>
 
                   <div>
-                    <label className="block text-xs font-bold text-[#9aa0a6] mb-1.5">من الساعة (Start)</label>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <label className="text-xs font-bold text-[#9aa0a6]">من الساعة (Start)</label>
+                      {formData.startTime && (
+                        <span className="text-[11px] font-bold text-amber-300 font-mono">
+                          {formatTime12h(formData.startTime)}
+                        </span>
+                      )}
+                    </div>
                     <input
                       type="time"
                       value={formData.startTime}
@@ -2392,7 +2427,14 @@ export const StudioCalendarView: React.FC<StudioCalendarViewProps> = ({
                   </div>
 
                   <div>
-                    <label className="block text-xs font-bold text-[#9aa0a6] mb-1.5">إلى الساعة (End)</label>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <label className="text-xs font-bold text-[#9aa0a6]">إلى الساعة (End)</label>
+                      {formData.endTime && (
+                        <span className="text-[11px] font-bold text-amber-300 font-mono">
+                          {formatTime12h(formData.endTime)}
+                        </span>
+                      )}
+                    </div>
                     <input
                       type="time"
                       value={formData.endTime}
@@ -2704,7 +2746,7 @@ export const StudioCalendarView: React.FC<StudioCalendarViewProps> = ({
                   <div className="flex items-center gap-2 text-xs text-[#9aa0a6] mt-0.5">
                     <span>{activeSession.date}</span>
                     <span>•</span>
-                    <span dir="ltr">{activeSession.startTime} - {activeSession.endTime}</span>
+                    <span dir="ltr" className="font-bold text-white/90">{formatTime12h(activeSession.startTime)} - {formatTime12h(activeSession.endTime)}</span>
                     <span>•</span>
                     <span>فرع {normalizeBranch(activeSession.branch)}</span>
                   </div>
@@ -2748,8 +2790,8 @@ export const StudioCalendarView: React.FC<StudioCalendarViewProps> = ({
               </div>
 
               <div className="flex items-center justify-between text-xs text-[#9aa0a6] bg-[#282a2c] p-2.5 rounded-xl border border-white/5 font-mono">
-                <span>من: <b className="text-white font-mono">{activeSession.startTime}</b></span>
-                <span>إلى: <b className="text-white font-mono">{activeSession.endTime}</b></span>
+                <span>من: <b className="text-white font-mono">{formatTime12h(activeSession.startTime)}</b></span>
+                <span>إلى: <b className="text-white font-mono">{formatTime12h(activeSession.endTime)}</b></span>
                 <span className="text-[11px] text-[#4285f4] font-mono">
                   ({getDurationMinutes(activeSession.startTime, activeSession.endTime)} دقيقة)
                 </span>

@@ -272,6 +272,22 @@ type HistoryEntry = {
   author: string;
 };
 
+let _cachedNoteAuthorsRaw: string | null = null;
+let _cachedNoteAuthorsParsed: any = null;
+
+const getCachedNoteAuthors = () => {
+  try {
+    const raw = localStorage.getItem('note_authors');
+    if (raw !== _cachedNoteAuthorsRaw) {
+      _cachedNoteAuthorsRaw = raw;
+      _cachedNoteAuthorsParsed = raw ? JSON.parse(raw) : null;
+    }
+    return _cachedNoteAuthorsParsed;
+  } catch {
+    return null;
+  }
+};
+
 const HistoryInput = ({ itemKey, fieldKey, value, onChange, placeholder, updatedAt, updatedBy, fallbackAuthor, disabled }: any) => {
   const { profile } = useAuth();
   
@@ -328,10 +344,9 @@ const HistoryInput = ({ itemKey, fieldKey, value, onChange, placeholder, updated
 
     // 1. Check server-synced note_authors history first if available
     try {
-      const allAuthorsRaw = localStorage.getItem('note_authors');
-      if (allAuthorsRaw && fieldKey && itemKey) {
-        const allAuthors = JSON.parse(allAuthorsRaw);
-        const serverHist = allAuthors?.[`${fieldKey}_${itemKey}`]?.history;
+      const allAuthors = getCachedNoteAuthors();
+      if (allAuthors && fieldKey && itemKey) {
+        const serverHist = allAuthors[`${fieldKey}_${itemKey}`]?.history;
         if (Array.isArray(serverHist) && serverHist.length > 0) {
           entries = serverHist;
         }
@@ -621,7 +636,7 @@ const HistoryInput = ({ itemKey, fieldKey, value, onChange, placeholder, updated
   );
 };
 
-const InlineCombobox = ({ value, onChange, options, placeholder }: any) => {
+const InlineCombobox = React.memo(({ value, onChange, options, placeholder }: any) => {
   const [isOpen, setIsOpen] = useState(false);
   const [inputValue, setInputValue] = useState('');
   const [dropdownPos, setDropdownPos] = useState<{ top?: number; bottom?: number; left: number; width: number } | null>(null);
@@ -804,7 +819,7 @@ const InlineCombobox = ({ value, onChange, options, placeholder }: any) => {
       )}
     </div>
   );
-};
+});
 
 const CustomSelect = ({ value, onChange, options, placeholder, isColumn = false }: any) => {
   const [isOpen, setIsOpen] = useState(false);
@@ -2510,7 +2525,7 @@ const StageRow = ({ item, index, tagmeTransfers, onTagmeToggle, activeLabel, isG
   );
 };
 
-const AutofillCell = ({ 
+const AutofillCell = React.memo(({ 
   colKey, 
   rowIndex, 
   value, 
@@ -2701,7 +2716,7 @@ const AutofillCell = ({
       </div>
     </td>
   );
-};
+});
 
 const parseScriptValue = (val: string) => {
   if (!val) return null;
@@ -2778,7 +2793,7 @@ const parseScriptValue = (val: string) => {
 };
 
 // ─── REELS Row (Shooting, Ve, Counter) ────────────────────────────────────────
-const ShootingRow = ({ item, index, activeGid, onToggleFilmed, loadingFilmedCode, onUpdateShootingRow, onToggleEditCheck, liveData, optionsLists, autofillDrag, setAutofillDrag, onApplyAutofill, activeCell, setActiveCell, toast, isSubscribed, onToggleSubscribe, isSimple, publishedTasks, sharedLinks, onTogglePublish, onUpdateSharedLink, noteAuthors }: any) => {
+const ShootingRow = React.memo(({ item, index, activeGid, onToggleFilmed, loadingFilmedCode, onUpdateShootingRow, onToggleEditCheck, liveData, optionsLists, autofillDrag, setAutofillDrag, onApplyAutofill, activeCell, setActiveCell, toast, isSubscribed, onToggleSubscribe, isSimple, publishedTasks, sharedLinks, onTogglePublish, onUpdateSharedLink, noteAuthors }: any) => {
   const isGlowing = false;
   const [isEditChecked, setIsEditChecked] = useState(Boolean(item.editCheck || item.edit_check));
   useEffect(() => {
@@ -3047,10 +3062,7 @@ const ShootingRow = ({ item, index, activeGid, onToggleFilmed, loadingFilmedCode
   const isMarketingUser = profile?.team?.toLowerCase() === 'marketing' && profile?.role !== 'admin' && profile?.role !== 'manager';
 
   return (
-    <motion.tr
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ delay: index * 0.01 }}
+    <tr
       style={
         isGlowing
           ? {}
@@ -3963,12 +3975,12 @@ const ShootingRow = ({ item, index, activeGid, onToggleFilmed, loadingFilmedCode
           );
         })()}
       </td>
-    </motion.tr>
+    </tr>
   );
-};
+});
 
 // ─── CUTS Row ───────────────────────────────────────────────────────────────
-const CutsRow = ({ 
+const CutsRow = React.memo(({ 
   item, 
   index, 
   onUpdateShootingRow, 
@@ -4377,10 +4389,7 @@ const CutsRow = ({
   const isPrivilegedUser = profile?.role === 'admin' || profile?.role === 'manager' || profile?.role === 'supervisor';
 
   return (
-    <motion.tr
-      initial={{ opacity: 0, y: 10 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ delay: index * 0.01 }}
+    <tr
       className={`transition-all duration-300 border-b border-white/[0.03] row-hover ${
         isCanceled
           ? 'canceled-row bg-rose-500/[0.09] hover:bg-rose-500/[0.14] border-rose-500/30 text-rose-100/90'
@@ -4865,9 +4874,9 @@ const CutsRow = ({
           {isCanceled && <CheckCircle2 size={14} />}
         </button>
       </td>
-    </motion.tr>
+    </tr>
   );
-};
+});
 
 const TAGME_DAILY_PRIORITY_LIMIT = 10;
 
@@ -5904,23 +5913,19 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
     if (!tableEl) return;
 
     const onWheel = (e: WheelEvent) => {
-      const target = e.target as HTMLElement;
-      const isHeader = Boolean(target.closest('thead'));
-      
-      // If hovering over table header or holding Shift, scroll horizontally
-      if (isHeader || e.shiftKey) {
-        if (e.deltaY !== 0 && !e.shiftKey) {
-          e.preventDefault();
-          scrollSourceRef.current = 'table';
-          tableEl.scrollLeft += e.deltaY * 1.5;
-          if (topScrollRef.current) {
-            topScrollRef.current.scrollLeft = tableEl.scrollLeft;
-          }
-          clearTimeout(scrollTimeoutRef.current);
-          scrollTimeoutRef.current = setTimeout(() => {
-            scrollSourceRef.current = null;
-          }, 60);
+      // Only scroll horizontally if user is explicitly holding Shift key
+      // NEVER block or hijack normal vertical scrolling on the header or table
+      if (e.shiftKey && e.deltaY !== 0) {
+        e.preventDefault();
+        scrollSourceRef.current = 'table';
+        tableEl.scrollLeft += e.deltaY * 1.5;
+        if (topScrollRef.current) {
+          topScrollRef.current.scrollLeft = tableEl.scrollLeft;
         }
+        clearTimeout(scrollTimeoutRef.current);
+        scrollTimeoutRef.current = setTimeout(() => {
+          scrollSourceRef.current = null;
+        }, 60);
       }
     };
 
@@ -9188,10 +9193,10 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
     }).catch(err => console.error("Autofill background batch update error:", err));
   };
 
-  const [activeVisibleRecordsLimit, setActiveVisibleRecordsLimit] = useState<number>(400);
+  const [activeVisibleRecordsLimit, setActiveVisibleRecordsLimit] = useState<number>(120);
 
   useEffect(() => {
-    setActiveVisibleRecordsLimit(400);
+    setActiveVisibleRecordsLimit(120);
   }, [activeGid, searchQuery, statusFilter, teacherFilter, yearFilter, termFilter, colFilters]);
 
   useEffect(() => {
@@ -11281,6 +11286,27 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
     return Array.from(list);
   }, [uniqueTeachers]);
 
+  const reelsOptionsLists = useMemo(() => ({
+    branches: uniqueBranches,
+    years: uniqueYears,
+    teachers: uniqueTeachers,
+    extraNames: uniqueExtraNames,
+    types: uniqueTypes,
+    formats: uniqueFormats,
+    bys: uniqueBys,
+    storages: uniqueStorages,
+    editors: editorsList
+  }), [uniqueBranches, uniqueYears, uniqueTeachers, uniqueExtraNames, uniqueTypes, uniqueFormats, uniqueBys, uniqueStorages, editorsList]);
+
+  const cutsOptionsLists = useMemo(() => ({
+    branches: uniqueBranches,
+    years: uniqueYears,
+    types: uniqueTypes,
+    formats: uniqueFormats,
+    editors: editorsList,
+    extraNames: uniqueExtraNames
+  }), [uniqueBranches, uniqueYears, uniqueTypes, uniqueFormats, editorsList, uniqueExtraNames]);
+
   const colSpan = isOperations ? 7 : isTagme3at ? (tagmeViewMode === 'SIMPLE' ? 8 : 13) : isStageTab ? 13 : activeGid === '0' ? 18 : activeGid === '1939073164' ? (veViewMode === 'SIMPLE' ? 17 : 22) : activeGid === '1436746012' ? 17 : activeGid === '798246690' ? 16 : 7;
 
   const effectiveLoading = isTagme3at 
@@ -13083,8 +13109,8 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
             </div>
           ) : (
             <FilterContext.Provider value={filterContextValue}>
-              {/* Top Horizontal Scrollbar & Quick Controls - STICKY when scrolling vertically */}
-              <div className="sticky top-2 z-40 flex items-center gap-2 mb-3 px-3 py-2 bg-[#070b14]/95 backdrop-blur-2xl border border-white/15 rounded-2xl shadow-[0_10px_35px_rgba(0,0,0,0.85)] ring-1 ring-white/5 select-none transition-all">
+              {/* Top Horizontal Scrollbar & Quick Controls */}
+              <div className="flex items-center gap-2 mb-3 px-3 py-2 bg-[#070b14]/95 backdrop-blur-2xl border border-white/15 rounded-2xl shadow-lg ring-1 ring-white/5 select-none transition-all">
                 {/* Left controls: Scroll Left / Jump to Start */}
                 <div className="flex items-center gap-1.5 shrink-0">
                   <button
@@ -13423,13 +13449,13 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
                           return candidates.some(c => c === ck || c.includes(ck) || ck.includes(c));
                         });
                         return <CutsRow 
-                          key={idx} 
+                          key={item.id || item.code || item.uniqueKey || idx} 
                           item={item} 
                           index={idx} 
                           onUpdateShootingRow={handleUpdateShootingRow}
                           onToggleEditCheck={handleToggleEditCheck}
                           liveData={liveData} 
-                          optionsLists={{ branches: uniqueBranches, years: uniqueYears, types: uniqueTypes, formats: uniqueFormats, editors: editorsList, extraNames: uniqueExtraNames }} 
+                          optionsLists={cutsOptionsLists} 
                           autofillDrag={autofillDrag} 
                           setAutofillDrag={setAutofillDrag} 
                           onApplyAutofill={handleApplyAutofill} 
@@ -13447,7 +13473,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
                           const candidates = [item.id, item.code, item.uniqueKey].filter(Boolean).map(c => String(c).trim().toLowerCase());
                           return candidates.some(c => c === ck || c.includes(ck) || ck.includes(c));
                         });
-                        return <ShootingRow key={item.code || item.id || item.uniqueKey || idx} item={item} index={idx} activeGid={activeGid} onToggleFilmed={handleFilmedToggle} onToggleEditCheck={handleToggleEditCheck} loadingFilmedCode={loadingFilmedCode} onUpdateShootingRow={handleUpdateShootingRow} liveData={liveData} optionsLists={{ branches: uniqueBranches, years: uniqueYears, teachers: uniqueTeachers, extraNames: uniqueExtraNames, types: uniqueTypes, formats: uniqueFormats, bys: uniqueBys, storages: uniqueStorages, editors: editorsList }} autofillDrag={autofillDrag} setAutofillDrag={setAutofillDrag} onApplyAutofill={handleApplyAutofill} activeCell={activeCell} setActiveCell={setActiveCell} toast={toast} isSubscribed={isSubscribed} onToggleSubscribe={() => toggleSubscribe(item.code || item.id || item.uniqueKey)} isSimple={activeGid === '1939073164' && veViewMode === 'SIMPLE'} publishedTasks={publishedTasks} sharedLinks={sharedLinks} onTogglePublish={handleTogglePublish} onUpdateSharedLink={handleUpdateSharedLink} noteAuthors={noteAuthors} />;
+                        return <ShootingRow key={item.code || item.id || item.uniqueKey || idx} item={item} index={idx} activeGid={activeGid} onToggleFilmed={handleFilmedToggle} onToggleEditCheck={handleToggleEditCheck} loadingFilmedCode={loadingFilmedCode} onUpdateShootingRow={handleUpdateShootingRow} liveData={liveData} optionsLists={reelsOptionsLists} autofillDrag={autofillDrag} setAutofillDrag={setAutofillDrag} onApplyAutofill={handleApplyAutofill} activeCell={activeCell} setActiveCell={setActiveCell} toast={toast} isSubscribed={isSubscribed} onToggleSubscribe={() => toggleSubscribe(item.code || item.id || item.uniqueKey)} isSimple={activeGid === '1939073164' && veViewMode === 'SIMPLE'} publishedTasks={publishedTasks} sharedLinks={sharedLinks} onTogglePublish={handleTogglePublish} onUpdateSharedLink={handleUpdateSharedLink} noteAuthors={noteAuthors} />;
                       }
                       return <StageRow key={idx} item={item} index={idx} tagmeTransfers={tagmeTransfers} onTagmeToggle={handleTagmeToggle} activeLabel={activeLabel} isGlowing={isGlowing} onUpdateDate={handleUpdateDate} onUpdateWeek={handleUpdateWeek} onUpdateThumbnailLink={handleUpdateThumbnailLink} onUpdateTime={handleUpdateTime} onUpdateYoutubeLink={handleUpdateYoutubeLink} onUpdateUploaded={handleUpdateUploaded} onToggleDelivered={handleToggleDelivered} onDeleteRow={handleDeleteStageRow} />;
                     }) : (
@@ -13459,19 +13485,19 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
                       </motion.tr>
                     )}
                   </AnimatePresence>
-                  {filteredData.length > visibleRecordsLimit && !(isOperations && teacherFilter === 'All') && (
+                  {filteredData.length > activeVisibleRecordsLimit && !(isOperations && teacherFilter === 'All') && (
                     <tr>
                       <td colSpan={colSpan} className="py-10 text-center">
                         <div className="flex flex-col items-center justify-center gap-4 animate-fadeIn">
                           <p className="text-xs text-muted font-bold uppercase tracking-widest arabic-text">
-                            تم عرض {visibleRecordsLimit} من إجمالي {filteredData.length} سجل. يرجى استخدام البحث أو الفلاتر، أو اضغط أدناه لعرض المزيد:
+                            تم عرض {Math.min(filteredData.length, activeVisibleRecordsLimit)} من إجمالي {filteredData.length} سجل. يرجى استخدام البحث أو الفلاتر، أو اضغط أدناه لعرض المزيد:
                           </p>
                           <button
-                            onClick={() => setVisibleRecordsLimit(prev => prev + 200)}
+                            onClick={() => setActiveVisibleRecordsLimit(prev => prev + 100)}
                             className="px-8 py-3.5 bg-primary/10 hover:bg-primary text-primary hover:text-white border border-primary/30 rounded-2xl text-xs font-black uppercase tracking-widest transition-all hover:scale-105 active:scale-95 cursor-pointer shadow-lg hover:shadow-primary/20 flex items-center gap-2"
                           >
                             <Sparkles size={16} />
-                            <span>عرض المزيد (Load More +200)</span>
+                            <span>عرض 100 سجل إضافي ({Math.min(filteredData.length, activeVisibleRecordsLimit + 100)} / {filteredData.length})</span>
                           </button>
                         </div>
                       </td>

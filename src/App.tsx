@@ -6591,6 +6591,57 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
     }
   }, [tagmeDbRows, activeGid]);
 
+  // Bulletproof Auto-reconcile: Ensures ANY reel filmed in Shooting is guaranteed to exist in Ve table
+  const reconcileShootingToVe = useCallback(async () => {
+    if (isDemo) return;
+    try {
+      const { data: filmedShooting } = await supabase
+        .from('reels_shooting_26')
+        .select('*')
+        .eq('filmed', true);
+
+      if (!filmedShooting || filmedShooting.length === 0) return;
+
+      const { data: existingVe } = await supabase
+        .from('reels_ve_26')
+        .select('code');
+
+      const veCodeSet = new Set((existingVe || []).map(r => String(r.code || '').trim().toLowerCase()));
+      const missingFromVe = filmedShooting.filter(r => !veCodeSet.has(String(r.code || '').trim().toLowerCase()));
+
+      if (missingFromVe.length > 0) {
+        const toUpsert = missingFromVe.map(item => ({
+          code: item.code,
+          date: item.date || new Date().toISOString().split('T')[0],
+          branch: item.branch || '',
+          year: item.year || '',
+          teacher: item.teacher || '',
+          extra_name: item.extra_name || item.extraName || '',
+          script: item.script || '',
+          type: item.type || '',
+          format: item.format || '',
+          filmed: true,
+          filming_date: item.filming_date || new Date().toLocaleDateString('en-US'),
+          by: item.by || '',
+          storage: item.storage || '',
+          notes: item.notes || '',
+          drive_raw: item.drive_raw || '',
+          editor_col: item.editor_col || 'غير محدد',
+          done: false,
+          drive_final: item.drive_final || '',
+          canceled: false,
+          missing_details: false,
+          updated_at: new Date().toISOString()
+        }));
+
+        await supabase.from('reels_ve_26').upsert(toUpsert, { onConflict: 'code' });
+        notifyCoreCountsChanged(['1939073164']);
+      }
+    } catch (err) {
+      console.warn('[Auto-Reconcile] Error syncing shooting to ve:', err);
+    }
+  }, [isDemo, notifyCoreCountsChanged]);
+
   // Core tabs + all stages that ALWAYS load their counts on startup and stay updated
   const ALL_BADGE_GIDS = useMemo(() => [
     '1535230545', '1939073164', '0',
@@ -6599,24 +6650,33 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
     '1640460225', '595027661', '286303232'
   ], []);
 
-  // 1. Initial startup sync: pull counts for all tabs ONCE on startup
+  // 1. Initial startup sync: pull counts for all tabs ONCE on startup + reconcile filmed reels
   useEffect(() => {
     if (isDemo) return;
     fetchCountsForGids(ALL_BADGE_GIDS);
-  }, [isDemo, fetchCountsForGids, ALL_BADGE_GIDS]);
+    reconcileShootingToVe();
+  }, [isDemo, fetchCountsForGids, ALL_BADGE_GIDS, reconcileShootingToVe]);
 
   // 2. On-demand: when user clicks/switches to any specific stage tab, ONLY refresh that single stage
   useEffect(() => {
     if (isDemo || !activeGid || !STAGE_WITH_BADGE_MAP[activeGid]) return;
     fetchCountsForGids([activeGid]);
-  }, [activeGid, isDemo, fetchCountsForGids]);
+    if (activeGid === '1436746012' || activeGid === '1939073164') {
+      reconcileShootingToVe();
+    }
+  }, [activeGid, isDemo, fetchCountsForGids, reconcileShootingToVe]);
 
-  // 3. Dedicated Realtime subscription for the 3 Core Tabs (reels_ve_26, reels_cuts_26, tagme3at_26)
+  // 3. Dedicated Realtime subscription for the 3 Core Tabs (reels_ve_26, reels_cuts_26, tagme3at_26) + reels_shooting_26
   useEffect(() => {
     if (isDemo) return;
 
     const coreChannel = supabase
       .channel(`core_badges_realtime_${Date.now()}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'reels_shooting_26' }, (payload: any) => {
+        if (payload.new && (payload.new.filmed === true || payload.new.filmed === 'TRUE')) {
+          reconcileShootingToVe();
+        }
+      })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'reels_ve_26' }, () => {
         fetchCountsForGids(['1939073164']);
       })
@@ -6631,7 +6691,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
     return () => {
       supabase.removeChannel(coreChannel);
     };
-  }, [isDemo, fetchCountsForGids]);
+  }, [isDemo, fetchCountsForGids, reconcileShootingToVe]);
 
   // Reward celebration toast when all tasks in CUTS, Ve, or تجميعات are completed (transitions >0 down to 0)
   const prevStageCountsRef = useRef<Record<string, number>>({});
@@ -9694,7 +9754,8 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
 
         // Automatic copy / sync to Ve table (reels_ve_26) when filmed in Shooting tab
         if (activeGid === '1436746012') {
-          if (Boolean(prevItem?.filmed) !== isFilmed) {
+          const wasPreviouslyFilmed = Boolean(prevItem?.filmed === true || prevItem?.filmed === 'TRUE');
+          if (wasPreviouslyFilmed !== isFilmed) {
             setStageUncompletedCounts(prev => {
               const cur = prev['1939073164'] || 0;
               const nextVal = Math.max(0, cur + (isFilmed ? 1 : -1));
@@ -9737,7 +9798,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
               toast.success("تم نقل ومزامنة الريل تلقائياً إلى شيت VE! 🎬");
               notifyCoreCountsChanged(['1939073164']);
             }
-          } else {
+          } else if (wasPreviouslyFilmed) {
             await supabase.from('reels_ve_26').delete().or(`code.eq."${oldCode}",code.eq."${newCode}",code.eq."${updatedItem.code}"`);
             toast.info("تمت إزالة الريل من شيت VE لإلغاء التصوير");
             notifyCoreCountsChanged(['1939073164']);

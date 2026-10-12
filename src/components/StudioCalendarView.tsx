@@ -1152,12 +1152,39 @@ export const StudioCalendarView: React.FC<StudioCalendarViewProps> = ({
 
       if (session.taskCodes && session.taskCodes.length > 0) {
         for (const code of session.taskCodes) {
-          supabase.from('reels_shooting_26').update({
+          const task = shootingTasks.find(t => (t.code || '').trim().toLowerCase() === code.trim().toLowerCase());
+          await supabase.from('reels_shooting_26').update({
             filmed: true,
             filming_date: todayStr,
             by: session.videographer || 'الأستديو',
             updated_at: nowIso
-          }).eq('code', code).then();
+          }).eq('code', code);
+
+          // Direct sync to reels_ve_26 so it never goes missing when marked from calendar
+          const veRecord = {
+            code: code,
+            date: task?.date || new Date().toISOString().split('T')[0],
+            branch: task?.branch || session.location || '',
+            year: task?.year || '',
+            teacher: task?.teacher || session.teacher || '',
+            extra_name: task?.extra_name || task?.extraName || '',
+            script: task?.script || '',
+            type: task?.type || '',
+            format: task?.format || 'REEL',
+            filmed: true,
+            filming_date: todayStr,
+            by: session.videographer || task?.by || 'الأستديو',
+            storage: task?.storage || '',
+            notes: task?.notes || '',
+            drive_raw: task?.drive_raw || task?.driveRaw || '',
+            editor_col: task?.editor_col || task?.editorCol || 'غير محدد',
+            done: false,
+            drive_final: '',
+            canceled: false,
+            missing_details: false,
+            updated_at: nowIso
+          };
+          await supabase.from('reels_ve_26').upsert(veRecord, { onConflict: 'code' });
         }
         setShootingTasks(prev => prev.map(t => {
           if (session.taskCodes.includes(t.code)) {
@@ -1168,7 +1195,7 @@ export const StudioCalendarView: React.FC<StudioCalendarViewProps> = ({
       }
 
       setActiveSession(updatedSession);
-      if (toast) toast.success(`🎉 تم تسجيل تصوير كافة ريلز جلسة (${session.teacher}) بنجاح!`);
+      if (toast) toast.success(`🎉 تم تسجيل تصوير كافة ريلز جلسة (${session.teacher}) ونقلها لشيت VE بنجاح!`);
     } catch (err: any) {
       console.error('Error marking filmed:', err);
     } finally {
@@ -1189,14 +1216,50 @@ export const StudioCalendarView: React.FC<StudioCalendarViewProps> = ({
       return t;
     }));
 
-    await supabase.from('reels_shooting_26').update({
-      filmed: nextFilmed,
-      filming_date: nextFilmed ? todayStr : undefined,
-      updated_at: nowIso
-    }).eq('code', taskCode);
+    if (nextFilmed) {
+      const task = shootingTasks.find(t => (t.code || '').trim().toLowerCase() === taskCode.trim().toLowerCase());
+      await supabase.from('reels_shooting_26').update({
+        filmed: true,
+        filming_date: todayStr,
+        updated_at: nowIso
+      }).eq('code', taskCode);
+
+      const veRecord = {
+        code: taskCode,
+        date: task?.date || new Date().toISOString().split('T')[0],
+        branch: task?.branch || '',
+        year: task?.year || '',
+        teacher: task?.teacher || '',
+        extra_name: task?.extra_name || task?.extraName || '',
+        script: task?.script || '',
+        type: task?.type || '',
+        format: task?.format || 'REEL',
+        filmed: true,
+        filming_date: todayStr,
+        by: task?.by || '',
+        storage: task?.storage || '',
+        notes: task?.notes || '',
+        drive_raw: task?.drive_raw || task?.driveRaw || '',
+        editor_col: task?.editor_col || task?.editorCol || 'غير محدد',
+        done: false,
+        drive_final: '',
+        canceled: false,
+        missing_details: false,
+        updated_at: nowIso
+      };
+      await supabase.from('reels_ve_26').upsert(veRecord, { onConflict: 'code' });
+    } else {
+      await supabase.from('reels_shooting_26').update({
+        filmed: false,
+        filming_date: null,
+        updated_at: nowIso
+      }).eq('code', taskCode);
+
+      await supabase.from('reels_ve_26').delete().eq('code', taskCode);
+    }
 
     if (toast) {
-      if (nextFilmed) toast.success(`تم تسجيل الريل (${taskCode}) كمصور ✅`);
+      if (nextFilmed) toast.success(`تم تسجيل الريل (${taskCode}) كمصور ونقله لشيت VE ✅`);
       else toast.info(`تم إلغاء تصوير الريل (${taskCode}) ⏳`);
     }
   };

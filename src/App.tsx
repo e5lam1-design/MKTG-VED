@@ -6591,27 +6591,33 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
     }
   }, [tagmeDbRows, activeGid]);
 
-  // Bulletproof Auto-reconcile: Ensures ANY reel filmed in Shooting is guaranteed to exist in Ve table
+  // Bulletproof Auto-reconcile: Ensures ANY reel filmed in Shooting is guaranteed to exist in Ve table without ever overwriting VE data
   const reconcileShootingToVe = useCallback(async () => {
     if (isDemo) return;
     try {
-      const { data: filmedShooting } = await supabase
+      const { data: filmedShooting, error: sErr } = await supabase
         .from('reels_shooting_26')
         .select('*')
         .eq('filmed', true);
 
-      if (!filmedShooting || filmedShooting.length === 0) return;
+      if (sErr || !filmedShooting || filmedShooting.length === 0) return;
 
-      const { data: existingVe } = await supabase
+      const { data: existingVe, error: veErr } = await supabase
         .from('reels_ve_26')
         .select('code');
+
+      // CRITICAL GUARD: If reels_ve_26 fetch fails or returns null, abort immediately to never treat null as empty set!
+      if (veErr || !existingVe) {
+        console.warn('[Auto-Reconcile] Skipped: could not verify reels_ve_26 safely:', veErr);
+        return;
+      }
 
       const veCodeSet = new Set((existingVe || []).map(r => String(r.code || '').trim().toLowerCase()));
       const missingFromVe = filmedShooting.filter(r => !veCodeSet.has(String(r.code || '').trim().toLowerCase()));
 
       if (missingFromVe.length > 0) {
         const toUpsert = missingFromVe.map(item => ({
-          code: item.code,
+          code: String(item.code || '').trim(),
           date: item.date || new Date().toISOString().split('T')[0],
           branch: item.branch || '',
           year: item.year || '',
@@ -6626,15 +6632,16 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
           storage: item.storage || '',
           notes: item.notes || '',
           drive_raw: item.drive_raw || '',
-          editor_col: item.editor_col || 'غير محدد',
+          editor_col: 'غير محدد',
           done: false,
-          drive_final: item.drive_final || '',
+          drive_final: '',
           canceled: false,
           missing_details: false,
           updated_at: new Date().toISOString()
         }));
 
-        await supabase.from('reels_ve_26').upsert(toUpsert, { onConflict: 'code' });
+        // ignoreDuplicates: true guarantees that existing VE records are NEVER overwritten
+        await supabase.from('reels_ve_26').upsert(toUpsert, { onConflict: 'code', ignoreDuplicates: true });
         notifyCoreCountsChanged(['1939073164']);
       }
     } catch (err) {
@@ -9253,10 +9260,10 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
     }).catch(err => console.error("Autofill background batch update error:", err));
   };
 
-  const [activeVisibleRecordsLimit, setActiveVisibleRecordsLimit] = useState<number>(120);
+  const [activeVisibleRecordsLimit, setActiveVisibleRecordsLimit] = useState<number>(500);
 
   useEffect(() => {
-    setActiveVisibleRecordsLimit(120);
+    setActiveVisibleRecordsLimit(500);
   }, [activeGid, searchQuery, statusFilter, teacherFilter, yearFilter, termFilter, colFilters]);
 
   useEffect(() => {
@@ -9269,6 +9276,221 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
     window.addEventListener('mouseup', handleGlobalMouseUp);
     return () => window.removeEventListener('mouseup', handleGlobalMouseUp);
   }, [autofillDrag]);
+
+  // Bulletproof Shooting-to-VE Synchronizer:
+  // 1. NEVER overwrites editor progress (done, drive_final, editor_col, missing_details, editor_notes, hard_drive_status)
+  // 2. Only updates shooting metadata on existing VE rows
+  // 3. Inserts brand new records when filmed
+  // 4. Protects completed editor work from accidental deletion when filmed is toggled off
+  // 5. Instantly reflects changes in local VE state (reelsDbByGid['1939073164'])
+  const syncShootingItemToVe = async (
+    item: any,
+    isFilmed: boolean,
+    wasPreviouslyFilmed: boolean,
+    customFilmingDate?: string
+  ) => {
+    const targetCode = String(item.code || item.id || '').trim();
+    if (!targetCode) return;
+
+    if (wasPreviouslyFilmed !== isFilmed) {
+      setStageUncompletedCounts(prev => {
+        const cur = prev['1939073164'] || 0;
+        const nextVal = Math.max(0, cur + (isFilmed ? 1 : -1));
+        const next = { ...prev, ['1939073164']: nextVal };
+        try { localStorage.setItem('stage_uncompleted_counts_cache_v1', JSON.stringify(next)); } catch {}
+        return next;
+      });
+    }
+
+    try {
+      if (isFilmed) {
+        setActiveVeToast({ item: { ...item, filmed: true } });
+        const fDate = customFilmingDate || item.filmingDate || item.filming_date || new Date().toLocaleDateString('en-US');
+
+        // Check if the record already exists in reels_ve_26
+        const { data: existingVeRow, error: checkErr } = await supabase
+          .from('reels_ve_26')
+          .select('id, code, done, drive_final, editor_col, missing_details, canceled, edit_check, editor_notes, hard_drive_status')
+          .ilike('code', targetCode)
+          .maybeSingle();
+
+        if (!checkErr && existingVeRow) {
+          // Row ALREADY exists in VE!
+          // PRESERVATION RULE: Update ONLY shooting-owned metadata.
+          // NEVER overwrite done, drive_final, editor_col, missing_details, editor_notes, hard_drive_status!
+          const { error: upErr } = await supabase
+            .from('reels_ve_26')
+            .update({
+              branch: item.branch || '',
+              year: item.year || '',
+              teacher: item.teacher || '',
+              extra_name: item.extraName || item.extra_name || '',
+              script: item.script || '',
+              type: item.type || '',
+              format: item.format || '',
+              filmed: true,
+              filming_date: fDate,
+              by: item.by || '',
+              storage: item.storage || '',
+              notes: item.notes || '',
+              drive_raw: item.driveRaw || item.drive_raw || '',
+              updated_at: new Date().toISOString()
+            })
+            .eq('code', existingVeRow.code);
+
+          if (upErr) {
+            console.error('[VE Sync] Error updating existing VE row:', upErr);
+          } else {
+            // Update local memory state for VE tab while preserving VE fields
+            setReelsDbByGid(prev => {
+              const veRows = prev['1939073164'];
+              if (!veRows) return prev;
+              return {
+                ...prev,
+                ['1939073164']: veRows.map((r: any) =>
+                  String(r.code || '').trim().toLowerCase() === targetCode.toLowerCase()
+                    ? {
+                        ...r,
+                        branch: item.branch || r.branch,
+                        year: item.year || r.year,
+                        teacher: item.teacher || r.teacher,
+                        extraName: item.extraName || item.extra_name || r.extraName,
+                        script: item.script || r.script,
+                        type: item.type || r.type,
+                        format: item.format || r.format,
+                        filmed: true,
+                        filmingDate: fDate,
+                        by: item.by || r.by,
+                        storage: item.storage || r.storage,
+                        notes: item.notes || r.notes,
+                        driveRaw: item.driveRaw || item.drive_raw || r.driveRaw
+                      }
+                    : r
+                )
+              };
+            });
+          }
+        } else {
+          // Brand new row to VE! Insert with safe default VE fields
+          const newVeRecord = {
+            code: targetCode,
+            date: item.date || new Date().toISOString().split('T')[0],
+            branch: item.branch || '',
+            year: item.year || '',
+            teacher: item.teacher || '',
+            extra_name: item.extraName || item.extra_name || '',
+            script: item.script || '',
+            type: item.type || '',
+            format: item.format || '',
+            filmed: true,
+            filming_date: fDate,
+            by: item.by || '',
+            storage: item.storage || '',
+            notes: item.notes || '',
+            drive_raw: item.driveRaw || item.drive_raw || '',
+            editor_col: 'غير محدد',
+            done: false,
+            drive_final: '',
+            canceled: false,
+            missing_details: false,
+            updated_at: new Date().toISOString()
+          };
+
+          const { error: insErr } = await supabase
+            .from('reels_ve_26')
+            .insert(newVeRecord);
+
+          if (insErr) {
+            console.warn('[VE Sync] Insert collision, falling back to safe upsert with ignoreDuplicates:', insErr);
+            await supabase.from('reels_ve_26').upsert(newVeRecord, { onConflict: 'code', ignoreDuplicates: true });
+          }
+
+          toast.success("تم نقل ومزامنة الريل تلقائياً إلى شيت VE! 🎬");
+          notifyCoreCountsChanged(['1939073164']);
+
+          // Immediately update VE in local memory state so switching to VE shows it without delay!
+          setReelsDbByGid(prev => {
+            const veRows = prev['1939073164'] || [];
+            const mappedNew = {
+              id: targetCode,
+              code: targetCode,
+              date: newVeRecord.date,
+              branch: newVeRecord.branch,
+              year: newVeRecord.year,
+              teacher: newVeRecord.teacher,
+              extraName: newVeRecord.extra_name,
+              script: newVeRecord.script,
+              type: newVeRecord.type,
+              format: newVeRecord.format,
+              filmed: true,
+              filmingDate: newVeRecord.filming_date,
+              by: newVeRecord.by,
+              storage: newVeRecord.storage,
+              notes: newVeRecord.notes,
+              editorNotes: '',
+              driveRaw: newVeRecord.drive_raw,
+              editorCol: 'غير محدد',
+              done: false,
+              driveFinal: '',
+              canceled: false,
+              missingDetails: false,
+              editCheck: false,
+              publish: false,
+              sharedLink: '',
+              hardDriveStatus: null,
+              uniqueKey: targetCode,
+              createdAt: newVeRecord.updated_at,
+              updatedAt: newVeRecord.updated_at
+            };
+            return {
+              ...prev,
+              ['1939073164']: [mappedNew, ...veRows.filter((r: any) => String(r.code || '').trim().toLowerCase() !== targetCode.toLowerCase())]
+            };
+          });
+        }
+      } else if (wasPreviouslyFilmed) {
+        // Un-filmed in Shooting. Check if editor work was already done before deleting!
+        const { data: existingVeRow } = await supabase
+          .from('reels_ve_26')
+          .select('code, done, drive_final, editor_col')
+          .ilike('code', targetCode)
+          .maybeSingle();
+
+        const hasWorkDone = existingVeRow && (
+          existingVeRow.done === true ||
+          Boolean(existingVeRow.drive_final && existingVeRow.drive_final.trim()) ||
+          (existingVeRow.editor_col && existingVeRow.editor_col !== 'غير محدد' && existingVeRow.editor_col !== '---')
+        );
+
+        if (hasWorkDone) {
+          // Protect completed / editor work! NEVER DELETE! Just update filmed: false in VE
+          await supabase
+            .from('reels_ve_26')
+            .update({ filmed: false, updated_at: new Date().toISOString() })
+            .eq('code', existingVeRow.code);
+          toast.warning("تم إلغاء التصوير مع الحفاظ على عمل المونتير ورابط الفاينال في شيت VE دون حذفه! 🛡️");
+        } else {
+          // No work done yet, safe to remove
+          await supabase
+            .from('reels_ve_26')
+            .delete()
+            .ilike('code', targetCode);
+          toast.info("تمت إزالة الريل من شيت VE لإلغاء التصوير");
+          setReelsDbByGid(prev => {
+            const veRows = prev['1939073164'];
+            if (!veRows) return prev;
+            return {
+              ...prev,
+              ['1939073164']: veRows.filter((r: any) => String(r.code || '').trim().toLowerCase() !== targetCode.toLowerCase())
+            };
+          });
+        }
+        notifyCoreCountsChanged(['1939073164']);
+      }
+    } catch (syncErr) {
+      console.error('[VE Sync] Error syncing shooting row to VE:', syncErr);
+    }
+  };
 
   const handleUpdateShootingRow = async (oldCode: string, newRowData: any[], noteMeta?: { fieldName?: string; value?: string; time?: string; author?: string }) => {
     const tbl = REELS_TABLE_MAP[activeGid];
@@ -9752,57 +9974,10 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
           })();
         }
 
-        // Automatic copy / sync to Ve table (reels_ve_26) when filmed in Shooting tab
+        // Automatic copy / sync to Ve table (reels_ve_26) when filmed in Shooting tab (Preserves VE edits!)
         if (activeGid === '1436746012') {
           const wasPreviouslyFilmed = Boolean(prevItem?.filmed === true || prevItem?.filmed === 'TRUE');
-          if (wasPreviouslyFilmed !== isFilmed) {
-            setStageUncompletedCounts(prev => {
-              const cur = prev['1939073164'] || 0;
-              const nextVal = Math.max(0, cur + (isFilmed ? 1 : -1));
-              const next = { ...prev, ['1939073164']: nextVal };
-              try { localStorage.setItem('stage_uncompleted_counts_cache_v1', JSON.stringify(next)); } catch {}
-              return next;
-            });
-          }
-          if (isFilmed) {
-            setActiveVeToast({ item: updatedItem });
-            const veRecord = {
-              code: updatedItem.code || updatedItem.id,
-              date: updatedItem.date || new Date().toISOString().split('T')[0],
-              branch: updatedItem.branch || '',
-              year: updatedItem.year || '',
-              teacher: updatedItem.teacher || '',
-              extra_name: updatedItem.extraName || '',
-              script: updatedItem.script || '',
-              type: updatedItem.type || '',
-              format: updatedItem.format || '',
-              filmed: true,
-              filming_date: updatedItem.filmingDate || new Date().toLocaleDateString('en-US'),
-              by: updatedItem.by || '',
-              storage: updatedItem.storage || '',
-              notes: updatedItem.notes || '',
-              drive_raw: updatedItem.driveRaw || '',
-              editor_col: updatedItem.editorCol || 'غير محدد',
-              done: false,
-              drive_final: updatedItem.driveFinal || '',
-              canceled: false,
-              missing_details: false,
-              updated_at: new Date().toISOString()
-            };
-            const { error: veErr } = await supabase
-              .from('reels_ve_26')
-              .upsert(veRecord, { onConflict: 'code' });
-            if (veErr) {
-              console.error("Error copying to reels_ve_26:", veErr);
-            } else {
-              toast.success("تم نقل ومزامنة الريل تلقائياً إلى شيت VE! 🎬");
-              notifyCoreCountsChanged(['1939073164']);
-            }
-          } else if (wasPreviouslyFilmed) {
-            await supabase.from('reels_ve_26').delete().or(`code.eq."${oldCode}",code.eq."${newCode}",code.eq."${updatedItem.code}"`);
-            toast.info("تمت إزالة الريل من شيت VE لإلغاء التصوير");
-            notifyCoreCountsChanged(['1939073164']);
-          }
+          await syncShootingItemToVe(updatedItem, isFilmed, wasPreviouslyFilmed, updatedItem.filmingDate);
         } else if (activeGid === '1939073164' || activeGid === '0') {
           notifyCoreCountsChanged([activeGid]);
         }
@@ -9892,43 +10067,8 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
         toast.success(isFilmed ? "تم تحديد التصوير بنجاح! 🎥" : "تم إلغاء تحديد التصوير");
 
         if (activeGid === '1436746012') {
-          if (isFilmed) {
-            const veRecord = {
-              code: itemCode,
-              date: item.date || new Date().toISOString().split('T')[0],
-              branch: item.branch || '',
-              year: item.year || '',
-              teacher: item.teacher || '',
-              extra_name: item.extraName || '',
-              script: item.script || '',
-              type: item.type || '',
-              format: item.format || '',
-              filmed: true,
-              filming_date: filmingDate,
-              by: item.by || '',
-              storage: item.storage || '',
-              notes: item.notes || '',
-              drive_raw: item.driveRaw || '',
-              editor_col: item.editorCol || 'غير محدد',
-              done: false,
-              drive_final: item.driveFinal || '',
-              canceled: false,
-              missing_details: false,
-              updated_at: new Date().toISOString()
-            };
-            const { error: veErr } = await supabase
-              .from('reels_ve_26')
-              .upsert(veRecord, { onConflict: 'code' });
-            if (veErr) {
-              console.error("Error copying to reels_ve_26:", veErr);
-            } else {
-              toast.success("تم نقل ومزامنة الريل تلقائياً إلى شيت VE! 🎬");
-              notifyCoreCountsChanged(['1939073164']);
-            }
-          } else {
-            await supabase.from('reels_ve_26').delete().eq('code', itemCode);
-            notifyCoreCountsChanged(['1939073164']);
-          }
+          const wasPreviouslyFilmed = Boolean(item?.filmed === true || item?.filmed === 'TRUE');
+          await syncShootingItemToVe(item, isFilmed, wasPreviouslyFilmed, filmingDate);
         }
       } catch (err: any) {
         console.error(err);
@@ -13554,11 +13694,11 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
                             تم عرض {Math.min(filteredData.length, activeVisibleRecordsLimit)} من إجمالي {filteredData.length} سجل. يرجى استخدام البحث أو الفلاتر، أو اضغط أدناه لعرض المزيد:
                           </p>
                           <button
-                            onClick={() => setActiveVisibleRecordsLimit(prev => prev + 100)}
+                            onClick={() => setActiveVisibleRecordsLimit(prev => prev + 250)}
                             className="px-8 py-3.5 bg-primary/10 hover:bg-primary text-primary hover:text-white border border-primary/30 rounded-2xl text-xs font-black uppercase tracking-widest transition-all hover:scale-105 active:scale-95 cursor-pointer shadow-lg hover:shadow-primary/20 flex items-center gap-2"
                           >
                             <Sparkles size={16} />
-                            <span>عرض 100 سجل إضافي ({Math.min(filteredData.length, activeVisibleRecordsLimit + 100)} / {filteredData.length})</span>
+                            <span>عرض 250 سجل إضافي ({Math.min(filteredData.length, activeVisibleRecordsLimit + 250)} / {filteredData.length})</span>
                           </button>
                         </div>
                       </td>

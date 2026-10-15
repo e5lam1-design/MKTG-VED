@@ -1160,31 +1160,57 @@ export const StudioCalendarView: React.FC<StudioCalendarViewProps> = ({
             updated_at: nowIso
           }).eq('code', code);
 
-          // Direct sync to reels_ve_26 so it never goes missing when marked from calendar
-          const veRecord = {
-            code: code,
-            date: task?.date || new Date().toISOString().split('T')[0],
-            branch: task?.branch || session.location || '',
-            year: task?.year || '',
-            teacher: task?.teacher || session.teacher || '',
-            extra_name: task?.extra_name || task?.extraName || '',
-            script: task?.script || '',
-            type: task?.type || '',
-            format: task?.format || 'REEL',
-            filmed: true,
-            filming_date: todayStr,
-            by: session.videographer || task?.by || 'الأستديو',
-            storage: task?.storage || '',
-            notes: task?.notes || '',
-            drive_raw: task?.drive_raw || task?.driveRaw || '',
-            editor_col: task?.editor_col || task?.editorCol || 'غير محدد',
-            done: false,
-            drive_final: '',
-            canceled: false,
-            missing_details: false,
-            updated_at: nowIso
-          };
-          await supabase.from('reels_ve_26').upsert(veRecord, { onConflict: 'code' });
+          // Direct sync to reels_ve_26: Check if already exists to preserve editor work!
+          const { data: existingVe } = await supabase
+            .from('reels_ve_26')
+            .select('id, code, done, drive_final, editor_col')
+            .ilike('code', code)
+            .maybeSingle();
+
+          if (existingVe) {
+            // Update ONLY shooting metadata, preserve done, drive_final, editor_col!
+            await supabase.from('reels_ve_26').update({
+              branch: task?.branch || session.location || '',
+              year: task?.year || '',
+              teacher: task?.teacher || session.teacher || '',
+              extra_name: task?.extra_name || task?.extraName || '',
+              script: task?.script || '',
+              type: task?.type || '',
+              format: task?.format || 'REEL',
+              filmed: true,
+              filming_date: todayStr,
+              by: session.videographer || task?.by || 'الأستديو',
+              storage: task?.storage || '',
+              notes: task?.notes || '',
+              drive_raw: task?.drive_raw || task?.driveRaw || '',
+              updated_at: nowIso
+            }).eq('code', existingVe.code);
+          } else {
+            const veRecord = {
+              code: code,
+              date: task?.date || new Date().toISOString().split('T')[0],
+              branch: task?.branch || session.location || '',
+              year: task?.year || '',
+              teacher: task?.teacher || session.teacher || '',
+              extra_name: task?.extra_name || task?.extraName || '',
+              script: task?.script || '',
+              type: task?.type || '',
+              format: task?.format || 'REEL',
+              filmed: true,
+              filming_date: todayStr,
+              by: session.videographer || task?.by || 'الأستديو',
+              storage: task?.storage || '',
+              notes: task?.notes || '',
+              drive_raw: task?.drive_raw || task?.driveRaw || '',
+              editor_col: 'غير محدد',
+              done: false,
+              drive_final: '',
+              canceled: false,
+              missing_details: false,
+              updated_at: nowIso
+            };
+            await supabase.from('reels_ve_26').upsert(veRecord, { onConflict: 'code', ignoreDuplicates: true });
+          }
         }
         setShootingTasks(prev => prev.map(t => {
           if (session.taskCodes.includes(t.code)) {
@@ -1224,30 +1250,55 @@ export const StudioCalendarView: React.FC<StudioCalendarViewProps> = ({
         updated_at: nowIso
       }).eq('code', taskCode);
 
-      const veRecord = {
-        code: taskCode,
-        date: task?.date || new Date().toISOString().split('T')[0],
-        branch: task?.branch || '',
-        year: task?.year || '',
-        teacher: task?.teacher || '',
-        extra_name: task?.extra_name || task?.extraName || '',
-        script: task?.script || '',
-        type: task?.type || '',
-        format: task?.format || 'REEL',
-        filmed: true,
-        filming_date: todayStr,
-        by: task?.by || '',
-        storage: task?.storage || '',
-        notes: task?.notes || '',
-        drive_raw: task?.drive_raw || task?.driveRaw || '',
-        editor_col: task?.editor_col || task?.editorCol || 'غير محدد',
-        done: false,
-        drive_final: '',
-        canceled: false,
-        missing_details: false,
-        updated_at: nowIso
-      };
-      await supabase.from('reels_ve_26').upsert(veRecord, { onConflict: 'code' });
+      const { data: existingVe } = await supabase
+        .from('reels_ve_26')
+        .select('id, code, done, drive_final, editor_col')
+        .ilike('code', taskCode)
+        .maybeSingle();
+
+      if (existingVe) {
+        await supabase.from('reels_ve_26').update({
+          branch: task?.branch || '',
+          year: task?.year || '',
+          teacher: task?.teacher || '',
+          extra_name: task?.extra_name || task?.extraName || '',
+          script: task?.script || '',
+          type: task?.type || '',
+          format: task?.format || 'REEL',
+          filmed: true,
+          filming_date: todayStr,
+          by: task?.by || '',
+          storage: task?.storage || '',
+          notes: task?.notes || '',
+          drive_raw: task?.drive_raw || task?.driveRaw || '',
+          updated_at: nowIso
+        }).eq('code', existingVe.code);
+      } else {
+        const veRecord = {
+          code: taskCode,
+          date: task?.date || new Date().toISOString().split('T')[0],
+          branch: task?.branch || '',
+          year: task?.year || '',
+          teacher: task?.teacher || '',
+          extra_name: task?.extra_name || task?.extraName || '',
+          script: task?.script || '',
+          type: task?.type || '',
+          format: task?.format || 'REEL',
+          filmed: true,
+          filming_date: todayStr,
+          by: task?.by || '',
+          storage: task?.storage || '',
+          notes: task?.notes || '',
+          drive_raw: task?.drive_raw || task?.driveRaw || '',
+          editor_col: 'غير محدد',
+          done: false,
+          drive_final: '',
+          canceled: false,
+          missing_details: false,
+          updated_at: nowIso
+        };
+        await supabase.from('reels_ve_26').upsert(veRecord, { onConflict: 'code', ignoreDuplicates: true });
+      }
     } else {
       await supabase.from('reels_shooting_26').update({
         filmed: false,
@@ -1255,7 +1306,23 @@ export const StudioCalendarView: React.FC<StudioCalendarViewProps> = ({
         updated_at: nowIso
       }).eq('code', taskCode);
 
-      await supabase.from('reels_ve_26').delete().eq('code', taskCode);
+      const { data: existingVe } = await supabase
+        .from('reels_ve_26')
+        .select('id, code, done, drive_final, editor_col')
+        .ilike('code', taskCode)
+        .maybeSingle();
+
+      const hasWorkDone = existingVe && (
+        existingVe.done === true ||
+        Boolean(existingVe.drive_final && existingVe.drive_final.trim()) ||
+        (existingVe.editor_col && existingVe.editor_col !== 'غير محدد' && existingVe.editor_col !== '---')
+      );
+
+      if (hasWorkDone) {
+        await supabase.from('reels_ve_26').update({ filmed: false, updated_at: nowIso }).eq('code', existingVe.code);
+      } else {
+        await supabase.from('reels_ve_26').delete().ilike('code', taskCode);
+      }
     }
 
     if (toast) {

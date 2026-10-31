@@ -134,6 +134,7 @@ export const ReelsAnalytics = ({ isDemo = false }: ReelsAnalyticsProps) => {
 
   const [searchCode, setSearchCode] = useState('');
   const [trackFilter, setTrackFilter] = useState<'ALL' | 'SHOOTING_VE' | 'CUTS'>('ALL');
+  const [selectedMonth, setSelectedMonth] = useState<string>('ALL');
 
   const loading = isDemo ? (shootingLoading || veLoading || cutsLoading) : dbLoading;
   const error = isDemo ? (shootingError || veError || cutsError) : null;
@@ -357,6 +358,127 @@ export const ReelsAnalytics = ({ isDemo = false }: ReelsAnalyticsProps) => {
       }
     }
 
+    // ── Monthly Production Breakdown ──
+    const MONTH_NAMES_AR: Record<string, string> = {
+      '01': 'يناير', '02': 'فبراير', '03': 'مارس', '04': 'أبريل',
+      '05': 'مايو', '06': 'يونيو', '07': 'يوليو', '08': 'أغسطس',
+      '09': 'سبتمبر', '10': 'أكتوبر', '11': 'نوفمبر', '12': 'ديسمبر'
+    };
+
+    const getYearMonth = (date: Date | null) => {
+      if (!date) return null;
+      const y = date.getFullYear();
+      const m = String(date.getMonth() + 1).padStart(2, '0');
+      return `${y}-${m}`;
+    };
+
+    const monthMap: Record<string, {
+      key: string;
+      label: string;
+      monthName: string;
+      monthInt: number;
+      year: string;
+      shootingTotal: number;
+      filmed: number;
+      veTotal: number;
+      doneVE: number;
+      cutsTotal: number;
+      doneCuts: number;
+      totalDone: number;
+      completionRate: number;
+    }> = {};
+
+    const ensureMonth = (k: string) => {
+      if (!monthMap[k]) {
+        const [year, monthNum] = k.split('-');
+        const monthName = MONTH_NAMES_AR[monthNum] || monthNum;
+        const monthInt = parseInt(monthNum, 10);
+        monthMap[k] = {
+          key: k,
+          label: `شهر ${monthInt} (${monthName} ${year})`,
+          monthName,
+          monthInt,
+          year,
+          shootingTotal: 0,
+          filmed: 0,
+          veTotal: 0,
+          doneVE: 0,
+          cutsTotal: 0,
+          doneCuts: 0,
+          totalDone: 0,
+          completionRate: 0
+        };
+      }
+      return monthMap[k];
+    };
+
+    // Ensure months 8, 9, 10, 11 are always present for immediate visibility
+    ensureMonth('2026-08');
+    ensureMonth('2026-09');
+    ensureMonth('2026-10');
+    ensureMonth('2026-11');
+
+    // 1. Shooting: count shootingTotal and filmed
+    shootingData.forEach(item => {
+      const sDate = parseDate(item.date) || parseDate(item.createdAt);
+      const sKey = getYearMonth(sDate);
+      if (sKey) {
+        ensureMonth(sKey).shootingTotal++;
+      }
+
+      if (item.filmed) {
+        const fDate = parseDate(item.filmingDate) || sDate;
+        const fKey = getYearMonth(fDate);
+        if (fKey) {
+          ensureMonth(fKey).filmed++;
+        }
+      }
+    });
+
+    // 2. VE: count veTotal and doneVE
+    veData.forEach(item => {
+      const vDate = parseDate(item.filmingDate) || parseDate(item.date) || parseDate(item.createdAt);
+      const vKey = getYearMonth(vDate);
+      if (vKey) {
+        ensureMonth(vKey).veTotal++;
+      }
+      if (item.done) {
+        const dDate = parseDate(item.filmingDate) || parseDate(item.updatedAt) || vDate;
+        const dKey = getYearMonth(dDate);
+        if (dKey) {
+          const m = ensureMonth(dKey);
+          m.doneVE++;
+          m.totalDone++;
+        }
+      }
+    });
+
+    // 3. Cuts: count cutsTotal and doneCuts
+    cutsData.forEach(item => {
+      const cDate = parseDate(item.date) || parseDate(item.createdAt);
+      const cKey = getYearMonth(cDate);
+      if (cKey) {
+        ensureMonth(cKey).cutsTotal++;
+      }
+      if (item.done) {
+        const dDate = parseDate(item.updatedAt) || cDate;
+        const dKey = getYearMonth(dDate);
+        if (dKey) {
+          const m = ensureMonth(dKey);
+          m.doneCuts++;
+          m.totalDone++;
+        }
+      }
+    });
+
+    // Calculate completion rates
+    Object.values(monthMap).forEach(m => {
+      const targetBase = m.filmed > 0 ? m.filmed : m.shootingTotal;
+      m.completionRate = targetBase > 0 ? Math.round((m.totalDone / targetBase) * 100) : 0;
+    });
+
+    const monthlyBreakdown = Object.values(monthMap).sort((a, b) => b.key.localeCompare(a.key));
+
     return {
       total,
       completed,
@@ -393,7 +515,8 @@ export const ReelsAnalytics = ({ isDemo = false }: ReelsAnalyticsProps) => {
       avgFilmingToVe,
       avgVeToFirstDone,
       avgEditToFinalDone,
-      sampleCodes
+      sampleCodes,
+      monthlyBreakdown
     };
   }, [rawShootingData, rawVeData, rawCutsData, loading]);
 
@@ -444,6 +567,30 @@ export const ReelsAnalytics = ({ isDemo = false }: ReelsAnalyticsProps) => {
       rateLabel: 'نسبة الإنجاز الكلية'
     };
   }, [stats, trackFilter]);
+
+  // Active month statistics based on selectedMonth filter
+  const activeMonthStats = useMemo(() => {
+    if (!stats?.monthlyBreakdown) return null;
+    if (selectedMonth === 'ALL') {
+      const totalFilmed = stats.monthlyBreakdown.reduce((acc, m) => acc + m.filmed, 0);
+      const totalDoneVE = stats.monthlyBreakdown.reduce((acc, m) => acc + m.doneVE, 0);
+      const totalDoneCuts = stats.monthlyBreakdown.reduce((acc, m) => acc + m.doneCuts, 0);
+      const totalDone = stats.monthlyBreakdown.reduce((acc, m) => acc + m.totalDone, 0);
+      const totalShooting = stats.monthlyBreakdown.reduce((acc, m) => acc + m.shootingTotal, 0);
+      const rate = totalFilmed > 0 ? Math.round((totalDone / totalFilmed) * 100) : 0;
+      return {
+        label: 'كل الشهور (إجمالي تراكمي)',
+        monthName: 'كافة الشهور',
+        filmed: totalFilmed,
+        doneVE: totalDoneVE,
+        doneCuts: totalDoneCuts,
+        totalDone,
+        shootingTotal: totalShooting,
+        completionRate: rate
+      };
+    }
+    return stats.monthlyBreakdown.find(m => m.key === selectedMonth) || stats.monthlyBreakdown[0];
+  }, [stats?.monthlyBreakdown, selectedMonth]);
 
   // Find timeline details dynamically for the searched code
   const timelineItem = useMemo(() => {
@@ -781,6 +928,196 @@ export const ReelsAnalytics = ({ isDemo = false }: ReelsAnalyticsProps) => {
                 <span className="text-[9px] text-rose-300/60 block mt-0.5">مشاكل تقطيع</span>
               </div>
             </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ── NEW SECTION: MONTHLY PRODUCTION BREAKDOWN (إحصائيات الريلز الشهرية) ── */}
+      <div className="p-6 md:p-8 rounded-3xl bg-[#0a0d14] border border-emerald-500/30 shadow-2xl space-y-6 relative overflow-hidden">
+        {/* Header with Title and Month Filter Buttons */}
+        <div className="flex items-center justify-between flex-wrap gap-4 border-b border-white/10 pb-5">
+          <div className="flex items-center gap-3">
+            <div className="w-12 h-12 rounded-2xl bg-gradient-to-tr from-emerald-600 to-teal-400 text-white flex items-center justify-center shadow-lg shadow-emerald-500/30">
+              <Calendar size={24} />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="text-xl font-black text-white arabic-text">إحصائيات الريلز الشهرية (Monthly Reels)</h3>
+                <span className="text-[10px] font-black px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 font-mono">
+                  MONTHLY METRICS
+                </span>
+              </div>
+              <p className="text-xs text-white/50 arabic-text mt-1">
+                متابعة دقيقة لكم ريل اتصور وكام ريل تم الانتهاء منه (Done) لكل شهر على حدة
+              </p>
+            </div>
+          </div>
+
+          {/* Month Selector Pills */}
+          <div className="flex items-center gap-1.5 flex-wrap bg-white/5 p-1.5 rounded-2xl border border-white/10">
+            <button
+              onClick={() => setSelectedMonth('ALL')}
+              className={`px-3.5 py-2 rounded-xl text-xs font-black transition-all cursor-pointer ${
+                selectedMonth === 'ALL'
+                  ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/30'
+                  : 'text-white/60 hover:text-white hover:bg-white/5'
+              }`}
+            >
+              📊 كل الشهور
+            </button>
+            {stats.monthlyBreakdown.map((m) => (
+              <button
+                key={m.key}
+                onClick={() => setSelectedMonth(m.key)}
+                className={`px-3.5 py-2 rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-1.5 ${
+                  selectedMonth === m.key
+                    ? 'bg-emerald-500 text-white shadow-lg shadow-emerald-500/30'
+                    : 'text-white/60 hover:text-white hover:bg-white/5'
+                }`}
+              >
+                <span>{m.monthName}</span>
+                <span className="text-[10px] opacity-75 font-mono">({m.totalDone})</span>
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Highlight Summary Card for Active Selected Month */}
+        {activeMonthStats && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            {/* Filmed Card */}
+            <div className="p-5 rounded-2xl bg-gradient-to-br from-cyan-950/40 via-cyan-900/10 to-transparent border border-cyan-500/30 space-y-2 relative overflow-hidden shadow-lg">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-cyan-300 arabic-text">🎥 ريلز تم تصويرها (Filmed)</span>
+                <div className="w-8 h-8 rounded-lg bg-cyan-500/20 text-cyan-400 flex items-center justify-center">
+                  <Film size={16} />
+                </div>
+              </div>
+              <div className="flex items-baseline gap-2">
+                <span className="text-3xl font-black font-mono text-cyan-400">{activeMonthStats.filmed}</span>
+                <span className="text-xs text-white/40 arabic-text">ريل تم تصويره</span>
+              </div>
+              <span className="text-[11px] text-white/40 block font-mono">
+                {activeMonthStats.label}
+              </span>
+            </div>
+
+            {/* Done in VE Card */}
+            <div className="p-5 rounded-2xl bg-gradient-to-br from-emerald-950/40 via-emerald-900/10 to-transparent border border-emerald-500/30 space-y-2 relative overflow-hidden shadow-lg">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-emerald-300 arabic-text">🎬 تم مونتاجه (VE Done)</span>
+                <div className="w-8 h-8 rounded-lg bg-emerald-500/20 text-emerald-400 flex items-center justify-center">
+                  <Video size={16} />
+                </div>
+              </div>
+              <div className="flex items-baseline gap-2">
+                <span className="text-3xl font-black font-mono text-emerald-400">{activeMonthStats.doneVE}</span>
+                <span className="text-xs text-white/40 arabic-text">ريل مونتاج كامل</span>
+              </div>
+              <span className="text-[11px] text-emerald-400/60 block font-mono">
+                من مسار Shooting ➔ VE
+              </span>
+            </div>
+
+            {/* Done in Cuts Card */}
+            <div className="p-5 rounded-2xl bg-gradient-to-br from-orange-950/40 via-orange-900/10 to-transparent border border-orange-500/30 space-y-2 relative overflow-hidden shadow-lg">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-orange-300 arabic-text">✂️ تم تقطيعه (Cuts Done)</span>
+                <div className="w-8 h-8 rounded-lg bg-orange-500/20 text-orange-400 flex items-center justify-center">
+                  <Scissors size={16} />
+                </div>
+              </div>
+              <div className="flex items-baseline gap-2">
+                <span className="text-3xl font-black font-mono text-orange-400">{activeMonthStats.doneCuts}</span>
+                <span className="text-xs text-white/40 arabic-text">ريل تقطيع معتمد</span>
+              </div>
+              <span className="text-[11px] text-orange-400/60 block font-mono">
+                من مسار CUTS المستقل
+              </span>
+            </div>
+
+            {/* Total Done Card */}
+            <div className="p-5 rounded-2xl bg-gradient-to-br from-purple-950/40 via-purple-900/10 to-transparent border border-purple-500/30 space-y-2 relative overflow-hidden shadow-lg">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-purple-300 arabic-text">🏆 إجمالي الـ Done النهائي</span>
+                <div className="w-8 h-8 rounded-lg bg-purple-500/20 text-purple-400 flex items-center justify-center shadow-lg shadow-purple-500/30">
+                  <CheckCircle2 size={16} />
+                </div>
+              </div>
+              <div className="flex items-baseline gap-2">
+                <span className="text-3xl font-black font-mono text-purple-400">{activeMonthStats.totalDone}</span>
+                <span className="text-xs text-white/40 arabic-text">ريل مكتمل وجاهز</span>
+              </div>
+              <div className="flex items-center justify-between pt-1">
+                <span className="text-[11px] text-purple-300 font-mono">نسبة الإنجاز:</span>
+                <span className="text-xs font-black font-mono text-emerald-400">{activeMonthStats.completionRate}%</span>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Monthly Breakdown Comparison Table */}
+        <div className="rounded-2xl border border-white/10 overflow-hidden bg-black/40">
+          <div className="px-5 py-3.5 bg-white/[0.03] border-b border-white/10 flex items-center justify-between">
+            <span className="text-xs font-black text-white arabic-text">جدول مقارنة إنتاج الشهور (Month-by-Month Table)</span>
+            <span className="text-[11px] text-muted font-bold">محدث لحظياً ومباشر من Supabase</span>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-right text-xs">
+              <thead>
+                <tr className="border-b border-white/10 text-white/60 font-bold arabic-text bg-white/[0.01]">
+                  <th className="py-3 px-4">الشهر</th>
+                  <th className="py-3 px-4 text-center">السكريبتات المسجلة</th>
+                  <th className="py-3 px-4 text-center text-cyan-400">🎥 تم تصويره (Filmed)</th>
+                  <th className="py-3 px-4 text-center text-emerald-400">🎬 مونتاج (VE Done)</th>
+                  <th className="py-3 px-4 text-center text-orange-400">✂️ تقطيع (Cuts Done)</th>
+                  <th className="py-3 px-4 text-center text-purple-300">🏆 إجمالي المكتمل (Done)</th>
+                  <th className="py-3 px-4 text-center">نسبة الإنجاز</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/5 font-mono">
+                {stats.monthlyBreakdown.map((m) => {
+                  const isSelected = selectedMonth === m.key;
+                  return (
+                    <tr
+                      key={m.key}
+                      onClick={() => setSelectedMonth(m.key)}
+                      className={`hover:bg-white/[0.04] transition-colors cursor-pointer ${
+                        isSelected ? 'bg-emerald-500/10 border-r-4 border-r-emerald-500' : ''
+                      }`}
+                    >
+                      <td className="py-3 px-4 font-bold text-white arabic-text flex items-center gap-2">
+                        <span className={`w-2 h-2 rounded-full ${m.totalDone > 0 ? 'bg-emerald-400' : 'bg-white/20'}`} />
+                        <span>{m.label}</span>
+                        {isSelected && (
+                          <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 font-mono">
+                            محدد
+                          </span>
+                        )}
+                      </td>
+                      <td className="py-3 px-4 text-center text-white/70">{m.shootingTotal}</td>
+                      <td className="py-3 px-4 text-center font-bold text-cyan-400">{m.filmed}</td>
+                      <td className="py-3 px-4 text-center font-bold text-emerald-400">{m.doneVE}</td>
+                      <td className="py-3 px-4 text-center font-bold text-orange-400">{m.doneCuts}</td>
+                      <td className="py-3 px-4 text-center font-black text-purple-300 text-sm">
+                        {m.totalDone}
+                      </td>
+                      <td className="py-3 px-4 text-center">
+                        <span className={`px-2.5 py-1 rounded-lg text-xs font-black ${
+                          m.completionRate >= 80
+                            ? 'bg-emerald-500/20 text-emerald-400'
+                            : m.completionRate > 0
+                            ? 'bg-amber-500/20 text-amber-400'
+                            : 'bg-white/5 text-white/40'
+                        }`}>
+                          {m.completionRate}%
+                        </span>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         </div>
       </div>

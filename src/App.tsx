@@ -10912,6 +10912,48 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
         if (!isAssignedToMe) return;
       }
 
+      for (const key in colFilters) {
+        const val = colFilters[key];
+        if (val && val !== 'All') {
+          if (key === 'filmed') {
+            const isFilmedItem = item.filmed === true || item.filmed === 'TRUE' || String(item.filmed).toLowerCase() === 'true';
+            if (val === 'اتصور' && !isFilmedItem) return;
+            if (val === 'لم يتصور' && isFilmedItem) return;
+          } else if (key === 'done') {
+            const isItemDone = item.done === true || item.done === 'TRUE' || String(item.done).toLowerCase() === 'true';
+            if ((val === 'Done' || val === 'TRUE' || val === 'تم') && !isItemDone) return;
+            if ((val === 'Not Done' || val === 'FALSE' || val === 'Pending' || val === 'غير مكتمل') && isItemDone) return;
+          } else if (key === 'branch') {
+            const norm = (s: string) => {
+              let t = String(s || '').trim().toLowerCase();
+              t = t.replace(/[إأآا]/g, 'ا').replace(/ة/g, 'ه');
+              if (t.startsWith('ال')) t = t.slice(2);
+              return t;
+            };
+            if (norm(item.branch) !== norm(val)) return;
+          } else if (key === 'filmingDate' || key === 'date') {
+            const normDate = (d: string) => {
+              if (!d) return '';
+              const clean = String(d).trim().split('T')[0];
+              const parts = clean.includes('/') ? clean.split('/') : clean.includes('-') ? clean.split('-') : [];
+              if (parts.length === 3) {
+                if (parts[0].length === 4) {
+                  return `${parseInt(parts[1], 10)}/${parseInt(parts[2], 10)}/${parts[0]}`;
+                } else {
+                  return `${parseInt(parts[0], 10)}/${parseInt(parts[1], 10)}/${parts[2]}`;
+                }
+              }
+              return clean.toLowerCase();
+            };
+            if (normDate(item[key]) !== normDate(val)) return;
+          } else {
+            const itemVal = String(item[key] ?? '').trim().toLowerCase();
+            const filterVal = String(val).trim().toLowerCase();
+            if (itemVal !== filterVal) return;
+          }
+        }
+      }
+
       all++;
       const isDone = item.done === true || item.done === 'TRUE';
       const isMissing = item.missingDetails === true || item.missingDetails === 'TRUE';
@@ -10926,7 +10968,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
     });
 
     return { All: all, Done: done, Missing: missing, Canceled: canceled, Filmed: filmed, Pending: pending };
-  }, [combinedData, isReelsStage, searchQuery, isMyTasksOnly, currentUserName]);
+  }, [combinedData, isReelsStage, searchQuery, isMyTasksOnly, currentUserName, colFilters]);
 
   const filteredData = useMemo(() => {
     const filtered = combinedData.filter((item: any) => {
@@ -12807,6 +12849,47 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
             </div>
           </div>
 
+          {/* Active Teacher Filter Bar in Reels Stage */}
+          {isReelsStage && colFilters.teacher && colFilters.teacher !== 'All' && (
+            <div className="flex flex-wrap items-center justify-between gap-3 p-3.5 bg-sky-500/10 border border-sky-500/25 rounded-2xl animate-fadeIn" dir="rtl">
+              <div className="flex items-center gap-2.5">
+                <span className="text-xs font-black text-sky-400 flex items-center gap-2">
+                  🎬 فلتر المدرس النشط:
+                  <span className="px-3 py-1 rounded-xl bg-sky-500/20 border border-sky-400/40 text-white font-black text-sm">
+                    {colFilters.teacher}
+                  </span>
+                </span>
+                <span className="text-xs font-bold text-slate-300 bg-white/5 px-2.5 py-1 rounded-lg border border-white/10">
+                  {filteredData.length} ريل
+                </span>
+              </div>
+              <div className="flex items-center gap-2">
+                {activeGid === '1436746012' && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAppMode('REELS');
+                      setActiveGid('reels-calendar');
+                      setActiveLabel('Calendar');
+                    }}
+                    className="px-3.5 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-slate-200 hover:text-white text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5"
+                  >
+                    <Calendar size={13} className="text-sky-400" />
+                    <span>العودة للكلاندر</span>
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => handleColFilterChange('teacher', 'All')}
+                  className="px-3.5 py-1.5 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/30 text-rose-300 hover:text-white text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5"
+                >
+                  <X size={13} />
+                  <span>إلغاء فلتر المدرس</span>
+                </button>
+              </div>
+            </div>
+          )}
+
           {/* Quick Task Jumper Bar when My Tasks Only is active */}
           {isMyTasksOnly && (
             <div className="flex items-center gap-2 overflow-x-auto p-3.5 bg-rose-500/10 border border-rose-500/20 rounded-2xl animate-fadeIn" dir="rtl">
@@ -13204,7 +13287,37 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
             <ReelsAnalytics isDemo={isDemo} />
           ) : isStudioCalendar ? (
             <ErrorBoundary>
-              <StudioCalendarView isDemo={isDemo} userProfile={profile} toast={toast} />
+              <StudioCalendarView
+                isDemo={isDemo}
+                userProfile={profile}
+                toast={toast}
+                onNavigateToShootingTeacher={(teacherName: string) => {
+                  const cleanTarget = String(teacherName || '').trim();
+                  if (!cleanTarget) return;
+
+                  const shootingRows = reelsDbByGid['1436746012'] || [];
+                  const exactRow = shootingRows.find(
+                    (r: any) => String(r.teacher || '').trim().toLowerCase() === cleanTarget.toLowerCase()
+                  );
+                  const matchedTeacher = exactRow?.teacher ? String(exactRow.teacher).trim() : cleanTarget;
+
+                  setAppMode('REELS');
+                  setActiveGid('1436746012');
+                  setActiveLabel('Shooting');
+                  setStatusFilter('All');
+                  setYearFilter('All');
+                  setTermFilter('All');
+                  setBypassYearTerm(false);
+                  setStageWeekFilter('All');
+                  setSearchQuery('');
+                  setIsMyTasksOnly(false);
+                  setTeacherFilter(matchedTeacher);
+                  setColFilters({ teacher: matchedTeacher });
+
+                  window.scrollTo({ top: 0, behavior: 'smooth' });
+                  toast.success(`🎬 تم فتح شيت Shooting وفلترته على المدرس: ${matchedTeacher}`);
+                }}
+              />
             </ErrorBoundary>
           ) : isTeachersTab ? (
             PERMISSIONS.canViewTab(profile?.role || 'junior', 'Teachers', profile?.allowed_tabs || []) ? (

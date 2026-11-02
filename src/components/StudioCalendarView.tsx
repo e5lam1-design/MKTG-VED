@@ -32,6 +32,7 @@ interface StudioCalendarViewProps {
   isDemo?: boolean;
   userProfile?: any;
   toast?: any;
+  onNavigateToShootingTeacher?: (teacherName: string) => void;
 }
 
 // Studio Branches definitions with dedicated colors (matching user request)
@@ -302,7 +303,8 @@ export const getPositionedSessionsForDay = (daySessions: StudioSession[]): Posit
 export const StudioCalendarView: React.FC<StudioCalendarViewProps> = ({
   isDemo = false,
   userProfile,
-  toast
+  toast,
+  onNavigateToShootingTeacher
 }) => {
   // Navigation & View State
   const [viewMode, setViewMode] = useState<'month' | 'week'>('month');
@@ -330,6 +332,50 @@ export const StudioCalendarView: React.FC<StudioCalendarViewProps> = ({
   const [shootingTasks, setShootingTasks] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+
+  const resolveShootingTeacherName = useCallback((session: StudioSession): string => {
+    const raw = String(session.teacher || '').trim();
+    const normalizeTeacherStr = (val: string) =>
+      String(val || '')
+        .trim()
+        .toLowerCase()
+        .replace(/^(مستر|أستاذ|استاذ|دكتور|مس|أ\/|ا\/|د\/|mr\.?|dr\.?|ms\.?|mrs\.?)\s+/i, '')
+        .replace(/[إأآا]/g, 'ا')
+        .replace(/ة/g, 'ه')
+        .replace(/ى/g, 'ي')
+        .trim();
+
+    if (raw) {
+      const exactMatch = shootingTasks.find(
+        t => String(t.teacher || '').trim().toLowerCase() === raw.toLowerCase()
+      );
+      if (exactMatch?.teacher) return String(exactMatch.teacher).trim();
+    }
+
+    if (Array.isArray(session.taskCodes) && session.taskCodes.length > 0) {
+      const codeSet = new Set(session.taskCodes.map(c => String(c || '').trim().toLowerCase()));
+      const linkedTask = shootingTasks.find(
+        t => codeSet.has(String(t.code || '').trim().toLowerCase()) && String(t.teacher || '').trim()
+      );
+      if (linkedTask?.teacher) return String(linkedTask.teacher).trim();
+    }
+
+    if (raw) {
+      const normRaw = normalizeTeacherStr(raw);
+      if (normRaw) {
+        const normExact = shootingTasks.find(t => normalizeTeacherStr(t.teacher) === normRaw);
+        if (normExact?.teacher) return String(normExact.teacher).trim();
+
+        const partialMatch = shootingTasks.find(t => {
+          const nt = normalizeTeacherStr(t.teacher);
+          return nt && (nt.includes(normRaw) || normRaw.includes(nt));
+        });
+        if (partialMatch?.teacher) return String(partialMatch.teacher).trim();
+      }
+    }
+
+    return raw;
+  }, [shootingTasks]);
 
   // Modals & Popovers
   const [modalMode, setModalMode] = useState<'create' | 'edit' | 'details' | null>(null);
@@ -2865,22 +2911,56 @@ export const StudioCalendarView: React.FC<StudioCalendarViewProps> = ({
             {/* Header */}
             <div className="flex items-start justify-between border-b border-[#3c4043] pb-4">
               <div className="flex items-center gap-3">
-                <div 
-                  className="w-12 h-12 rounded-2xl flex items-center justify-center text-white shadow-md font-bold text-lg"
-                  style={{ backgroundColor: getSessionColorStyle(activeSession).hex }}
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!onNavigateToShootingTeacher) return;
+                    const resolvedTeacher = resolveShootingTeacherName(activeSession);
+                    if (!resolvedTeacher) return;
+                    setModalMode(null);
+                    onNavigateToShootingTeacher(resolvedTeacher);
+                  }}
+                  title="اضغط لعرض كل ريلز هذا المدرس في شيت Shooting"
+                  className={`flex items-center gap-3 text-right rounded-2xl p-1 -m-1 transition-all ${
+                    onNavigateToShootingTeacher
+                      ? 'cursor-pointer group hover:bg-white/[0.04]'
+                      : ''
+                  }`}
                 >
-                  <User size={24} />
-                </div>
-                <div>
-                  <h3 className="text-lg font-bold text-white">{activeSession.teacher}</h3>
-                  <div className="flex items-center gap-2 text-xs text-[#9aa0a6] mt-0.5">
-                    <span>{activeSession.date}</span>
-                    <span>•</span>
-                    <span dir="ltr" className="font-bold text-white/90">{formatTime12h(activeSession.startTime)} - {formatTime12h(activeSession.endTime)}</span>
-                    <span>•</span>
-                    <span>فرع {normalizeBranch(activeSession.branch)}</span>
+                  <div 
+                    className={`w-12 h-12 rounded-2xl flex items-center justify-center text-white shadow-md font-bold text-lg shrink-0 transition-transform ${
+                      onNavigateToShootingTeacher ? 'group-hover:scale-105 group-hover:ring-2 group-hover:ring-white/30' : ''
+                    }`}
+                    style={{ backgroundColor: getSessionColorStyle(activeSession).hex }}
+                  >
+                    <User size={24} />
                   </div>
-                </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h3 className={`text-lg font-bold text-white transition-colors ${
+                        onNavigateToShootingTeacher
+                          ? 'group-hover:text-[#8ab4f8] group-hover:underline decoration-[#8ab4f8]/60 underline-offset-4'
+                          : ''
+                      }`}>
+                        {activeSession.teacher}
+                      </h3>
+                      {onNavigateToShootingTeacher && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-bold bg-[#8ab4f8]/10 text-[#8ab4f8] border border-[#8ab4f8]/25 opacity-80 group-hover:opacity-100 group-hover:bg-[#8ab4f8]/20 transition-all">
+                          <Film size={11} />
+                          <span>Shooting</span>
+                          <ExternalLink size={10} />
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2 text-xs text-[#9aa0a6] mt-0.5">
+                      <span>{activeSession.date}</span>
+                      <span>•</span>
+                      <span dir="ltr" className="font-bold text-white/90">{formatTime12h(activeSession.startTime)} - {formatTime12h(activeSession.endTime)}</span>
+                      <span>•</span>
+                      <span>فرع {normalizeBranch(activeSession.branch)}</span>
+                    </div>
+                  </div>
+                </button>
               </div>
 
               <div className="flex items-center gap-1.5">

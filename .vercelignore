@@ -1,0 +1,10 @@
+response.json
+bunny_durations.json
+scratch_live_debug.png
+check_*.js
+check_*.cjs
+find_*.js
+inspect_*.js
+test_*.mjs
+test-sheets*.js
+test-sheets*.cjs

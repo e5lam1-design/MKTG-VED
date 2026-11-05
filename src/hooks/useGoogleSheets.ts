@@ -180,9 +180,9 @@ export function useGoogleSheets(gid: string, customDocId?: string) {
 
   const activeGidRef = useRef(gid);
 
-  const fetchData = async (targetGid: string, isSilent = false, docIdOverride?: string) => {
+  const fetchData = async (targetGid: string, isSilent = false, docIdOverride?: string, forceRefresh = false) => {
     // Operations (OP 25/26): Load once into memory! Skip silent background refetches if already cached
-    if (isSilent && targetGid === OPERATIONS_GID && sheetCache[targetGid] && sheetCache[targetGid].length > 0) {
+    if (isSilent && sheetCache[targetGid] && sheetCache[targetGid].length > 0) {
       return;
     }
 
@@ -203,7 +203,8 @@ export function useGoogleSheets(gid: string, customDocId?: string) {
           if (rawLogin) {
             try { token = JSON.parse(rawLogin)?.id || ''; } catch {}
           }
-          const res = await fetch(`/api/sheet?gid=${targetGid}&t=${Date.now()}`, {
+          const sheetUrl = forceRefresh ? `/api/sheet?gid=${targetGid}&t=${Date.now()}` : `/api/sheet?gid=${targetGid}`;
+          const res = await fetch(sheetUrl, {
             headers: token ? { 'Authorization': `Bearer ${token}` } : {}
           });
           if (!res.ok) throw new Error(`API error: ${res.status}`);
@@ -398,9 +399,7 @@ export function useGoogleSheets(gid: string, customDocId?: string) {
       setData(sheetCache[gid]);
       setLoading(false);
       // For Operations (OPERATIONS_GID), load once into memory and skip background re-fetch
-      if (gid !== OPERATIONS_GID) {
-        fetchData(gid, true, customDocId); // Silent background fetch
-      }
+      // Cached: no background re-fetch
     } else {
       setData([]);
       setLoading(true);
@@ -422,5 +421,5 @@ export function useGoogleSheets(gid: string, customDocId?: string) {
     });
   };
 
-  return { data: displayData, updateData, loading: displayLoading, error, refresh: (isSilent = false) => fetchData(gid, isSilent) };
+  return { data: displayData, updateData, loading: displayLoading, error, refresh: (isSilent = false) => fetchData(gid, isSilent, customDocId, true) };
 }

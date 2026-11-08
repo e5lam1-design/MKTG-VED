@@ -1030,6 +1030,12 @@ const STAGE_WITH_BADGE_MAP: Record<string, boolean> = {
 const GREEN_DONE_BADGE_GIDS = new Set<string>(['0', '1939073164', '1535230545']);
 
 // ─── Sidebar Item ─────────────────────────────────────────────────────────────
+export const isAssignedEditor = (editor?: string | null): boolean => {
+  if (!editor) return false;
+  const s = String(editor).trim().toLowerCase();
+  return Boolean(s && s !== 'غير محدد' && s !== 'غير معين' && s !== 'unassigned' && s !== 'none' && s !== '---');
+};
+
 const SidebarItem = ({ 
   icon: Icon, 
   label, 
@@ -1040,6 +1046,7 @@ const SidebarItem = ({
   isPinned, 
   onTogglePin, 
   badgeCount, 
+  inProgressCount,
   missingDetailsCount,
   showDoneGreenBadge 
 }: any) => {
@@ -1062,8 +1069,12 @@ const SidebarItem = ({
         : { backgroundColor: `rgba(255,255,255,0.05)`, color: '#94a3b8' });
 
   const hasPending = typeof badgeCount === 'number' && badgeCount > 0;
+  const hasInProgress = typeof inProgressCount === 'number' && inProgressCount > 0;
   const hasMissing = typeof missingDetailsCount === 'number' && missingDetailsCount > 0;
-  const isAllDone = showDoneGreenBadge && typeof badgeCount === 'number' && badgeCount === 0;
+  const hasAnyPending = hasPending || hasInProgress || hasMissing;
+  const isAllDone = showDoneGreenBadge && 
+    (typeof badgeCount === 'number' || typeof inProgressCount === 'number' || typeof missingDetailsCount === 'number') && 
+    !hasAnyPending;
 
   return (
     <button
@@ -1080,7 +1091,7 @@ const SidebarItem = ({
       </div>
       <span className="font-bold text-sm tracking-tight truncate text-left text-white flex-1">{label}</span>
       
-      {/* Badges Container: Amber badge for missing details + Red badge for pending / Green checkmark for done */}
+      {/* Badges Container: Yellow (Problem/Missing) + Orange (In Progress) + Red (Unassigned Pending) / Green checkmark for done */}
       <div className="flex items-center gap-1.5 shrink-0">
         <AnimatePresence>
           {hasMissing && (
@@ -1091,9 +1102,25 @@ const SidebarItem = ({
               exit={{ scale: 0.5, opacity: 0 }}
               transition={{ type: 'spring', stiffness: 500, damping: 25 }}
               className="px-2 py-0.5 min-w-[22px] h-[22px] rounded-full bg-amber-500 text-slate-950 text-[11px] font-mono font-black flex items-center justify-center shadow-[0_0_12px_rgba(245,158,11,0.85)] border border-amber-300/60 shrink-0"
-              title={`${missingDetailsCount} مهام بها تفاصيل ناقصة ⚠️`}
+              title={`${missingDetailsCount} مهام بها مشكلة أو تفاصيل ناقصة ⚠️`}
             >
               {missingDetailsCount}
+            </motion.span>
+          )}
+        </AnimatePresence>
+
+        <AnimatePresence>
+          {hasInProgress && (
+            <motion.span 
+              key="badge-inprogress"
+              initial={{ scale: 0.6, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.5, opacity: 0 }}
+              transition={{ type: 'spring', stiffness: 500, damping: 25 }}
+              className="px-2 py-0.5 min-w-[22px] h-[22px] rounded-full bg-orange-500 text-white text-[11px] font-mono font-black flex items-center justify-center shadow-[0_0_12px_rgba(249,115,22,0.85)] border border-orange-400/50 shrink-0"
+              title={`${inProgressCount} مهام قيد التنفيذ مع محرر ⏳`}
+            >
+              {inProgressCount}
             </motion.span>
           )}
         </AnimatePresence>
@@ -1107,7 +1134,7 @@ const SidebarItem = ({
               exit={{ scale: 0.5, opacity: 0 }}
               transition={{ type: 'spring', stiffness: 500, damping: 25 }}
               className="px-2 py-0.5 min-w-[22px] h-[22px] rounded-full bg-rose-500 text-white text-[11px] font-mono font-black flex items-center justify-center shadow-[0_0_12px_rgba(244,63,94,0.7)] border border-rose-400/40 shrink-0"
-              title={`${badgeCount} مهام متبقية للعمل عليها`}
+              title={`${badgeCount} مهام بدون محرر تنتظر العمل 🔴`}
             >
               {badgeCount}
             </motion.span>
@@ -1136,7 +1163,7 @@ const SidebarItem = ({
                 <Check size={12} strokeWidth={3.5} className="text-white drop-shadow-sm" />
               </span>
             </motion.span>
-          ) : typeof badgeCount === 'number' ? (
+          ) : typeof badgeCount === 'number' && !hasAnyPending ? (
             <motion.span
               key="badge-zero"
               initial={{ scale: 0.6, opacity: 0 }}
@@ -1173,7 +1200,7 @@ const SidebarItem = ({
 };
 
 // ─── Collapsible Sidebar Group ────────────────────────────────────────────────
-const SidebarGroup = ({ title, iconEmoji, colorHex, stagesList, activeGid, onSelectStage, pinnedTabs, togglePinTab, colorful, profile, stageUncompletedCounts, stageMissingDetailsCounts }: any) => {
+const SidebarGroup = ({ title, iconEmoji, colorHex, stagesList, activeGid, onSelectStage, pinnedTabs, togglePinTab, colorful, profile, stageUncompletedCounts, stageInProgressCounts, stageMissingDetailsCounts }: any) => {
   const visibleStages = stagesList.filter((stage: any) =>
     !profile?.role || PERMISSIONS.canViewTab(profile.role, stage.label, profile.allowed_tabs || [])
   );
@@ -1225,6 +1252,7 @@ const SidebarGroup = ({ title, iconEmoji, colorHex, stagesList, activeGid, onSel
                 colorful={colorful}
                 active={activeGid === stage.gid}
                 badgeCount={STAGE_WITH_BADGE_MAP[stage.gid] ? stageUncompletedCounts?.[stage.gid] : undefined}
+                inProgressCount={STAGE_WITH_BADGE_MAP[stage.gid] ? stageInProgressCounts?.[stage.gid] : undefined}
                 missingDetailsCount={STAGE_WITH_BADGE_MAP[stage.gid] ? stageMissingDetailsCounts?.[stage.gid] : undefined}
                 showDoneGreenBadge={GREEN_DONE_BADGE_GIDS.has(stage.gid)}
                 isPinned={pinnedTabs.includes(stage.gid)}
@@ -1936,7 +1964,9 @@ const TagmeRow = ({
               ? 'bg-purple-600/[0.05]' 
               : isMissing 
                 ? 'bg-amber-500/[0.03]' 
-                : ''
+                : isAssignedEditor(item.editor)
+                ? 'bg-orange-500/[0.02]'
+                : 'bg-rose-500/[0.02]'
       }`}
     >
       <td className="px-8 py-6" dir="rtl">
@@ -1955,7 +1985,9 @@ const TagmeRow = ({
                 ? 'bg-purple-600 shadow-[0_0_16px_rgba(147,51,234,0.9)] animate-pulse' 
                 : isMissing 
                 ? 'bg-amber-500 shadow-[0_0_12px_rgba(245,158,11,0.6)]' 
-                : 'bg-white/15'
+                : isAssignedEditor(item.editor)
+                ? 'bg-orange-500 shadow-[0_0_12px_rgba(249,115,22,0.6)]'
+                : 'bg-rose-500/80 shadow-[0_0_10px_rgba(244,63,94,0.4)]'
             }`} />
             <div className="flex items-center gap-2">
               <button 
@@ -6342,6 +6374,14 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
       return {};
     }
   });
+  const [stageInProgressCounts, setStageInProgressCounts] = useState<Record<string, number>>(() => {
+    try {
+      const cached = localStorage.getItem('stage_inprogress_counts_cache_v1');
+      return cached ? JSON.parse(cached) : {};
+    } catch {
+      return {};
+    }
+  });
   const [stageMissingDetailsCounts, setStageMissingDetailsCounts] = useState<Record<string, number>>(() => {
     try {
       const cached = localStorage.getItem('stage_missing_counts_cache_v1');
@@ -6479,57 +6519,73 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
             const { data, error } = await supabase
               .from(tbl)
               .select('delivered, is_tagme3a');
-            if (error || !data) return { gid, pending: 0, missing: 0 };
+            if (error || !data) return { gid, pending: 0, inProgress: 0, missing: 0 };
             const pending = data.filter(r => r.delivered !== true && r.is_tagme3a !== true).length;
-            return { gid, pending, missing: 0 };
+            return { gid, pending, inProgress: 0, missing: 0 };
           }
           if (gid === '1939073164') {
-            // For Ve: query done, canceled, missing_details to separate actionable pending vs missing details tasks
+            // For Ve: query done, canceled, missing_details, editor_col
             const { data, error } = await supabase
               .from('reels_ve_26')
-              .select('done, canceled, missing_details');
-            if (error || !data) return { gid, pending: 0, missing: 0 };
-            const pending = data.filter(r => !r.done && !r.canceled && !r.missing_details).length;
-            const missing = data.filter(r => !r.done && !r.canceled && r.missing_details === true).length;
-            return { gid, pending, missing };
+              .select('done, canceled, missing_details, editor_col');
+            if (error || !data) return { gid, pending: 0, inProgress: 0, missing: 0 };
+            const active = data.filter(r => !r.done && !r.canceled);
+            const missing = active.filter(r => r.missing_details === true).length;
+            const nonProblem = active.filter(r => r.missing_details !== true);
+            const inProgress = nonProblem.filter(r => isAssignedEditor(r.editor_col)).length;
+            const pending = nonProblem.filter(r => !isAssignedEditor(r.editor_col)).length;
+            return { gid, pending, inProgress, missing };
           }
           if (gid === '0') {
-            // For CUTS: query done, canceled, missing_details
+            // For CUTS: query done, canceled, missing_details, problem, editor
             const { data, error } = await supabase
               .from('reels_cuts_26')
-              .select('done, canceled, missing_details');
-            if (error || !data) return { gid, pending: 0, missing: 0 };
-            const pending = data.filter(r => !r.done && !r.canceled && !r.missing_details).length;
-            const missing = data.filter(r => !r.done && !r.canceled && r.missing_details === true).length;
-            return { gid, pending, missing };
+              .select('done, canceled, missing_details, problem, editor');
+            if (error || !data) return { gid, pending: 0, inProgress: 0, missing: 0 };
+            const active = data.filter(r => !r.done && !r.canceled);
+            const missing = active.filter(r => r.missing_details === true || r.problem === true).length;
+            const nonProblem = active.filter(r => r.missing_details !== true && r.problem !== true);
+            const inProgress = nonProblem.filter(r => isAssignedEditor(r.editor)).length;
+            const pending = nonProblem.filter(r => !isAssignedEditor(r.editor)).length;
+            return { gid, pending, inProgress, missing };
           }
           if (gid === '1535230545') {
             const { data, error } = await supabase
               .from('tagme3at_26')
-              .select('done, cancel, missing_details');
-            if (error || !data) return { gid, pending: 0, missing: 0 };
-            const pending = data.filter(r => !r.done && !r.cancel && !r.missing_details).length;
-            const missing = data.filter(r => !r.done && (r.missing_details === true || r.cancel === true)).length;
-            return { gid, pending, missing };
+              .select('done, cancel, missing_details, editor');
+            if (error || !data) return { gid, pending: 0, inProgress: 0, missing: 0 };
+            const active = data.filter(r => !r.done);
+            const missing = active.filter(r => r.missing_details === true || r.cancel === true).length;
+            const nonProblem = active.filter(r => r.missing_details !== true && r.cancel !== true);
+            const inProgress = nonProblem.filter(r => isAssignedEditor(r.editor)).length;
+            const pending = nonProblem.filter(r => !isAssignedEditor(r.editor)).length;
+            return { gid, pending, inProgress, missing };
           }
         } catch {
-          return { gid, pending: 0, missing: 0 };
+          return { gid, pending: 0, inProgress: 0, missing: 0 };
         }
-        return { gid, pending: 0, missing: 0 };
+        return { gid, pending: 0, inProgress: 0, missing: 0 };
       });
 
       const results = await Promise.all(promises);
       const updatePendingMap: Record<string, number> = {};
+      const updateInProgressMap: Record<string, number> = {};
       const updateMissingMap: Record<string, number> = {};
       results.forEach((res) => {
         if (res && res.gid) {
           updatePendingMap[res.gid] = res.pending;
+          updateInProgressMap[res.gid] = res.inProgress || 0;
           updateMissingMap[res.gid] = res.missing;
         }
       });
       setStageUncompletedCounts(prev => {
         const next = { ...prev, ...updatePendingMap };
         try { localStorage.setItem('stage_uncompleted_counts_cache_v1', JSON.stringify(next)); } catch {}
+        return next;
+      });
+      setStageInProgressCounts(prev => {
+        const next = { ...prev, ...updateInProgressMap };
+        try { localStorage.setItem('stage_inprogress_counts_cache_v1', JSON.stringify(next)); } catch {}
         return next;
       });
       setStageMissingDetailsCounts(prev => {
@@ -6571,15 +6627,25 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
     }
   }, [stageDbRows, isStageTab, activeGid]);
 
-  // Keep uncompleted count for Tagme3at stage in sync with tagmeDbRows immediately in-memory
+  // Keep uncompleted count, in-progress count, and missing details count for Tagme3at stage in sync with tagmeDbRows immediately in-memory
   useEffect(() => {
     if (tagmeDbRows.length > 0 || activeGid === '1535230545') {
-      const pendingCount = tagmeDbRows.filter(r => r.done !== true && r.cancel !== true && r.missingDetails !== true && r.missing_details !== true).length;
-      const missingCount = tagmeDbRows.filter(r => r.done !== true && (r.missingDetails === true || r.missing_details === true || r.cancel === true)).length;
+      const active = tagmeDbRows.filter(r => r.done !== true);
+      const missingCount = active.filter(r => r.missingDetails === true || r.missing_details === true || r.cancel === true).length;
+      const nonProblem = active.filter(r => r.missingDetails !== true && r.missing_details !== true && r.cancel !== true);
+      const inProgressCount = nonProblem.filter(r => isAssignedEditor(r.editor)).length;
+      const pendingCount = nonProblem.filter(r => !isAssignedEditor(r.editor)).length;
+
       setStageUncompletedCounts(prev => {
         if (prev['1535230545'] === pendingCount) return prev;
         const next = { ...prev, ['1535230545']: pendingCount };
         try { localStorage.setItem('stage_uncompleted_counts_cache_v1', JSON.stringify(next)); } catch {}
+        return next;
+      });
+      setStageInProgressCounts(prev => {
+        if (prev['1535230545'] === inProgressCount) return prev;
+        const next = { ...prev, ['1535230545']: inProgressCount };
+        try { localStorage.setItem('stage_inprogress_counts_cache_v1', JSON.stringify(next)); } catch {}
         return next;
       });
       setStageMissingDetailsCounts(prev => {
@@ -6705,6 +6771,8 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
   useEffect(() => {
     const prev = prevStageCountsRef.current;
     const current = stageUncompletedCounts;
+    const currentProg = stageInProgressCounts;
+    const currentMiss = stageMissingDetailsCounts;
 
     const monitoredStages: Record<string, string> = {
       '0': 'CUTS',
@@ -6713,17 +6781,16 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
     };
 
     Object.entries(monitoredStages).forEach(([gid, stageName]) => {
-      const prevCount = prev[gid];
-      const curCount = current[gid];
-      if (typeof prevCount === 'number' && prevCount > 0 && typeof curCount === 'number' && curCount === 0) {
+      const prevTotal = prev[gid];
+      const curTotal = (current[gid] || 0) + (currentProg[gid] || 0) + (currentMiss[gid] || 0);
+      if (typeof prevTotal === 'number' && prevTotal > 0 && curTotal === 0) {
         toast.success(`🎉 عاش يا وحش! اكتملت كل مهام (${stageName}) بنجاح وتحولت للدائرة الخضراء! 🚀✨`, {
           id: `done-reward-${gid}`
         });
       }
+      prevStageCountsRef.current[gid] = curTotal;
     });
-
-    prevStageCountsRef.current = { ...current };
-  }, [stageUncompletedCounts, toast]);
+  }, [stageUncompletedCounts, stageInProgressCounts, stageMissingDetailsCounts, toast]);
 
   // Background periodic auto-refresh for OP 26/27 tasks every 15 minutes
   useEffect(() => {
@@ -6948,16 +7015,26 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
   const reelsTable = REELS_TABLE_MAP[activeGid];
   const isReelsTableTab = !!reelsTable;
 
-  // Keep uncompleted count and missing details count for active Reels stage (VE / CUTS) in sync with reelsDbRows immediately
+  // Keep uncompleted count, in-progress count, and missing details count for active Reels stage (VE / CUTS) in sync with reelsDbRows immediately
   useEffect(() => {
     if ((activeGid === '1939073164' || activeGid === '0') && (reelsDbRows.length > 0 || !isReelsDbLoading)) {
-      const pendingCount = reelsDbRows.filter(r => r.done !== true && r.canceled !== true && r.missingDetails !== true && r.missing_details !== true).length;
-      const missingCount = reelsDbRows.filter(r => r.done !== true && r.canceled !== true && (r.missingDetails === true || r.missing_details === true)).length;
+      const active = reelsDbRows.filter(r => r.done !== true && r.canceled !== true);
+      const isCuts = activeGid === '0';
+      const missingCount = active.filter(r => r.missingDetails === true || r.missing_details === true || (isCuts && r.problem === true)).length;
+      const nonProblem = active.filter(r => r.missingDetails !== true && r.missing_details !== true && !(isCuts && r.problem === true));
+      const inProgressCount = nonProblem.filter(r => isAssignedEditor(r.editor || r.editorCol || r.editor_col)).length;
+      const pendingCount = nonProblem.filter(r => !isAssignedEditor(r.editor || r.editorCol || r.editor_col)).length;
 
       setStageUncompletedCounts(prev => {
         if (prev[activeGid] === pendingCount) return prev;
         const next = { ...prev, [activeGid]: pendingCount };
         try { localStorage.setItem('stage_uncompleted_counts_cache_v1', JSON.stringify(next)); } catch {}
+        return next;
+      });
+      setStageInProgressCounts(prev => {
+        if (prev[activeGid] === inProgressCount) return prev;
+        const next = { ...prev, [activeGid]: inProgressCount };
+        try { localStorage.setItem('stage_inprogress_counts_cache_v1', JSON.stringify(next)); } catch {}
         return next;
       });
       setStageMissingDetailsCounts(prev => {
@@ -11599,6 +11676,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
               colorful={colorfulTabs}
               active={activeGid === stage.gid}
               badgeCount={STAGE_WITH_BADGE_MAP[stage.gid] ? stageUncompletedCounts[stage.gid] : undefined}
+              inProgressCount={STAGE_WITH_BADGE_MAP[stage.gid] ? stageInProgressCounts[stage.gid] : undefined}
               missingDetailsCount={STAGE_WITH_BADGE_MAP[stage.gid] ? stageMissingDetailsCounts[stage.gid] : undefined}
               showDoneGreenBadge={GREEN_DONE_BADGE_GIDS.has(stage.gid)}
               isPinned={pinnedTabs.includes(stage.gid)}
@@ -11698,6 +11776,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
                 colorful={colorfulTabs}
                 active={activeGid === stage.gid}
                 badgeCount={STAGE_WITH_BADGE_MAP[stage.gid] ? stageUncompletedCounts[stage.gid] : undefined}
+                inProgressCount={STAGE_WITH_BADGE_MAP[stage.gid] ? stageInProgressCounts[stage.gid] : undefined}
                 missingDetailsCount={STAGE_WITH_BADGE_MAP[stage.gid] ? stageMissingDetailsCounts[stage.gid] : undefined}
                 showDoneGreenBadge={GREEN_DONE_BADGE_GIDS.has(stage.gid)}
                 isPinned={pinnedTabs.includes(stage.gid)}
@@ -12580,6 +12659,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
                 if (!stage) return null;
                 const isActive = activeGid === gid;
                 const pinBadge = STAGE_WITH_BADGE_MAP[gid] ? stageUncompletedCounts[gid] : undefined;
+                const pinInProgress = STAGE_WITH_BADGE_MAP[gid] ? stageInProgressCounts[gid] : undefined;
                 const pinMissing = STAGE_WITH_BADGE_MAP[gid] ? stageMissingDetailsCounts[gid] : undefined;
                 return (
                   <button
@@ -12597,12 +12677,17 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
                     <span className="w-2 h-2 rounded-full" style={{ backgroundColor: stage.colorHex || '#8b5cf6' }} />
                     <span>{stage.label}</span>
                     {typeof pinMissing === 'number' && pinMissing > 0 && (
-                      <span className="px-1.5 py-0.2 min-w-[18px] h-4 rounded-full bg-amber-500 text-slate-950 text-[10px] font-mono font-black flex items-center justify-center shadow-[0_0_8px_rgba(245,158,11,0.85)] border border-amber-300/60" title={`${pinMissing} مهام بها تفاصيل ناقصة ⚠️`}>
+                      <span className="px-1.5 py-0.2 min-w-[18px] h-4 rounded-full bg-amber-500 text-slate-950 text-[10px] font-mono font-black flex items-center justify-center shadow-[0_0_8px_rgba(245,158,11,0.85)] border border-amber-300/60" title={`${pinMissing} مهام بها مشكلة أو تفاصيل ناقصة ⚠️`}>
                         {pinMissing}
                       </span>
                     )}
+                    {typeof pinInProgress === 'number' && pinInProgress > 0 && (
+                      <span className="px-1.5 py-0.2 min-w-[18px] h-4 rounded-full bg-orange-500 text-white text-[10px] font-mono font-black flex items-center justify-center shadow-[0_0_8px_rgba(249,115,22,0.85)] border border-orange-400/50" title={`${pinInProgress} مهام قيد التنفيذ مع محرر ⏳`}>
+                        {pinInProgress}
+                      </span>
+                    )}
                     {typeof pinBadge === 'number' && pinBadge > 0 ? (
-                      <span className="px-1.5 py-0.2 min-w-[18px] h-4 rounded-full bg-rose-500 text-white text-[10px] font-mono font-black flex items-center justify-center shadow-[0_0_8px_rgba(244,63,94,0.6)]">
+                      <span className="px-1.5 py-0.2 min-w-[18px] h-4 rounded-full bg-rose-500 text-white text-[10px] font-mono font-black flex items-center justify-center shadow-[0_0_8px_rgba(244,63,94,0.6)]" title={`${pinBadge} مهام بدون محرر تنتظر العمل 🔴`}>
                         {pinBadge}
                       </span>
                     ) : GREEN_DONE_BADGE_GIDS.has(gid) && typeof pinBadge === 'number' && pinBadge === 0 ? (

@@ -4,7 +4,8 @@ import { supabase } from '../lib/supabase';
 import { 
   BarChart3, Film, CheckCircle2, XCircle, AlertCircle, Clock, 
   Layers, Users, Award, MapPin, PieChart, Search, Calendar, 
-  Play, ArrowLeft, History, TrendingUp, Cpu, Sparkles, Scissors, Video
+  Play, ArrowLeft, History, TrendingUp, Cpu, Sparkles, Scissors, Video,
+  ShieldAlert, AlertTriangle, Check, Flame, Zap, ChevronDown, ChevronUp, Timer
 } from 'lucide-react';
 
 interface ReelsAnalyticsProps {
@@ -133,6 +134,7 @@ export const ReelsAnalytics = ({ isDemo = false }: ReelsAnalyticsProps) => {
   const rawCutsData = isDemo ? sheetCuts : (dbCuts.length > 0 ? dbCuts : sheetCuts);
 
   const [searchCode, setSearchCode] = useState('');
+  const [expandedBottleneck, setExpandedBottleneck] = useState<'ve' | 'filmed' | 'edit' | null>(null);
   const [trackFilter, setTrackFilter] = useState<'ALL' | 'SHOOTING_VE' | 'CUTS'>('ALL');
   const [selectedMonth, setSelectedMonth] = useState<string>('ALL');
 
@@ -479,6 +481,138 @@ export const ReelsAnalytics = ({ isDemo = false }: ReelsAnalyticsProps) => {
 
     const monthlyBreakdown = Object.values(monthMap).sort((a, b) => b.key.localeCompare(a.key));
 
+    // ── 5. Zero-Edit Quality Metric (نسبة الريلز الخالية من التعديلات) ──
+    const doneVeList = veData.filter(v => v.done);
+    const zeroEditCount = doneVeList.filter(v => !v.editCheck).length;
+    const withEditCount = doneVeList.filter(v => v.editCheck).length;
+    const zeroEditRate = doneVeList.length > 0 ? Math.round((zeroEditCount / doneVeList.length) * 100) : 100;
+
+    // ── 6. Editors Performance Leaderboard (أداء وسرعة المونتيرين) ──
+    const editorsMap: Record<string, {
+      name: string;
+      total: number;
+      done: number;
+      pending: number;
+      zeroEdit: number;
+      withEdit: number;
+      completionRate: number;
+      zeroEditRate: number;
+      avgDays: string | null;
+    }> = {};
+
+    veData.forEach(v => {
+      const editorName = (v.editorCol || (v as any).editor || '').trim();
+      if (!editorName || editorName === 'غير محدد') return;
+      if (!editorsMap[editorName]) {
+        editorsMap[editorName] = {
+          name: editorName,
+          total: 0,
+          done: 0,
+          pending: 0,
+          zeroEdit: 0,
+          withEdit: 0,
+          completionRate: 0,
+          zeroEditRate: 0,
+          avgDays: null
+        };
+      }
+      const ed = editorsMap[editorName];
+      ed.total++;
+      if (v.done) {
+        ed.done++;
+        if (v.editCheck) ed.withEdit++;
+        else ed.zeroEdit++;
+      } else {
+        ed.pending++;
+      }
+    });
+
+    Object.values(editorsMap).forEach(ed => {
+      ed.completionRate = ed.total > 0 ? Math.round((ed.done / ed.total) * 100) : 0;
+      ed.zeroEditRate = ed.done > 0 ? Math.round((ed.zeroEdit / ed.done) * 100) : 100;
+    });
+
+    const editorsList = Object.values(editorsMap).sort((a, b) => b.total - a.total);
+
+    // ── 7. Bottlenecks Radar (رادار نقاط الاختناق) ──
+    const nowMs = Date.now();
+    const FIVE_DAYS_MS = 5 * 24 * 3600 * 1000;
+    const THREE_DAYS_MS = 3 * 24 * 3600 * 1000;
+
+    const veCodeSet = new Set(veData.map(v => (v.id || v.script || '').trim().toLowerCase()));
+    const cutsCodeSet = new Set(cutsData.map(c => (c.id || c.script || '').trim().toLowerCase()));
+
+    // a) Filmed in Shooting but not entered VE / Cuts after > 5 days
+    const filmedUnprocessed = shootingData.filter(s => {
+      if (!s.filmed || s.canceled) return false;
+      const fDate = parseDate(s.filmingDate) || parseDate(s.date);
+      if (!fDate) return false;
+      const isOld = (nowMs - fDate.getTime()) >= FIVE_DAYS_MS;
+      if (!isOld) return false;
+      const sCode = (s.id || s.script || '').trim().toLowerCase();
+      const inVe = veCodeSet.has(sCode);
+      const inCuts = cutsCodeSet.has(sCode);
+      return !inVe && !inCuts;
+    }).map(s => {
+      const fDate = parseDate(s.filmingDate) || parseDate(s.date);
+      const days = fDate ? Math.floor((nowMs - fDate.getTime()) / (1000 * 3600 * 24)) : 5;
+      return {
+        code: s.id || s.script || 'بدون كود',
+        teacher: s.teacher || 'غير محدد',
+        filmingDate: s.filmingDate || s.date || '',
+        daysWaiting: days
+      };
+    });
+
+    // b) Delayed in VE: in VE for > 5 days, not done, not canceled
+    const delayedInVe = veData.filter(v => {
+      if (v.done || v.canceled) return false;
+      const vDate = parseDate(v.date) || (v.createdAt ? new Date(v.createdAt) : null);
+      if (!vDate) return false;
+      return (nowMs - vDate.getTime()) >= FIVE_DAYS_MS;
+    }).map(v => {
+      const vDate = parseDate(v.date) || (v.createdAt ? new Date(v.createdAt) : new Date());
+      const days = Math.floor((nowMs - vDate.getTime()) / (1000 * 3600 * 24));
+      return {
+        code: v.id || v.script || 'بدون كود',
+        teacher: v.teacher || 'غير محدد',
+        editor: v.editorCol || 'غير محدد',
+        date: v.date || '',
+        daysInEditing: days
+      };
+    });
+
+    // c) Stuck in Edit: has editCheck=true, not done, for > 3 days
+    const stuckInRevisions = veData.filter(v => {
+      if (v.done || v.canceled || !v.editCheck) return false;
+      const uDate = v.updatedAt ? new Date(v.updatedAt) : parseDate(v.date);
+      if (!uDate) return false;
+      return (nowMs - uDate.getTime()) >= THREE_DAYS_MS;
+    }).map(v => {
+      const uDate = v.updatedAt ? new Date(v.updatedAt) : parseDate(v.date) || new Date();
+      const days = Math.floor((nowMs - uDate.getTime()) / (1000 * 3600 * 24));
+      return {
+        code: v.id || v.script || 'بدون كود',
+        teacher: v.teacher || 'غير محدد',
+        editor: v.editorCol || 'غير محدد',
+        daysInRevision: days
+      };
+    });
+
+    const bottlenecks = {
+      filmedUnprocessed,
+      delayedInVe,
+      stuckInRevisions,
+      totalAlerts: filmedUnprocessed.length + delayedInVe.length + stuckInRevisions.length
+    };
+
+    const qualityStats = {
+      zeroEditCount,
+      withEditCount,
+      zeroEditRate,
+      totalDoneVe: doneVeList.length
+    };
+
     return {
       total,
       completed,
@@ -516,7 +650,10 @@ export const ReelsAnalytics = ({ isDemo = false }: ReelsAnalyticsProps) => {
       avgVeToFirstDone,
       avgEditToFinalDone,
       sampleCodes,
-      monthlyBreakdown
+      monthlyBreakdown,
+      bottlenecks,
+      qualityStats,
+      editorsList
     };
   }, [rawShootingData, rawVeData, rawCutsData, loading]);
 
@@ -1250,6 +1387,221 @@ export const ReelsAnalytics = ({ isDemo = false }: ReelsAnalyticsProps) => {
         </div>
       </div>
 
+      {/* ── NEW SECTION: Bottleneck Radar & Smart Alerts (رادار نقاط الاختناق) ── */}
+      <div className="glass-panel p-6 md:p-8 rounded-3xl border border-white/10 space-y-6 relative overflow-hidden">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-white/10 pb-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-rose-500/20 text-rose-400 flex items-center justify-center shrink-0 shadow-lg shadow-rose-500/20">
+              <ShieldAlert size={22} />
+            </div>
+            <div>
+              <div className="flex items-center gap-2.5">
+                <h3 className="text-xl font-black text-white arabic-text">رادار اكتشاف نقاط الاختناق والتأخيرات</h3>
+                <span className={`px-3 py-0.5 rounded-full text-xs font-black font-mono ${
+                  stats.bottlenecks.totalAlerts > 0 ? 'bg-rose-500/20 text-rose-400 border border-rose-500/30 shadow-md shadow-rose-500/20' : 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                }`}>
+                  {stats.bottlenecks.totalAlerts > 0 ? `${stats.bottlenecks.totalAlerts} تنبيه نشط` : 'الإنتاج منتظم بالكامل ✨'}
+                </span>
+              </div>
+              <p className="text-xs text-muted arabic-text">تتبع الفيديوهات المتأخرة عن دورة الإنتاج المعتادة لاتخاذ قرارات فورية وحل المشكلات</p>
+            </div>
+          </div>
+          {stats.bottlenecks.totalAlerts > 0 && (
+            <span className="text-xs font-bold text-amber-400/90 bg-amber-500/10 px-3 py-1.5 rounded-xl border border-amber-500/20 flex items-center gap-1.5 w-fit">
+              <AlertTriangle size={14} />
+              <span>اضغط على أي كارت بالأسفل لعرض الفيديوهات المتأخرة</span>
+            </span>
+          )}
+        </div>
+
+        {/* 3 Bottleneck Summary Cards */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {/* Card 1: Delayed in VE (> 5 days) */}
+          <div 
+            onClick={() => stats.bottlenecks.delayedInVe.length > 0 && setExpandedBottleneck(expandedBottleneck === 've' ? null : 've')}
+            className={`p-5 rounded-2xl border transition-all cursor-pointer relative overflow-hidden group ${
+              stats.bottlenecks.delayedInVe.length > 0 
+                ? 'bg-rose-500/10 border-rose-500/30 hover:bg-rose-500/15 hover:border-rose-500/50 shadow-lg shadow-rose-500/10' 
+                : 'bg-white/[0.02] border-white/5 opacity-60'
+            }`}
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-black text-rose-300 arabic-text flex items-center gap-1.5">
+                <Flame size={15} className="text-rose-400" />
+                <span>متأخرة في المونتاج (&gt; 5 أيام)</span>
+              </span>
+              <span className="text-2xl font-black font-mono text-rose-400">{stats.bottlenecks.delayedInVe.length}</span>
+            </div>
+            <p className="text-[11px] text-white/60 arabic-text mt-2 leading-relaxed">
+              ريلز استلمها المونتير وتجاوزت 5 أيام عمل دون تسليم Done نهائي
+            </p>
+            {stats.bottlenecks.delayedInVe.length > 0 && (
+              <div className="mt-3 pt-2 border-t border-rose-500/20 flex items-center justify-between text-[11px] font-bold text-rose-300">
+                <span>{expandedBottleneck === 've' ? 'إخفاء القائمة ▲' : 'عرض الفيديوهات المتأخرة ▼'}</span>
+                {expandedBottleneck === 've' ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+              </div>
+            )}
+          </div>
+
+          {/* Card 2: Filmed but not entered VE/Cuts (> 5 days) */}
+          <div 
+            onClick={() => stats.bottlenecks.filmedUnprocessed.length > 0 && setExpandedBottleneck(expandedBottleneck === 'filmed' ? null : 'filmed')}
+            className={`p-5 rounded-2xl border transition-all cursor-pointer relative overflow-hidden group ${
+              stats.bottlenecks.filmedUnprocessed.length > 0 
+                ? 'bg-amber-500/10 border-amber-500/30 hover:bg-amber-500/15 hover:border-amber-500/50 shadow-lg shadow-amber-500/10' 
+                : 'bg-white/[0.02] border-white/5 opacity-60'
+            }`}
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-black text-amber-300 arabic-text flex items-center gap-1.5">
+                <Clock size={15} className="text-amber-400" />
+                <span>مصورة معلقة (&gt; 5 أيام)</span>
+              </span>
+              <span className="text-2xl font-black font-mono text-amber-400">{stats.bottlenecks.filmedUnprocessed.length}</span>
+            </div>
+            <p className="text-[11px] text-white/60 arabic-text mt-2 leading-relaxed">
+              ريلز تم تصويرها منذ أكثر من 5 أيام ولم تُسند لمونتير أو تدخل الـ VE
+            </p>
+            {stats.bottlenecks.filmedUnprocessed.length > 0 && (
+              <div className="mt-3 pt-2 border-t border-amber-500/20 flex items-center justify-between text-[11px] font-bold text-amber-300">
+                <span>{expandedBottleneck === 'filmed' ? 'إخفاء القائمة ▲' : 'عرض الريلز المصورة ▼'}</span>
+                {expandedBottleneck === 'filmed' ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+              </div>
+            )}
+          </div>
+
+          {/* Card 3: Stuck in Revisions (> 3 days) */}
+          <div 
+            onClick={() => stats.bottlenecks.stuckInRevisions.length > 0 && setExpandedBottleneck(expandedBottleneck === 'edit' ? null : 'edit')}
+            className={`p-5 rounded-2xl border transition-all cursor-pointer relative overflow-hidden group ${
+              stats.bottlenecks.stuckInRevisions.length > 0 
+                ? 'bg-purple-500/10 border-purple-500/30 hover:bg-purple-500/15 hover:border-purple-500/50 shadow-lg shadow-purple-500/10' 
+                : 'bg-white/[0.02] border-white/5 opacity-60'
+            }`}
+          >
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-black text-purple-300 arabic-text flex items-center gap-1.5">
+                <Scissors size={15} className="text-purple-400" />
+                <span>معلقة في التعديلات (&gt; 3 أيام)</span>
+              </span>
+              <span className="text-2xl font-black font-mono text-purple-400">{stats.bottlenecks.stuckInRevisions.length}</span>
+            </div>
+            <p className="text-[11px] text-white/60 arabic-text mt-2 leading-relaxed">
+              فيديوهات طُلب عليها تعديل (Edit) من الماركتنج ومضى عليها أكثر من 3 أيام
+            </p>
+            {stats.bottlenecks.stuckInRevisions.length > 0 && (
+              <div className="mt-3 pt-2 border-t border-purple-500/20 flex items-center justify-between text-[11px] font-bold text-purple-300">
+                <span>{expandedBottleneck === 'edit' ? 'إخفاء القائمة ▲' : 'عرض الفيديوهات ▼'}</span>
+                {expandedBottleneck === 'edit' ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Expanded Details Sub-Panel */}
+        {expandedBottleneck === 've' && stats.bottlenecks.delayedInVe.length > 0 && (
+          <div className="p-5 rounded-2xl bg-rose-500/10 border border-rose-500/20 space-y-3 animate-in fade-in duration-200">
+            <div className="flex items-center justify-between">
+              <h4 className="text-xs font-black text-white arabic-text flex items-center gap-2">
+                <Flame size={16} className="text-rose-400" />
+                <span>قائمة الريلز المتأخرة في المونتاج (أكثر من 5 أيام):</span>
+              </h4>
+              <span className="text-xs font-mono text-rose-300 font-bold">{stats.bottlenecks.delayedInVe.length} ريل متأخر</span>
+            </div>
+            <div className="max-h-[260px] overflow-y-auto pr-1">
+              <table className="w-full text-right text-xs">
+                <thead>
+                  <tr className="border-b border-rose-500/20 text-rose-300 font-bold">
+                    <th className="pb-2">كود الريل</th>
+                    <th className="pb-2">المدرس</th>
+                    <th className="pb-2">المونتير</th>
+                    <th className="pb-2 text-center">أيام التأخير</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/5">
+                  {stats.bottlenecks.delayedInVe.map((item, idx) => (
+                    <tr key={idx} className="hover:bg-white/5">
+                      <td className="py-2.5 font-mono font-bold text-white pl-2" dir="ltr">{item.code}</td>
+                      <td className="py-2.5 text-white/80">{item.teacher}</td>
+                      <td className="py-2.5 text-rose-300 font-bold">{item.editor}</td>
+                      <td className="py-2.5 text-center font-mono font-bold text-rose-400">{item.daysInEditing} يوم</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {expandedBottleneck === 'filmed' && stats.bottlenecks.filmedUnprocessed.length > 0 && (
+          <div className="p-5 rounded-2xl bg-amber-500/10 border border-amber-500/20 space-y-3 animate-in fade-in duration-200">
+            <div className="flex items-center justify-between">
+              <h4 className="text-xs font-black text-white arabic-text flex items-center gap-2">
+                <Clock size={16} className="text-amber-400" />
+                <span>قائمة الريلز المصورة المعلقة (أكثر من 5 أيام دون دخول المونتاج):</span>
+              </h4>
+              <span className="text-xs font-mono text-amber-300 font-bold">{stats.bottlenecks.filmedUnprocessed.length} ريل</span>
+            </div>
+            <div className="max-h-[260px] overflow-y-auto pr-1">
+              <table className="w-full text-right text-xs">
+                <thead>
+                  <tr className="border-b border-amber-500/20 text-amber-300 font-bold">
+                    <th className="pb-2">كود الريل</th>
+                    <th className="pb-2">المدرس</th>
+                    <th className="pb-2">تاريخ التصوير</th>
+                    <th className="pb-2 text-center">أيام الانتظار</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/5">
+                  {stats.bottlenecks.filmedUnprocessed.map((item, idx) => (
+                    <tr key={idx} className="hover:bg-white/5">
+                      <td className="py-2.5 font-mono font-bold text-white pl-2" dir="ltr">{item.code}</td>
+                      <td className="py-2.5 text-white/80">{item.teacher}</td>
+                      <td className="py-2.5 text-white/70 font-mono">{item.filmingDate}</td>
+                      <td className="py-2.5 text-center font-mono font-bold text-amber-400">{item.daysWaiting} يوم</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+
+        {expandedBottleneck === 'edit' && stats.bottlenecks.stuckInRevisions.length > 0 && (
+          <div className="p-5 rounded-2xl bg-purple-500/10 border border-purple-500/20 space-y-3 animate-in fade-in duration-200">
+            <div className="flex items-center justify-between">
+              <h4 className="text-xs font-black text-white arabic-text flex items-center gap-2">
+                <Scissors size={16} className="text-purple-400" />
+                <span>قائمة الريلز المعلقة في التعديلات (أكثر من 3 أيام):</span>
+              </h4>
+              <span className="text-xs font-mono text-purple-300 font-bold">{stats.bottlenecks.stuckInRevisions.length} ريل</span>
+            </div>
+            <div className="max-h-[260px] overflow-y-auto pr-1">
+              <table className="w-full text-right text-xs">
+                <thead>
+                  <tr className="border-b border-purple-500/20 text-purple-300 font-bold">
+                    <th className="pb-2">كود الريل</th>
+                    <th className="pb-2">المدرس</th>
+                    <th className="pb-2">المونتير</th>
+                    <th className="pb-2 text-center">أيام التعديل</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-white/5">
+                  {stats.bottlenecks.stuckInRevisions.map((item, idx) => (
+                    <tr key={idx} className="hover:bg-white/5">
+                      <td className="py-2.5 font-mono font-bold text-white pl-2" dir="ltr">{item.code}</td>
+                      <td className="py-2.5 text-white/80">{item.teacher}</td>
+                      <td className="py-2.5 text-purple-300 font-bold">{item.editor}</td>
+                      <td className="py-2.5 text-center font-mono font-bold text-purple-400">{item.daysInRevision} يوم</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        )}
+      </div>
+
       {/* ── NEW SECTION: Reel Lifecycle Averages & Timeline Explorer ── */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
         
@@ -1318,6 +1670,21 @@ export const ReelsAnalytics = ({ isDemo = false }: ReelsAnalyticsProps) => {
                   ) : (
                     <span className="text-sm font-bold text-muted arabic-text">لا يوجد بيانات</span>
                   )}
+                </div>
+              </div>
+
+              {/* Quality Metric: Zero-Edit Rate (نسبة الاعتماد المباشر بدون تعديل) */}
+              <div className="p-5 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 hover:bg-emerald-500/15 transition-all flex items-center justify-between">
+                <div className="space-y-1">
+                  <span className="text-[11px] font-bold text-emerald-300 arabic-text block">نسبة الاعتماد المباشر بدون تعديل (Zero-Edit Rate) 🎯</span>
+                  <span className="text-xs text-white/75 arabic-text block">
+                    {stats.qualityStats.zeroEditCount} من أصل {stats.qualityStats.totalDoneVe} ريل منجز اعتُمدت فوراً دون تعديلات
+                  </span>
+                </div>
+                <div className="text-left font-mono">
+                  <div className="flex items-baseline gap-1">
+                    <span className="text-3xl font-black text-emerald-400">%{stats.qualityStats.zeroEditRate}</span>
+                  </div>
                 </div>
               </div>
 
@@ -1649,6 +2016,107 @@ export const ReelsAnalytics = ({ isDemo = false }: ReelsAnalyticsProps) => {
               </div>
             ))}
           </div>
+        </div>
+      </div>
+
+      {/* ── NEW SECTION: Editors Performance & Turnaround Leaderboard ── */}
+      <div className="glass-panel p-6 md:p-8 rounded-3xl border border-white/10 space-y-6 relative overflow-hidden group hover:border-purple-500/30 transition-all">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-white/10 pb-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-purple-500/20 text-purple-400 flex items-center justify-center shrink-0 shadow-lg shadow-purple-500/20">
+              <Award size={22} />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="text-xl font-black text-white arabic-text">لوحة أداء والتزام المونتيرين (Editors Performance & Turnaround)</h3>
+                <span className="px-2.5 py-0.5 rounded-full text-xs font-black bg-purple-500/20 text-purple-300 border border-purple-500/30 font-mono">
+                  {stats.editorsList.length} مونتير
+                </span>
+              </div>
+              <p className="text-xs text-muted arabic-text">متابعة دقيقة لمعدل إنجاز كل مونتير، سرعة التسليم، ونسبة الريلز المعتمدة بدون طلب تعديل</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 text-xs font-bold text-white/60">
+            <span className="flex items-center gap-1.5 px-3 py-1.5 bg-white/5 rounded-xl border border-white/5">
+              <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
+              <span>اعتماد مباشر بدون تعديل (First-Time-Right)</span>
+            </span>
+          </div>
+        </div>
+
+        {/* Editors Table */}
+        <div className="overflow-x-auto">
+          <table className="w-full text-right text-xs">
+            <thead>
+              <tr className="border-b border-white/10 text-white/60 font-bold pb-3">
+                <th className="py-3 px-4">#</th>
+                <th className="py-3 px-4">اسم المونتير</th>
+                <th className="py-3 px-4 text-center">إجمالي المسند</th>
+                <th className="py-3 px-4 text-center">المنجز (Done)</th>
+                <th className="py-3 px-4 text-center">قيد التنفيذ</th>
+                <th className="py-3 px-4 text-center">نسبة الإنجاز</th>
+                <th className="py-3 px-4 text-center">الاعتماد المباشر (Zero-Edit)</th>
+                <th className="py-3 px-4 text-center">تقييم الالتزام</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-white/5">
+              {stats.editorsList.map((editor, index) => {
+                const isHighPerformer = editor.completionRate >= 95 && editor.zeroEditRate >= 95;
+                const isGood = editor.completionRate >= 85;
+                return (
+                  <tr key={editor.name} className="hover:bg-white/[0.03] transition-colors">
+                    <td className="py-3.5 px-4 font-mono font-bold text-white/40">{index + 1}</td>
+                    <td className="py-3.5 px-4 font-black text-white flex items-center gap-2">
+                      <div className="w-7 h-7 rounded-lg bg-purple-500/10 text-purple-300 border border-purple-500/20 flex items-center justify-center font-bold text-[11px]">
+                        {editor.name.charAt(0).toUpperCase()}
+                      </div>
+                      <span>{editor.name}</span>
+                      {isHighPerformer && (
+                        <span className="px-1.5 py-0.5 bg-amber-500/10 text-amber-400 rounded text-[10px] font-bold flex items-center gap-1">
+                          <Zap size={10} />
+                          <span>مميز</span>
+                        </span>
+                      )}
+                    </td>
+                    <td className="py-3.5 px-4 text-center font-mono font-bold text-white/90">{editor.total}</td>
+                    <td className="py-3.5 px-4 text-center font-mono font-bold text-emerald-400">{editor.done}</td>
+                    <td className="py-3.5 px-4 text-center font-mono font-bold text-amber-400">{editor.pending}</td>
+                    <td className="py-3.5 px-4 text-center">
+                      <div className="flex items-center justify-center gap-2">
+                        <div className="w-16 bg-white/10 rounded-full h-1.5 overflow-hidden">
+                          <div 
+                            className="bg-emerald-400 h-full rounded-full" 
+                            style={{ width: `${editor.completionRate}%` }}
+                          />
+                        </div>
+                        <span className="font-mono font-black text-emerald-400 text-[11px]">%{editor.completionRate}</span>
+                      </div>
+                    </td>
+                    <td className="py-3.5 px-4 text-center font-mono">
+                      <span className="px-2.5 py-1 rounded-lg bg-emerald-500/10 text-emerald-400 font-black text-[11px] border border-emerald-500/20">
+                        %{editor.zeroEditRate}
+                      </span>
+                    </td>
+                    <td className="py-3.5 px-4 text-center">
+                      {isHighPerformer ? (
+                        <span className="px-2.5 py-1 rounded-lg bg-emerald-500/20 text-emerald-300 font-bold text-[10px] border border-emerald-500/30">
+                          🟢 التزام فائق
+                        </span>
+                      ) : isGood ? (
+                        <span className="px-2.5 py-1 rounded-lg bg-blue-500/20 text-blue-300 font-bold text-[10px] border border-blue-500/30">
+                          🔵 أداء جيد جداً
+                        </span>
+                      ) : (
+                        <span className="px-2.5 py-1 rounded-lg bg-amber-500/20 text-amber-300 font-bold text-[10px] border border-amber-500/30">
+                          🟡 يتطلب متابعة
+                        </span>
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
         </div>
       </div>
     </div>

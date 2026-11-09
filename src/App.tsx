@@ -86,6 +86,7 @@ import { GoogleSheetImportModal } from './components/GoogleSheetImportModal';
 import { sortTasksByChunkAscending, sortMultiLineLessonName, sortCombinedFilingName } from './lib/chunkSort';
 import { supabase, PERMISSIONS, ROLE_LABELS, ROLE_COLORS, DEFAULT_ROLE_PERMISSIONS, setRuntimeRolePermissions } from './lib/supabase';
 import { notifyTaskCompleted, notifyTaskEditRequested, getUserTelegramChatId, notifyHardDriveRequest, notifyHardDriveDecision } from './lib/telegram';
+import { cleanCodePart, computeNextUniqueReelCode, fetchRemoteSequenceRegistry, loadLocalSequenceRegistry, recordBulkClaimedSequences, resolveAndClaimUniqueCodeFromDb, type SequenceRegistry } from './lib/codeGenerator';
 
 
 const yearLabels: Record<string, string> = {
@@ -2828,7 +2829,7 @@ const parseScriptValue = (val: string) => {
 };
 
 // ─── REELS Row (Shooting, Ve, Counter) ────────────────────────────────────────
-const ShootingRow = React.memo(({ item, index, activeGid, onToggleFilmed, loadingFilmedCode, onUpdateShootingRow, onToggleEditCheck, liveData, optionsLists, autofillDrag, setAutofillDrag, onApplyAutofill, activeCell, setActiveCell, toast, isSubscribed, onToggleSubscribe, isSimple, publishedTasks, sharedLinks, onTogglePublish, onUpdateSharedLink, noteAuthors }: any) => {
+const ShootingRow = React.memo(({ item, index, activeGid, onToggleFilmed, loadingFilmedCode, onUpdateShootingRow, onToggleEditCheck, liveData, allReelsCodes, sequenceRegistry, optionsLists, autofillDrag, setAutofillDrag, onApplyAutofill, activeCell, setActiveCell, toast, isSubscribed, onToggleSubscribe, isSimple, publishedTasks, sharedLinks, onTogglePublish, onUpdateSharedLink, noteAuthors }: any) => {
   const isGlowing = false;
   const [isEditChecked, setIsEditChecked] = useState(Boolean(item.editCheck || item.edit_check));
   useEffect(() => {
@@ -2902,29 +2903,38 @@ const ShootingRow = React.memo(({ item, index, activeGid, onToggleFilmed, loadin
   }, [item.notes, item.editorNotes, item.creatorNotes, item.creator_notes, item.filmed, item.driveFinal, item.driveRaw, item.editorCol, item.branch, item.year, item.teacher, item.extraName, item.type, item.format, item.by, item.storage, item.script]);
 
   const generatedCode = useMemo(() => {
-    if (!['1436746012', '1939073164', '798246690'].includes(activeGid)) return item.id;
-    const prefix = `${editForm.year}-${editForm.teacher}-${editForm.extraName}-`.toLowerCase().replace(/\s+/g, ' ');
-    const currentPrefix = `${item.year}-${item.teacher}-${item.extraName}-`.toLowerCase().replace(/\s+/g, ' ');
-    if (prefix === currentPrefix) return item.id;
+    const baseCode = item.code || item.id || '';
+    if (!['1436746012', '1939073164', '798246690'].includes(activeGid)) return baseCode;
+    const cleanY = cleanCodePart(editForm.year);
+    const cleanT = cleanCodePart(editForm.teacher);
+    const cleanE = cleanCodePart(editForm.extraName);
+    const curY = cleanCodePart(item.year);
+    const curT = cleanCodePart(item.teacher);
+    const curE = cleanCodePart(item.extraName);
+    if (cleanY === curY && cleanT === curT && cleanE === curE) return baseCode;
 
-    const currentSheetData = Array.isArray(liveData) ? liveData : [];
-    let maxSeq = -1;
-    currentSheetData.forEach((row: any) => {
-      const rId = (row.id || row.code || '').toLowerCase().trim();
-      if (rId && rId.startsWith(prefix) && rId !== (item.id || '').toLowerCase()) {
-        const remainder = rId.slice(prefix.length).trim();
-        const m = remainder.match(/^(\d+)/);
-        if (m) {
-          const seq = parseInt(m[1], 10);
-          if (!isNaN(seq) && seq > maxSeq) {
-            maxSeq = seq;
-          }
+    // If only academic year changed, keep existing sequence ONLY if that exact code does not exist anywhere
+    if (cleanT === curT && cleanE === curE) {
+      const seqTailMatch = cleanCodePart(baseCode).match(/-(\d+(?:\s*v\d+)?)$/i);
+      if (seqTailMatch) {
+        const candidateSameSeq = `${cleanY}-${cleanT}-${cleanE}-${seqTailMatch[1]}`.toLowerCase();
+        const knownSet: Set<string> = allReelsCodes instanceof Set ? allReelsCodes : new Set(allReelsCodes || []);
+        if (!knownSet.has(candidateSameSeq) || candidateSameSeq === cleanCodePart(baseCode)) {
+          return candidateSameSeq;
         }
       }
-    });
-    const nextSeq = maxSeq + 1;
-    return `${prefix}${nextSeq.toString().padStart(2, '0')} v7`.toLowerCase();
-  }, [editForm, item, liveData, activeGid]);
+    }
+
+    return computeNextUniqueReelCode({
+      year: editForm.year,
+      teacher: editForm.teacher,
+      extraName: editForm.extraName,
+      isCut: false,
+      excludeCode: baseCode,
+      allKnownCodes: allReelsCodes || [],
+      sequenceRegistry,
+    }).code;
+  }, [editForm, item, allReelsCodes, sequenceRegistry, activeGid]);
 
   const handleFieldChange = async (fieldName: string, value: string, time?: string, author?: string) => {
     const isMarketingUser = profile?.team?.toLowerCase() === 'marketing' && profile?.role !== 'admin' && profile?.role !== 'manager';
@@ -2941,29 +2951,39 @@ const ShootingRow = React.memo(({ item, index, activeGid, onToggleFilmed, loadin
     const updatedForm = { ...editForm, [fieldName]: value };
     setEditForm(updatedForm);
 
-    // 2. Generate new code if year, teacher, or extraName changes
-    let newCode = item.id;
+    // 2. Generate guaranteed unique code if year, teacher, or extraName changes
+    const currentItemCode = item.code || item.id || '';
+    let newCode = currentItemCode;
     if (['1436746012', '1939073164', '798246690'].includes(activeGid) && (fieldName === 'year' || fieldName === 'teacher' || fieldName === 'extraName')) {
-      const prefix = `${updatedForm.year}-${updatedForm.teacher}-${updatedForm.extraName}-`.toLowerCase().replace(/\s+/g, ' ');
-      const currentPrefix = `${item.year}-${item.teacher}-${item.extraName}-`.toLowerCase().replace(/\s+/g, ' ');
-      if (prefix !== currentPrefix) {
-        const currentSheetData = Array.isArray(liveData) ? liveData : [];
-        let maxSeq = 0;
-        currentSheetData.forEach((row: any) => {
-          const rId = (row.id || row.code || '').toLowerCase().trim();
-          if (rId && rId.startsWith(prefix) && rId !== (item.id || '').toLowerCase()) {
-            const remainder = rId.slice(prefix.length).trim();
-            const m = remainder.match(/^(\d+)/);
-            if (m) {
-              const seq = parseInt(m[1], 10);
-              if (!isNaN(seq) && seq > maxSeq) {
-                maxSeq = seq;
-              }
+      const cleanY = cleanCodePart(updatedForm.year);
+      const cleanT = cleanCodePart(updatedForm.teacher);
+      const cleanE = cleanCodePart(updatedForm.extraName);
+      const curY = cleanCodePart(item.year);
+      const curT = cleanCodePart(item.teacher);
+      const curE = cleanCodePart(item.extraName);
+
+      if (cleanY !== curY || cleanT !== curT || cleanE !== curE) {
+        let resolvedSameSeq = '';
+        if (cleanT === curT && cleanE === curE) {
+          const seqTailMatch = cleanCodePart(currentItemCode).match(/-(\d+(?:\s*v\d+)?)$/i);
+          if (seqTailMatch) {
+            const candidateSameSeq = `${cleanY}-${cleanT}-${cleanE}-${seqTailMatch[1]}`.toLowerCase();
+            const knownSet: Set<string> = allReelsCodes instanceof Set ? allReelsCodes : new Set(allReelsCodes || []);
+            if (!knownSet.has(candidateSameSeq) || candidateSameSeq === cleanCodePart(currentItemCode)) {
+              resolvedSameSeq = candidateSameSeq;
             }
           }
-        });
-        const nextSeq = maxSeq + 1;
-        newCode = `${prefix}${nextSeq.toString().padStart(2, '0')} v7`.toLowerCase();
+        }
+
+        newCode = resolvedSameSeq || computeNextUniqueReelCode({
+          year: updatedForm.year,
+          teacher: updatedForm.teacher,
+          extraName: updatedForm.extraName,
+          isCut: false,
+          excludeCode: currentItemCode,
+          allKnownCodes: allReelsCodes || [],
+          sequenceRegistry,
+        }).code;
       }
     }
 
@@ -4030,7 +4050,9 @@ const CutsRow = React.memo(({
   toast,
   isSubscribed,
   onToggleSubscribe,
-  noteAuthors
+  noteAuthors,
+  allReelsCodes,
+  sequenceRegistry
 }: any) => {
   const [editForm, setEditForm] = useState({
     branch: item.branch || '',
@@ -4206,14 +4228,36 @@ const CutsRow = React.memo(({
     if (!onUpdateShootingRow) return;
     setIsSaving(true);
 
-    let targetCode = item.id;
+    const currentCutCode = item.code || item.id || '';
+    let targetCode = currentCutCode;
     if (fieldName === 'year' || fieldName === 'creator') {
-      const parts = String(item.id).split('-');
-      if (parts.length >= 4) {
-        const currentYear = fieldName === 'year' ? value : updatedForm.year;
-        const currentCreator = fieldName === 'creator' ? value : updatedForm.creator;
-        const sequencePart = parts[3]; // e.g. "03 v6" or "00 v6"
-        targetCode = `${currentYear}-cut-${currentCreator}-${sequencePart}`.toLowerCase().replace(/\s+/g, ' ');
+      const nextYear = fieldName === 'year' ? value : updatedForm.year;
+      const nextCreator = fieldName === 'creator' ? value : updatedForm.creator;
+      const cleanY = cleanCodePart(nextYear);
+      const cleanC = cleanCodePart(nextCreator);
+      const curY = cleanCodePart(item.year);
+      const curC = cleanCodePart(item.creator);
+
+      if (cleanY !== curY || cleanC !== curC) {
+        let keptSameSeq = '';
+        if (cleanC === curC) {
+          const seqTailMatch = cleanCodePart(currentCutCode).match(/-(\d+(?:\s*v\d+)?)$/i);
+          if (seqTailMatch) {
+            const candidate = `${cleanY}-cut-${cleanC}-${seqTailMatch[1]}`.toLowerCase();
+            const knownSet: Set<string> = allReelsCodes instanceof Set ? allReelsCodes : new Set(allReelsCodes || []);
+            if (!knownSet.has(candidate) || candidate === cleanCodePart(currentCutCode)) {
+              keptSameSeq = candidate;
+            }
+          }
+        }
+        targetCode = keptSameSeq || computeNextUniqueReelCode({
+          year: nextYear,
+          extraName: nextCreator,
+          isCut: true,
+          excludeCode: currentCutCode,
+          allKnownCodes: allReelsCodes || [],
+          sequenceRegistry,
+        }).code;
       }
     }
 
@@ -8495,29 +8539,75 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
     driveRaw: ''
   });
 
-  const generatedCode = useMemo(() => {
-    if (!['1436746012', '1939073164', '798246690', '0'].includes(activeGid)) return '';
-    const prefix = activeGid === '0'
-      ? `${shootingAddForm.year}-cut-${shootingAddForm.extraName}-`.toLowerCase().replace(/\s+/g, ' ')
-      : `${shootingAddForm.year}-${shootingAddForm.teacher}-${shootingAddForm.extraName}-`.toLowerCase().replace(/\s+/g, ' ');
-    const currentSheetData = Array.isArray(combinedData) ? combinedData : [];
-    let maxSeq = 0;
-    currentSheetData.forEach((row: any) => {
-      const rowId = (row.code || row.id || '').toLowerCase().trim();
-      if (rowId.startsWith(prefix)) {
-        const remainder = rowId.slice(prefix.length).trim();
-        const m = remainder.match(/^(\d+)/);
-        if (m) {
-          const seq = parseInt(m[1], 10);
-          if (!isNaN(seq) && seq > maxSeq) {
-            maxSeq = seq;
-          }
-        }
+  const [sequenceRegistry, setSequenceRegistry] = useState<SequenceRegistry>(() => loadLocalSequenceRegistry());
+  const [isEditingManualCode, setIsEditingManualCode] = useState(false);
+  const [manualCodeOverride, setManualCodeOverride] = useState('');
+
+  useEffect(() => {
+    if (isDemo || (!showAddModal && !showGoogleSheetImportModal)) return;
+    fetchRemoteSequenceRegistry()
+      .then(reg => setSequenceRegistry(reg))
+      .catch(() => {});
+  }, [isDemo, showAddModal, showGoogleSheetImportModal]);
+
+  useEffect(() => {
+    if (isDemo) return;
+    fetchRemoteSequenceRegistry()
+      .then(reg => setSequenceRegistry(reg))
+      .catch(() => {});
+  }, [isDemo]);
+
+  // Reset manual code override whenever form prefix fields or modal state change
+  useEffect(() => {
+    setManualCodeOverride('');
+    setIsEditingManualCode(false);
+  }, [shootingAddForm.year, shootingAddForm.teacher, shootingAddForm.extraName, showAddModal, activeGid]);
+
+  // Unified set of ALL reel codes across Shooting + VE + CUTS + active sheet so codes NEVER repeat across stages or years
+  const allReelsCodesSet = useMemo(() => {
+    const set = new Set<string>();
+    const addRows = (rows?: any[]) => {
+      if (!Array.isArray(rows)) return;
+      for (const r of rows) {
+        const c = cleanCodePart(r?.code || r?.id);
+        if (c) set.add(c);
       }
-    });
-    const nextSeq = maxSeq + 1;
-    return `${prefix}${nextSeq.toString().padStart(2, '0')} v7`.toLowerCase();
-  }, [shootingAddForm, combinedData, activeGid]);
+    };
+    addRows(reelsDbByGid['1436746012']);
+    addRows(reelsDbByGid['1939073164']);
+    addRows(reelsDbByGid['0']);
+    addRows(combinedData);
+    addRows(liveData);
+    return set;
+  }, [reelsDbByGid, combinedData, liveData]);
+
+  const autoGeneratedCode = useMemo(() => {
+    if (!['1436746012', '1939073164', '798246690', '0'].includes(activeGid)) return '';
+    return computeNextUniqueReelCode({
+      year: shootingAddForm.year,
+      teacher: shootingAddForm.teacher,
+      extraName: shootingAddForm.extraName,
+      isCut: activeGid === '0',
+      allKnownCodes: allReelsCodesSet,
+      sequenceRegistry,
+    }).code;
+  }, [shootingAddForm.year, shootingAddForm.teacher, shootingAddForm.extraName, allReelsCodesSet, sequenceRegistry, activeGid]);
+
+  const generatedCode = useMemo(() => {
+    if (manualCodeOverride.trim()) {
+      return cleanCodePart(manualCodeOverride);
+    }
+    return autoGeneratedCode;
+  }, [manualCodeOverride, autoGeneratedCode]);
+
+  const manualCodeDuplicateWarning = useMemo(() => {
+    const trimmed = cleanCodePart(manualCodeOverride);
+    if (!trimmed) return null;
+    if (allReelsCodesSet.has(trimmed)) {
+      return `⚠️ الكود (${trimmed}) مستخدم بالفعل في النظام! اختر رقماً أعلى أو اترك التوليد التلقائي.`;
+    }
+    return null;
+  }, [manualCodeOverride, allReelsCodesSet]);
 
   const duplicateScriptLinkWarning = useMemo(() => {
     const rawLink = shootingAddForm.scriptLink?.trim();
@@ -8909,27 +8999,22 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
           };
 
           if (tbl) {
-            let finalCode = generatedCode;
-            const cutPrefix = `${shootingAddForm.year}-cut-${shootingAddForm.extraName}-`.toLowerCase().replace(/\s+/g, ' ');
-            const { data: existingCut } = await supabase.from(tbl).select('code').eq('code', finalCode).maybeSingle();
-            if (existingCut) {
-              const { data: allWithPrefix } = await supabase.from(tbl).select('code').ilike('code', `${cutPrefix}%`);
-              let maxSeq = 0;
-              (allWithPrefix || []).forEach((r: any) => {
-                const rCode = (r.code || '').toLowerCase().trim();
-                if (rCode.startsWith(cutPrefix)) {
-                  const m = rCode.slice(cutPrefix.length).trim().match(/^(\d+)/);
-                  if (m) {
-                    const s = parseInt(m[1], 10);
-                    if (!isNaN(s) && s > maxSeq) maxSeq = s;
-                  }
-                }
-              });
-              finalCode = `${cutPrefix}${(maxSeq + 1).toString().padStart(2, '0')} v7`.toLowerCase();
-              newCut.code = finalCode;
-              newCut.id = finalCode;
-              newCut.uniqueKey = finalCode;
+            const claimed = await resolveAndClaimUniqueCodeFromDb({
+              year: shootingAddForm.year,
+              extraName: shootingAddForm.extraName,
+              isCut: true,
+              localKnownCodes: allReelsCodesSet,
+              sequenceRegistry,
+              manualCustomCode: manualCodeOverride.trim() || undefined,
+            });
+            if (claimed.duplicateConflict) {
+              toast.error(`❌ الكود "${claimed.duplicateConflict}" موجود بالفعل! يرجى استخدام التوليد التلقائي أو رقم غير مستخدم.`);
+              return;
             }
+            setSequenceRegistry(claimed.registry);
+            newCut.code = claimed.code;
+            newCut.id = claimed.code;
+            newCut.uniqueKey = claimed.code;
 
             const { error } = await supabase.from(tbl).insert([{
               date: newCut.date,
@@ -9017,27 +9102,23 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
           };
 
           if (tbl) {
-            let finalCode = generatedCode;
-            const shootingPrefix = `${shootingAddForm.year}-${shootingAddForm.teacher}-${shootingAddForm.extraName}-`.toLowerCase().replace(/\s+/g, ' ');
-            const { data: existingShooting } = await supabase.from(tbl).select('code').eq('code', finalCode).maybeSingle();
-            if (existingShooting) {
-              const { data: allWithPrefix } = await supabase.from(tbl).select('code').ilike('code', `${shootingPrefix}%`);
-              let maxSeq = 0;
-              (allWithPrefix || []).forEach((r: any) => {
-                const rCode = (r.code || '').toLowerCase().trim();
-                if (rCode.startsWith(shootingPrefix)) {
-                  const m = rCode.slice(shootingPrefix.length).trim().match(/^(\d+)/);
-                  if (m) {
-                    const s = parseInt(m[1], 10);
-                    if (!isNaN(s) && s > maxSeq) maxSeq = s;
-                  }
-                }
-              });
-              finalCode = `${shootingPrefix}${(maxSeq + 1).toString().padStart(2, '0')} v7`.toLowerCase();
-              newShooting.code = finalCode;
-              newShooting.id = finalCode;
-              newShooting.uniqueKey = finalCode;
+            const claimed = await resolveAndClaimUniqueCodeFromDb({
+              year: shootingAddForm.year,
+              teacher: shootingAddForm.teacher,
+              extraName: shootingAddForm.extraName,
+              isCut: false,
+              localKnownCodes: allReelsCodesSet,
+              sequenceRegistry,
+              manualCustomCode: manualCodeOverride.trim() || undefined,
+            });
+            if (claimed.duplicateConflict) {
+              toast.error(`❌ الكود "${claimed.duplicateConflict}" موجود بالفعل! يرجى استخدام التوليد التلقائي أو رقم غير مستخدم.`);
+              return;
             }
+            setSequenceRegistry(claimed.registry);
+            newShooting.code = claimed.code;
+            newShooting.id = claimed.code;
+            newShooting.uniqueKey = claimed.code;
 
             const { error } = await supabase.from(tbl).insert([{
               date: newShooting.date,
@@ -9958,9 +10039,79 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
       updatedItem: updatedItem
     });
 
-    // 2. Direct Supabase Update
+    // 2. Direct Supabase Update (with collision guard + VE code rename sync if code changed)
     if (tbl) {
       try {
+        if (newCode && cleanCodePart(newCode) !== cleanCodePart(oldCode)) {
+          let verifiedNewCode = newCode;
+          const checkClaim = await resolveAndClaimUniqueCodeFromDb({
+            year: updatedItem.year,
+            teacher: updatedItem.teacher,
+            extraName: activeGid === '0' ? updatedItem.creator : updatedItem.extraName,
+            isCut: activeGid === '0',
+            excludeCode: oldCode,
+            localKnownCodes: allReelsCodesSet,
+            sequenceRegistry,
+            manualCustomCode: newCode,
+          });
+
+          if (checkClaim.duplicateConflict) {
+            const freshClaim = await resolveAndClaimUniqueCodeFromDb({
+              year: updatedItem.year,
+              teacher: updatedItem.teacher,
+              extraName: activeGid === '0' ? updatedItem.creator : updatedItem.extraName,
+              isCut: activeGid === '0',
+              excludeCode: oldCode,
+              localKnownCodes: allReelsCodesSet,
+              sequenceRegistry,
+            });
+            verifiedNewCode = freshClaim.code;
+            setSequenceRegistry(freshClaim.registry);
+          } else {
+            verifiedNewCode = checkClaim.code;
+            setSequenceRegistry(checkClaim.registry);
+          }
+
+          dbPayload.code = verifiedNewCode;
+          updatedItem.code = verifiedNewCode;
+          updatedItem.id = verifiedNewCode;
+          updatedItem.uniqueKey = verifiedNewCode;
+          setReelsDbRows(prev => prev.map(r => (r.code === oldCode || r.id === oldCode || r.code === newCode) ? updatedItem : r));
+
+          // If renaming a Shooting row that already exists in VE, rename VE row in-place to avoid duplicate VE rows
+          if (activeGid === '1436746012') {
+            const { data: targetVeExists } = await supabase
+              .from('reels_ve_26')
+              .select('code')
+              .ilike('code', verifiedNewCode)
+              .maybeSingle();
+            if (!targetVeExists) {
+              await supabase
+                .from('reels_ve_26')
+                .update({
+                  code: verifiedNewCode,
+                  year: updatedItem.year,
+                  teacher: updatedItem.teacher,
+                  extra_name: updatedItem.extraName,
+                  updated_at: new Date().toISOString(),
+                })
+                .ilike('code', oldCode);
+              setReelsDbByGid(prev => {
+                const veList = prev['1939073164'];
+                if (!Array.isArray(veList)) return prev;
+                return {
+                  ...prev,
+                  '1939073164': veList.map((vr: any) =>
+                    cleanCodePart(vr.code) === cleanCodePart(oldCode)
+                      ? { ...vr, id: verifiedNewCode, code: verifiedNewCode, uniqueKey: verifiedNewCode, year: updatedItem.year, teacher: updatedItem.teacher, extraName: updatedItem.extraName }
+                      : vr
+                  ),
+                };
+              });
+            }
+          }
+        }
+
         const { error } = await supabase
           .from(tbl)
           .update(dbPayload)
@@ -12522,9 +12673,52 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
                         </div>
                       </div>
 
-                      <div className="p-4 bg-primary/10 border border-primary/20 rounded-xl mt-4">
-                        <label className="block text-xs font-bold text-primary mb-1.5 arabic-text">الكود المتولد تلقائياً (Code)</label>
-                        <div className="font-mono text-lg text-white" dir="ltr">{generatedCode || 'جاري الحساب...'}</div>
+                      <div className={`p-4 ${manualCodeDuplicateWarning ? 'bg-rose-500/10 border-rose-500/40' : 'bg-primary/10 border-primary/20'} border rounded-xl mt-4 space-y-2`}>
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            <label className="block text-xs font-bold text-primary arabic-text">الكود المتولد تلقائياً (Code)</label>
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 arabic-text">
+                              🛡️ ترقيم موحد مانع للتكرار
+                            </span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (isEditingManualCode) {
+                                setManualCodeOverride('');
+                                setIsEditingManualCode(false);
+                              } else {
+                                setManualCodeOverride(autoGeneratedCode);
+                                setIsEditingManualCode(true);
+                              }
+                            }}
+                            className="text-[11px] font-bold text-sky-300 hover:text-white bg-white/5 hover:bg-white/10 px-2.5 py-1 rounded-lg border border-white/10 transition-all cursor-pointer arabic-text"
+                          >
+                            {isEditingManualCode ? '↩️ العودة للتلقائي' : '✏️ تعديل الرقم يدوياً'}
+                          </button>
+                        </div>
+
+                        {isEditingManualCode ? (
+                          <input
+                            type="text"
+                            dir="ltr"
+                            value={manualCodeOverride}
+                            onChange={e => setManualCodeOverride(e.target.value)}
+                            placeholder={autoGeneratedCode}
+                            className="w-full bg-black/40 border border-sky-400/50 focus:border-sky-400 rounded-xl px-3.5 py-2 font-mono text-base text-white focus:outline-none"
+                          />
+                        ) : (
+                          <div className="font-mono text-lg text-white font-bold tracking-wide" dir="ltr">
+                            {generatedCode || 'جاري الحساب...'}
+                          </div>
+                        )}
+
+                        {manualCodeDuplicateWarning && (
+                          <div className="text-xs font-bold text-rose-300 bg-rose-500/15 border border-rose-500/30 rounded-lg p-2 flex items-center gap-2 arabic-text">
+                            <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
+                            <span>{manualCodeDuplicateWarning}</span>
+                          </div>
+                        )}
                       </div>
                     </>
                   ) : isTagme3at ? (
@@ -12770,7 +12964,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
         <GoogleSheetImportModal
           isOpen={showGoogleSheetImportModal}
           onClose={() => setShowGoogleSheetImportModal(false)}
-          existingCodes={new Set(reelsDbRows.map((r: any) => (r.code || '').toLowerCase()).filter(Boolean))}
+          existingCodes={allReelsCodesSet}
           currentUser={profile?.name || 'User'}
           onImportSuccess={async (importedShootingRows, _rawRows, options) => {
             const updateOnlyScript = options?.updateOnlyScript === true;
@@ -12868,6 +13062,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
 
             const importedCodeSet = new Set(newlyMapped.map((m: any) => m.code));
             setReelsDbRows(prev => [...newlyMapped, ...prev.filter(r => !importedCodeSet.has(r.code))]);
+            recordBulkClaimedSequences(importedCodeSet, sequenceRegistry).then(reg => setSequenceRegistry(reg)).catch(() => {});
 
             if (globalChannelRef.current && profile?.name) {
               globalChannelRef.current.send({
@@ -14113,6 +14308,8 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
                           isSubscribed={isSubscribed}
                           onToggleSubscribe={toggleSubscribe}
                           noteAuthors={noteAuthors}
+                          allReelsCodes={allReelsCodesSet}
+                          sequenceRegistry={sequenceRegistry}
                         />;
                       }
                       if (['1436746012', '1939073164', '798246690'].includes(activeGid)) {
@@ -14121,7 +14318,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
                           (item.id && subscribedSet.has(String(item.id).toLowerCase())) ||
                           (item.uniqueKey && subscribedSet.has(String(item.uniqueKey).toLowerCase()))
                         );
-                        return <ShootingRow key={item.code || item.id || item.uniqueKey || idx} item={item} index={idx} activeGid={activeGid} onToggleFilmed={handleFilmedToggle} onToggleEditCheck={handleToggleEditCheck} loadingFilmedCode={loadingFilmedCode} onUpdateShootingRow={handleUpdateShootingRow} liveData={liveData} optionsLists={reelsOptionsLists} autofillDrag={autofillDrag} setAutofillDrag={setAutofillDrag} onApplyAutofill={handleApplyAutofill} activeCell={activeCell} setActiveCell={setActiveCell} toast={toast} isSubscribed={isSubscribed} onToggleSubscribe={toggleSubscribe} isSimple={activeGid === '1939073164' && veViewMode === 'SIMPLE'} publishedTasks={publishedTasks} sharedLinks={sharedLinks} onTogglePublish={handleTogglePublish} onUpdateSharedLink={handleUpdateSharedLink} noteAuthors={noteAuthors} />;
+                        return <ShootingRow key={item.code || item.id || item.uniqueKey || idx} item={item} index={idx} activeGid={activeGid} onToggleFilmed={handleFilmedToggle} onToggleEditCheck={handleToggleEditCheck} loadingFilmedCode={loadingFilmedCode} onUpdateShootingRow={handleUpdateShootingRow} liveData={liveData} allReelsCodes={allReelsCodesSet} sequenceRegistry={sequenceRegistry} optionsLists={reelsOptionsLists} autofillDrag={autofillDrag} setAutofillDrag={setAutofillDrag} onApplyAutofill={handleApplyAutofill} activeCell={activeCell} setActiveCell={setActiveCell} toast={toast} isSubscribed={isSubscribed} onToggleSubscribe={toggleSubscribe} isSimple={activeGid === '1939073164' && veViewMode === 'SIMPLE'} publishedTasks={publishedTasks} sharedLinks={sharedLinks} onTogglePublish={handleTogglePublish} onUpdateSharedLink={handleUpdateSharedLink} noteAuthors={noteAuthors} />;
                       }
                       return <StageRow key={idx} item={item} index={idx} tagmeTransfers={tagmeTransfers} onTagmeToggle={handleTagmeToggle} activeLabel={activeLabel} isGlowing={isGlowing} onUpdateDate={handleUpdateDate} onUpdateWeek={handleUpdateWeek} onUpdateThumbnailLink={handleUpdateThumbnailLink} onUpdateTime={handleUpdateTime} onUpdateYoutubeLink={handleUpdateYoutubeLink} onUpdateUploaded={handleUpdateUploaded} onToggleDelivered={handleToggleDelivered} onDeleteRow={handleDeleteStageRow} />;
                     }) : (

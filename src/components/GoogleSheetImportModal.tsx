@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { computeNextUniqueReelCode, loadLocalSequenceRegistry } from '../lib/codeGenerator';
 import { 
   FileSpreadsheet, 
   X, 
@@ -511,7 +512,8 @@ export const GoogleSheetImportModal: React.FC<Props> = ({
 
   // Compute preview rows with generated codes
   const parsedRowsWithMeta = useMemo(() => {
-    const seqCounters: Record<string, number> = {};
+    const runningKnownCodes = new Set<string>(existingCodes);
+    const localRegistry = loadLocalSequenceRegistry();
 
     return allDataRows.map((row, idx) => {
       let year = (getRowFieldValue(row, 'year') || defaultYear || 's1').toLowerCase().trim();
@@ -543,26 +545,19 @@ export const GoogleSheetImportModal: React.FC<Props> = ({
       }
 
       if (!finalCode && autoGenerateCodes && teacher) {
-        const prefix = `${year}-${teacher}-${extraName || '01'}`.toLowerCase().replace(/\s+/g, ' ');
-        if (!seqCounters[prefix]) {
-          // Find max existing sequence in database
-          let maxSeq = 0;
-          existingCodes.forEach(code => {
-            const clean = (code || '').toLowerCase().trim();
-            if (clean.startsWith(prefix)) {
-              const m = clean.slice(prefix.length).trim().match(/^[-_]?(\d+)/);
-              if (m) {
-                const s = parseInt(m[1], 10);
-                if (!isNaN(s) && s > maxSeq) maxSeq = s;
-              }
-            }
-          });
-          seqCounters[prefix] = maxSeq;
-        }
-        seqCounters[prefix] += 1;
-        finalCode = `${prefix}-${seqCounters[prefix].toString().padStart(2, '0')} v7`;
+        const computed = computeNextUniqueReelCode({
+          year,
+          teacher,
+          extraName: extraName || '01',
+          isCut: false,
+          allKnownCodes: runningKnownCodes,
+          sequenceRegistry: localRegistry,
+        });
+        finalCode = computed.code;
+        runningKnownCodes.add(finalCode);
       } else if (!finalCode) {
         finalCode = `shoot-${Date.now().toString(36)}-${idx + 1}`;
+        runningKnownCodes.add(finalCode);
       }
 
       const isDuplicate = existingCodes.has(finalCode) || existingCodes.has((finalCode || '').toLowerCase());

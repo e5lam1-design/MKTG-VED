@@ -6411,8 +6411,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
           let sum = 0;
           parsed.forEach((s: any) => {
             if (s.date === todayStr && s.status !== 'cancelled') {
-              const codes = Array.isArray(s.taskCodes) ? s.taskCodes : Array.isArray(s.task_codes) ? s.task_codes : [];
-              sum += codes.length > 0 ? codes.length : 1;
+              sum += 1;
             }
           });
           return sum;
@@ -6435,8 +6434,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
         const sDate = s.date || '';
         const status = s.status || '';
         if (sDate === todayStr && status !== 'cancelled') {
-          const codes = Array.isArray(s.task_codes) ? s.task_codes : Array.isArray(s.taskCodes) ? s.taskCodes : [];
-          sum += codes.length > 0 ? codes.length : 1;
+          sum += 1;
         }
       });
       return sum;
@@ -11995,7 +11993,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
                 colorful={colorfulTabs}
                 active={activeGid === stage.gid}
                 badgeCount={stage.gid === 'reels-calendar' ? (todayCalendarScriptsCount > 0 ? todayCalendarScriptsCount : undefined) : (STAGE_WITH_BADGE_MAP[stage.gid] ? stageUncompletedCounts[stage.gid] : undefined)}
-                badgeTitle={stage.gid === 'reels-calendar' ? `${todayCalendarScriptsCount} اسكربتات تصوير مجدولة لليوم 🎬📅` : undefined}
+                badgeTitle={stage.gid === 'reels-calendar' ? `${todayCalendarScriptsCount} مواعيد تصوير مسجلة لليوم 🎬📅` : undefined}
                 inProgressCount={STAGE_WITH_BADGE_MAP[stage.gid] ? stageInProgressCounts[stage.gid] : undefined}
                 missingDetailsCount={STAGE_WITH_BADGE_MAP[stage.gid] ? stageMissingDetailsCounts[stage.gid] : undefined}
                 showDoneGreenBadge={GREEN_DONE_BADGE_GIDS.has(stage.gid)}
@@ -12903,7 +12901,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
                 if (!stage) return null;
                 const isActive = activeGid === gid;
                 const pinBadge = gid === 'reels-calendar' ? (todayCalendarScriptsCount > 0 ? todayCalendarScriptsCount : undefined) : (STAGE_WITH_BADGE_MAP[gid] ? stageUncompletedCounts[gid] : undefined);
-                const pinBadgeTitle = gid === 'reels-calendar' ? `${todayCalendarScriptsCount} اسكربتات تصوير مجدولة لليوم 🎬📅` : undefined;
+                const pinBadgeTitle = gid === 'reels-calendar' ? `${todayCalendarScriptsCount} مواعيد تصوير مسجلة لليوم 🎬📅` : undefined;
                 const pinInProgress = STAGE_WITH_BADGE_MAP[gid] ? stageInProgressCounts[gid] : undefined;
                 const pinMissing = STAGE_WITH_BADGE_MAP[gid] ? stageMissingDetailsCounts[gid] : undefined;
                 return (

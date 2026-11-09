@@ -7194,7 +7194,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
       ['1939073164', '0', '1436746012'].forEach(gid => {
         fetchReelsDb(gid, true);
       });
-    }, 2500);
+    }, 100);
     return () => clearTimeout(prefetchTimer);
   }, [isDemo]);
 
@@ -7860,6 +7860,14 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
       return [];
     }
   });
+
+  const subscribedSet = useMemo(() => {
+    const s = new Set<string>();
+    (subscribedTasks || []).forEach(k => {
+      if (k) s.add(String(k).trim().toLowerCase());
+    });
+    return s;
+  }, [subscribedTasks]);
 
   const toggleSubscribe = (itemKey: string) => {
     const taskName = findTaskName(itemKey);
@@ -9377,11 +9385,26 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
     }).catch(err => console.error("Autofill background batch update error:", err));
   };
 
-  const [activeVisibleRecordsLimit, setActiveVisibleRecordsLimit] = useState<number>(500);
+  const INITIAL_VISIBLE_LIMIT = 50;
+  const [activeVisibleRecordsLimit, setActiveVisibleRecordsLimit] = useState<number>(INITIAL_VISIBLE_LIMIT);
 
   useEffect(() => {
-    setActiveVisibleRecordsLimit(500);
+    setActiveVisibleRecordsLimit(INITIAL_VISIBLE_LIMIT);
   }, [activeGid, searchQuery, statusFilter, teacherFilter, yearFilter, termFilter, colFilters]);
+
+  const sentinelRef = useRef<HTMLTableRowElement | null>(null);
+
+  useEffect(() => {
+    const el = sentinelRef.current;
+    if (!el) return;
+    const observer = new IntersectionObserver((entries) => {
+      if (entries[0].isIntersecting) {
+        setActiveVisibleRecordsLimit(prev => Math.min(prev + 50, filteredData.length));
+      }
+    }, { rootMargin: '400px' });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [activeVisibleRecordsLimit, filteredData.length]);
 
   useEffect(() => {
     if (!autofillDrag) return;
@@ -13882,11 +13905,11 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
                         return <TagmeRow key={idx} item={item} index={idx} isSimple={tagmeViewMode === 'SIMPLE'} onUpdateEditor={handleUpdateEditor} editorsList={editorsList} onUpdateEditorNotes={handleUpdateEditorNotes} onUpdateMarketingNotes={handleUpdateMarketingNotes} opSheetsList={opSheetsList} branchesList={branchesList} onUpdateOpSheet={handleUpdateOpSheet} onUpdateBranch={handleUpdateBranch} onUpdateDate={handleUpdateDate} isGlowing={isGlowing} liveData={liveData} canRaisePriority={canRaisePriority || isItemPri} priorityLimit={tabLimit} onStatusChange={handleStatusChange} isSubscribed={isSubscribed} onToggleSubscribe={() => toggleSubscribe(item.uniqueKey || key)} priorityOverride={isItemPri} statusOverride={taskStatuses[key] || taskStatuses[item.uniqueKey] || taskStatuses[item.id] || (item.done !== undefined || item.cancel !== undefined || item.missingDetails !== undefined || item.missing_details !== undefined ? { done: item.done === true, cancel: item.cancel === true || item.missingDetails === true || item.missing_details === true, missingDetails: item.missingDetails === true || item.missing_details === true || item.cancel === true } : undefined)} onUpdateThumbnailLink={handleUpdateThumbnailLink} onUpdateTime={handleUpdateTime} onUpdateYoutubeLink={handleUpdateYoutubeLink} onUpdateUploaded={handleUpdateUploaded} onShowPriorityLimitModal={(limit: number) => setPriorityLimitModal({ isOpen: true, limit })} />;
                       }
                       if (activeGid === '0') {
-                        const isSubscribed = (subscribedTasks || []).some(k => {
-                          const ck = String(k).trim().toLowerCase();
-                          const candidates = [item.id, item.code, item.uniqueKey].filter(Boolean).map(c => String(c).trim().toLowerCase());
-                          return candidates.some(c => c === ck || c.includes(ck) || ck.includes(c));
-                        });
+                        const isSubscribed = Boolean(
+                          (item.code && subscribedSet.has(String(item.code).toLowerCase())) ||
+                          (item.id && subscribedSet.has(String(item.id).toLowerCase())) ||
+                          (item.uniqueKey && subscribedSet.has(String(item.uniqueKey).toLowerCase()))
+                        );
                         return <CutsRow 
                           key={item.id || item.code || item.uniqueKey || idx} 
                           item={item} 
@@ -13902,17 +13925,17 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
                           setActiveCell={setActiveCell} 
                           toast={toast}
                           isSubscribed={isSubscribed}
-                          onToggleSubscribe={() => toggleSubscribe(item.code || item.id || item.uniqueKey)}
+                          onToggleSubscribe={toggleSubscribe}
                           noteAuthors={noteAuthors}
                         />;
                       }
                       if (['1436746012', '1939073164', '798246690'].includes(activeGid)) {
-                        const isSubscribed = (subscribedTasks || []).some(k => {
-                          const ck = String(k).trim().toLowerCase();
-                          const candidates = [item.id, item.code, item.uniqueKey].filter(Boolean).map(c => String(c).trim().toLowerCase());
-                          return candidates.some(c => c === ck || c.includes(ck) || ck.includes(c));
-                        });
-                        return <ShootingRow key={item.code || item.id || item.uniqueKey || idx} item={item} index={idx} activeGid={activeGid} onToggleFilmed={handleFilmedToggle} onToggleEditCheck={handleToggleEditCheck} loadingFilmedCode={loadingFilmedCode} onUpdateShootingRow={handleUpdateShootingRow} liveData={liveData} optionsLists={reelsOptionsLists} autofillDrag={autofillDrag} setAutofillDrag={setAutofillDrag} onApplyAutofill={handleApplyAutofill} activeCell={activeCell} setActiveCell={setActiveCell} toast={toast} isSubscribed={isSubscribed} onToggleSubscribe={() => toggleSubscribe(item.code || item.id || item.uniqueKey)} isSimple={activeGid === '1939073164' && veViewMode === 'SIMPLE'} publishedTasks={publishedTasks} sharedLinks={sharedLinks} onTogglePublish={handleTogglePublish} onUpdateSharedLink={handleUpdateSharedLink} noteAuthors={noteAuthors} />;
+                        const isSubscribed = Boolean(
+                          (item.code && subscribedSet.has(String(item.code).toLowerCase())) ||
+                          (item.id && subscribedSet.has(String(item.id).toLowerCase())) ||
+                          (item.uniqueKey && subscribedSet.has(String(item.uniqueKey).toLowerCase()))
+                        );
+                        return <ShootingRow key={item.code || item.id || item.uniqueKey || idx} item={item} index={idx} activeGid={activeGid} onToggleFilmed={handleFilmedToggle} onToggleEditCheck={handleToggleEditCheck} loadingFilmedCode={loadingFilmedCode} onUpdateShootingRow={handleUpdateShootingRow} liveData={liveData} optionsLists={reelsOptionsLists} autofillDrag={autofillDrag} setAutofillDrag={setAutofillDrag} onApplyAutofill={handleApplyAutofill} activeCell={activeCell} setActiveCell={setActiveCell} toast={toast} isSubscribed={isSubscribed} onToggleSubscribe={toggleSubscribe} isSimple={activeGid === '1939073164' && veViewMode === 'SIMPLE'} publishedTasks={publishedTasks} sharedLinks={sharedLinks} onTogglePublish={handleTogglePublish} onUpdateSharedLink={handleUpdateSharedLink} noteAuthors={noteAuthors} />;
                       }
                       return <StageRow key={idx} item={item} index={idx} tagmeTransfers={tagmeTransfers} onTagmeToggle={handleTagmeToggle} activeLabel={activeLabel} isGlowing={isGlowing} onUpdateDate={handleUpdateDate} onUpdateWeek={handleUpdateWeek} onUpdateThumbnailLink={handleUpdateThumbnailLink} onUpdateTime={handleUpdateTime} onUpdateYoutubeLink={handleUpdateYoutubeLink} onUpdateUploaded={handleUpdateUploaded} onToggleDelivered={handleToggleDelivered} onDeleteRow={handleDeleteStageRow} />;
                     }) : (
@@ -13925,19 +13948,27 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
                     )}
                   </AnimatePresence>
                   {filteredData.length > activeVisibleRecordsLimit && !(isOperations && teacherFilter === 'All') && (
-                    <tr>
-                      <td colSpan={colSpan} className="py-10 text-center">
-                        <div className="flex flex-col items-center justify-center gap-4 animate-fadeIn">
-                          <p className="text-xs text-muted font-bold uppercase tracking-widest arabic-text">
-                            تم عرض {Math.min(filteredData.length, activeVisibleRecordsLimit)} من إجمالي {filteredData.length} سجل. يرجى استخدام البحث أو الفلاتر، أو اضغط أدناه لعرض المزيد:
+                    <tr ref={sentinelRef}>
+                      <td colSpan={colSpan} className="py-8 text-center">
+                        <div className="flex flex-col items-center justify-center gap-3 animate-fadeIn">
+                          <p className="text-xs text-muted font-bold">
+                            تم عرض <span className="text-primary font-mono font-black">{Math.min(filteredData.length, activeVisibleRecordsLimit)}</span> من إجمالي <span className="text-white font-mono font-black">{filteredData.length}</span> سجل
                           </p>
-                          <button
-                            onClick={() => setActiveVisibleRecordsLimit(prev => prev + 250)}
-                            className="px-8 py-3.5 bg-primary/10 hover:bg-primary text-primary hover:text-white border border-primary/30 rounded-2xl text-xs font-black uppercase tracking-widest transition-all hover:scale-105 active:scale-95 cursor-pointer shadow-lg hover:shadow-primary/20 flex items-center gap-2"
-                          >
-                            <Sparkles size={16} />
-                            <span>عرض 250 سجل إضافي ({Math.min(filteredData.length, activeVisibleRecordsLimit + 250)} / {filteredData.length})</span>
-                          </button>
+                          <div className="flex items-center gap-3">
+                            <button
+                              onClick={() => setActiveVisibleRecordsLimit(prev => Math.min(filteredData.length, prev + 50))}
+                              className="px-6 py-2.5 rounded-2xl bg-primary/20 hover:bg-primary/30 text-primary border border-primary/40 hover:border-primary/60 text-xs font-black transition-all duration-300 flex items-center gap-2 cursor-pointer shadow-lg shadow-primary/10 active:scale-95"
+                            >
+                              <span>عرض 50 سجل إضافي ({Math.min(filteredData.length, activeVisibleRecordsLimit + 50)} / {filteredData.length})</span>
+                              <ChevronDown size={14} />
+                            </button>
+                            <button
+                              onClick={() => setActiveVisibleRecordsLimit(filteredData.length)}
+                              className="px-4 py-2.5 rounded-2xl bg-white/5 hover:bg-white/10 text-white/70 hover:text-white border border-white/10 text-xs font-bold transition-all duration-300 cursor-pointer"
+                            >
+                              عرض الكل ({filteredData.length})
+                            </button>
+                          </div>
                         </div>
                       </td>
                     </tr>

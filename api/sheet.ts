@@ -318,7 +318,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         });
     }
     
-    res.setHeader('Cache-Control', 'public, max-age=3600, s-maxage=86400, stale-while-revalidate=86400');
+    if (strGid === '1476192399') {
+      res.setHeader('Cache-Control', 'public, max-age=604800, s-maxage=2592000, stale-while-revalidate=2592000');
+    } else {
+      res.setHeader('Cache-Control', 'public, max-age=3600, s-maxage=86400, stale-while-revalidate=86400');
+    }
     return res.status(200).json({ rows: validRows, sheetName });
 
   } catch (err: any) {

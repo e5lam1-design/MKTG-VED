@@ -1050,7 +1050,8 @@ const SidebarItem = ({
   badgeCount, 
   inProgressCount,
   missingDetailsCount,
-  showDoneGreenBadge 
+  showDoneGreenBadge,
+  badgeTitle 
 }: any) => {
   const cHex = colorHex || '#3b82f6';
 
@@ -1136,7 +1137,7 @@ const SidebarItem = ({
               exit={{ scale: 0.5, opacity: 0 }}
               transition={{ type: 'spring', stiffness: 500, damping: 25 }}
               className="px-2 py-0.5 min-w-[22px] h-[22px] rounded-full bg-rose-500 text-white text-[11px] font-mono font-black flex items-center justify-center shadow-[0_0_12px_rgba(244,63,94,0.7)] border border-rose-400/40 shrink-0"
-              title={`${badgeCount} مهام بدون محرر تنتظر العمل 🔴`}
+              title={badgeTitle || `${badgeCount} مهام بدون محرر تنتظر العمل 🔴`}
             >
               {badgeCount}
             </motion.span>
@@ -1968,7 +1969,7 @@ const TagmeRow = ({
                 ? 'bg-amber-500/[0.03]' 
                 : isAssignedEditor(item.editor)
                 ? 'bg-orange-500/[0.02]'
-                : 'bg-rose-500/[0.02]'
+                : ''
       }`}
     >
       <td className="px-8 py-6" dir="rtl">
@@ -1989,7 +1990,7 @@ const TagmeRow = ({
                 ? 'bg-amber-500 shadow-[0_0_12px_rgba(245,158,11,0.6)]' 
                 : isAssignedEditor(item.editor)
                 ? 'bg-orange-500 shadow-[0_0_12px_rgba(249,115,22,0.6)]'
-                : 'bg-rose-500/80 shadow-[0_0_10px_rgba(244,63,94,0.4)]'
+                : 'bg-white/5 border border-white/5 opacity-0 group-hover/row:opacity-30'
             }`} />
             <div className="flex items-center gap-2">
               <button 
@@ -6394,6 +6395,97 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
     }
   });
   const lastStageUpdatedAtRef = useRef<Record<string, string>>({});
+
+  // ─── Today's Studio Calendar Scheduled Scripts Count (Updates automatically every day) ──
+  const [todayCalendarScriptsCount, setTodayCalendarScriptsCount] = useState<number>(() => {
+    try {
+      const raw = localStorage.getItem('studio_calendar_sessions_cache');
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) {
+          const now = new Date();
+          const y = now.getFullYear();
+          const m = String(now.getMonth() + 1).padStart(2, '0');
+          const d = String(now.getDate()).padStart(2, '0');
+          const todayStr = `${y}-${m}-${d}`;
+          let sum = 0;
+          parsed.forEach((s: any) => {
+            if (s.date === todayStr && s.status !== 'cancelled') {
+              const codes = Array.isArray(s.taskCodes) ? s.taskCodes : Array.isArray(s.task_codes) ? s.task_codes : [];
+              sum += codes.length > 0 ? codes.length : 1;
+            }
+          });
+          return sum;
+        }
+      }
+    } catch {}
+    return 0;
+  });
+
+  useEffect(() => {
+    let isCancelled = false;
+    const computeCount = (list: any[]) => {
+      const now = new Date();
+      const y = now.getFullYear();
+      const m = String(now.getMonth() + 1).padStart(2, '0');
+      const d = String(now.getDate()).padStart(2, '0');
+      const todayStr = `${y}-${m}-${d}`;
+      let sum = 0;
+      list.forEach((s: any) => {
+        const sDate = s.date || '';
+        const status = s.status || '';
+        if (sDate === todayStr && status !== 'cancelled') {
+          const codes = Array.isArray(s.task_codes) ? s.task_codes : Array.isArray(s.taskCodes) ? s.taskCodes : [];
+          sum += codes.length > 0 ? codes.length : 1;
+        }
+      });
+      return sum;
+    };
+
+    const fetchTodayCalendar = async () => {
+      try {
+        const now = new Date();
+        const y = now.getFullYear();
+        const m = String(now.getMonth() + 1).padStart(2, '0');
+        const d = String(now.getDate()).padStart(2, '0');
+        const todayStr = `${y}-${m}-${d}`;
+        const { data, error } = await supabase
+          .from('marketing_studio_calendar')
+          .select('date, task_codes, status')
+          .eq('date', todayStr);
+
+        if (!error && data && !isCancelled) {
+          const count = computeCount(data);
+          setTodayCalendarScriptsCount(count);
+        }
+      } catch (err) {
+        console.error('Error fetching today calendar count:', err);
+      }
+    };
+
+    fetchTodayCalendar();
+
+    const channel = supabase
+      .channel('calendar-sidebar-today-badge')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'marketing_studio_calendar' },
+        () => {
+          fetchTodayCalendar();
+        }
+      )
+      .subscribe();
+
+    const rolloverTimer = setInterval(() => {
+      fetchTodayCalendar();
+    }, 60000);
+
+    return () => {
+      isCancelled = true;
+      supabase.removeChannel(channel);
+      clearInterval(rolloverTimer);
+    };
+  }, []);
 
   const stageTable = STAGE_TABLE_MAP[activeGid];
   const isStageTab = !!stageTable;
@@ -11857,6 +11949,26 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
                     </button>
                   ))}
                 </div>
+
+                {/* Mini Status Color Guide / دليل ألوان البادجات بخط صغير */}
+                <div className="mt-2.5 px-2.5 py-1.5 rounded-xl bg-white/[0.02] border border-white/[0.05] flex items-center justify-between gap-1 text-[9px] text-muted-foreground select-none" dir="rtl">
+                  <div className="flex items-center gap-1" title="مهام بدون محرر تنتظر العمل 🔴">
+                    <span className="w-2 h-2 rounded-full bg-rose-500 shadow-[0_0_6px_rgba(244,63,94,0.8)] shrink-0" />
+                    <span className="text-rose-300 font-bold">انتظار</span>
+                  </div>
+                  <div className="flex items-center gap-1" title="مهام قيد التنفيذ مع محرر ⏳">
+                    <span className="w-2 h-2 rounded-full bg-orange-500 shadow-[0_0_6px_rgba(249,115,22,0.8)] shrink-0" />
+                    <span className="text-orange-300 font-bold">قيد العمل</span>
+                  </div>
+                  <div className="flex items-center gap-1" title="مهام بها مشكلة أو تفاصيل ناقصة ⚠️">
+                    <span className="w-2 h-2 rounded-full bg-amber-500 shadow-[0_0_6px_rgba(245,158,11,0.8)] shrink-0" />
+                    <span className="text-amber-300 font-bold">نواقص</span>
+                  </div>
+                  <div className="flex items-center gap-1" title="اكتملت جميع المهام ✅">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_6px_rgba(16,185,129,0.8)] shrink-0" />
+                    <span className="text-emerald-300 font-bold">مكتمل</span>
+                  </div>
+                </div>
               </div>
             );
           })()}
@@ -11882,7 +11994,8 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
                 colorHex={stage.colorHex}
                 colorful={colorfulTabs}
                 active={activeGid === stage.gid}
-                badgeCount={STAGE_WITH_BADGE_MAP[stage.gid] ? stageUncompletedCounts[stage.gid] : undefined}
+                badgeCount={stage.gid === 'reels-calendar' ? (todayCalendarScriptsCount > 0 ? todayCalendarScriptsCount : undefined) : (STAGE_WITH_BADGE_MAP[stage.gid] ? stageUncompletedCounts[stage.gid] : undefined)}
+                badgeTitle={stage.gid === 'reels-calendar' ? `${todayCalendarScriptsCount} اسكربتات تصوير مجدولة لليوم 🎬📅` : undefined}
                 inProgressCount={STAGE_WITH_BADGE_MAP[stage.gid] ? stageInProgressCounts[stage.gid] : undefined}
                 missingDetailsCount={STAGE_WITH_BADGE_MAP[stage.gid] ? stageMissingDetailsCounts[stage.gid] : undefined}
                 showDoneGreenBadge={GREEN_DONE_BADGE_GIDS.has(stage.gid)}
@@ -12789,7 +12902,8 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
                 const stage = allStagesList.find(s => s.gid === gid);
                 if (!stage) return null;
                 const isActive = activeGid === gid;
-                const pinBadge = STAGE_WITH_BADGE_MAP[gid] ? stageUncompletedCounts[gid] : undefined;
+                const pinBadge = gid === 'reels-calendar' ? (todayCalendarScriptsCount > 0 ? todayCalendarScriptsCount : undefined) : (STAGE_WITH_BADGE_MAP[gid] ? stageUncompletedCounts[gid] : undefined);
+                const pinBadgeTitle = gid === 'reels-calendar' ? `${todayCalendarScriptsCount} اسكربتات تصوير مجدولة لليوم 🎬📅` : undefined;
                 const pinInProgress = STAGE_WITH_BADGE_MAP[gid] ? stageInProgressCounts[gid] : undefined;
                 const pinMissing = STAGE_WITH_BADGE_MAP[gid] ? stageMissingDetailsCounts[gid] : undefined;
                 return (
@@ -12818,7 +12932,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
                       </span>
                     )}
                     {typeof pinBadge === 'number' && pinBadge > 0 ? (
-                      <span className="px-1.5 py-0.2 min-w-[18px] h-4 rounded-full bg-rose-500 text-white text-[10px] font-mono font-black flex items-center justify-center shadow-[0_0_8px_rgba(244,63,94,0.6)]" title={`${pinBadge} مهام بدون محرر تنتظر العمل 🔴`}>
+                      <span className="px-1.5 py-0.2 min-w-[18px] h-4 rounded-full bg-rose-500 text-white text-[10px] font-mono font-black flex items-center justify-center shadow-[0_0_8px_rgba(244,63,94,0.6)]" title={pinBadgeTitle || `${pinBadge} مهام بدون محرر تنتظر العمل 🔴`}>
                         {pinBadge}
                       </span>
                     ) : GREEN_DONE_BADGE_GIDS.has(gid) && typeof pinBadge === 'number' && pinBadge === 0 ? (

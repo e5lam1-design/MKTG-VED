@@ -9406,19 +9406,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
     setActiveVisibleRecordsLimit(INITIAL_VISIBLE_LIMIT);
   }, [activeGid, searchQuery, statusFilter, teacherFilter, yearFilter, termFilter, colFilters]);
 
-  const sentinelRef = useRef<HTMLTableRowElement | null>(null);
 
-  useEffect(() => {
-    const el = sentinelRef.current;
-    if (!el) return;
-    const observer = new IntersectionObserver((entries) => {
-      if (entries[0].isIntersecting) {
-        setActiveVisibleRecordsLimit(prev => Math.min(prev + 50, filteredData.length));
-      }
-    }, { rootMargin: '400px' });
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, [activeVisibleRecordsLimit, filteredData.length]);
 
   useEffect(() => {
     if (!autofillDrag) return;
@@ -11378,6 +11366,20 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
 
     return filtered;
   }, [combinedData, searchQuery, statusFilter, teacherFilter, yearFilter, termFilter, bypassYearTerm, colFilters, isOperations, isTagme3at, isStage, stageWeekFilter, sortBy, sortOrder, liveData, isMyTasksOnly, profile, currentUserName]);
+
+  const sentinelRef = useRef<HTMLTableRowElement | null>(null);
+
+  useEffect(() => {
+    const el = sentinelRef.current;
+    if (!el) return;
+    const observer = new IntersectionObserver((entries) => {
+      if (entries[0].isIntersecting) {
+        setActiveVisibleRecordsLimit(prev => Math.min(prev + 50, filteredData.length));
+      }
+    }, { rootMargin: '400px' });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [activeVisibleRecordsLimit, filteredData.length]);
 
   const handleColFilterChange = useCallback((colKey: string, val: string) => {
     if (colKey === 'teacher') {

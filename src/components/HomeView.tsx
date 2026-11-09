@@ -78,35 +78,98 @@ const STAGE_CONFIGS: { gid: string; label: string; table: string }[] = [
   { gid: '286303232', label: 'Senior 3', table: 'stage_s3_26' },
 ];
 
+const BILINGUAL_NAME_MAP: Record<string, string[]> = {
+  'eslam': ['eslam', 'islam', 'اسلام', 'إسلام', 'admin'],
+  'admin': ['eslam', 'islam', 'اسلام', 'إسلام', 'admin'],
+  'hassanen': ['hassanen', 'hassanein', 'hasanen', 'حسنين', 'حسن حسنين'],
+  'kiro': ['kiro', 'kyrollos', 'كيرو', 'كيرلس', 'كيرولس'],
+  'abanoub': ['abanoub', 'abanob', 'ابانوب', 'أبانوب'],
+  'shihab': ['shihab', 'shehab', 'شهاب'],
+  'maged': ['maged', 'magid', 'ماجد'],
+  'mohamed': ['mohamed', 'mohammed', 'muhamed', 'محمد'],
+  'ashraf': ['ashraf', 'اشرف', 'أشرف'],
+  'basel': ['basel', 'basil', 'باسل'],
+  'wael': ['wael', 'وائل'],
+  'ramaj': ['ramaj', 'رماج'],
+  'ramy': ['ramy', 'ramy elnaggar', 'رامي', 'رامي النجار'],
+  'helmy': ['helmy', 'hilmy', 'حلمي', 'أحمد حلمي', 'احمد حلمي'],
+  'khalil': ['khalil', 'خليل'],
+  'taher': ['taher', 'طاهر'],
+  'narden': ['narden', 'nardin', 'ناردين'],
+  'aya': ['aya', 'ayah', 'آية', 'اية'],
+  'manar': ['manar', 'منار'],
+  'jumana': ['jumana', 'joumana', 'jomana', 'جومانا', 'جمانة'],
+  'esraa': ['esraa', 'israa', 'إسراء', 'اسراء'],
+  'maram': ['maram', 'مرام'],
+  'eman': ['eman', 'iman', 'إيمان', 'ايمان'],
+  'noor': ['noor', 'nour', 'نور'],
+  'sohaila': ['sohaila', 'suhaila', 'سهيلة'],
+  'hesham': ['hesham', 'hisham', 'هشام'],
+  'shorouk': ['shorouk', 'شروق'],
+  'donia': ['donia', 'dunia', 'دنيا'],
+  'rawan': ['rawan', 'روان'],
+  'nada': ['nada', 'ندى', 'ندا'],
+  'hima': ['hima', 'هيما', 'ابراهيم', 'إبراهيم'],
+};
+
 export function resolveUserAliases(user: UserProfile | null, overrideName?: string): string[] {
   const set = new Set<string>();
-  const nameToUse = (overrideName || user?.name || '').trim().toLowerCase();
+  const rawTarget = (overrideName || user?.name || user?.email || '').trim().toLowerCase();
   
-  if (nameToUse) {
-    set.add(nameToUse);
-    const firstName = nameToUse.split(' ')[0];
-    if (firstName.length > 2) set.add(firstName);
-  }
+  if (!rawTarget) return [];
+
+  const normAr = (s: string) => s
+    .replace(/[إأآا]/g, 'ا')
+    .replace(/ة/g, 'ه')
+    .replace(/ى/g, 'ي')
+    .replace(/^(م\/|أ\/|ا\/|mr\.?|dr\.?)\s*/i, '')
+    .trim();
+
+  set.add(rawTarget);
+  const nRaw = normAr(rawTarget);
+  if (nRaw) set.add(nRaw);
+
+  const words = rawTarget.split(/[\s_\-\.]+/);
+  words.forEach(w => {
+    if (w.length > 2) {
+      set.add(w);
+      const nw = normAr(w);
+      if (nw) set.add(nw);
+    }
+  });
 
   if (!overrideName || overrideName === user?.name) {
     if (user?.email) {
       const emailPrefix = user.email.split('@')[0].trim().toLowerCase();
-      if (emailPrefix) set.add(emailPrefix);
+      if (emailPrefix) {
+        set.add(emailPrefix);
+        set.add(normAr(emailPrefix));
+      }
     }
     const localEditor = localStorage.getItem('user_editor_name')?.trim().toLowerCase();
-    if (localEditor) set.add(localEditor);
+    if (localEditor) {
+      set.add(localEditor);
+      set.add(normAr(localEditor));
+    }
   }
 
-  // Handle ADMIN / ESLAM mapping
-  if (
-    set.has('admin') || 
-    set.has('eslam') || 
-    user?.email?.toLowerCase().includes('eslam') ||
-    user?.name?.toLowerCase() === 'admin'
-  ) {
-    set.add('eslam');
-    set.add('admin');
-  }
+  // Cross-reference with bilingual map
+  Object.entries(BILINGUAL_NAME_MAP).forEach(([, aliases]) => {
+    const isMatch = aliases.some(alias => {
+      const nAlias = normAr(alias);
+      return Array.from(set).some(item => {
+        const nItem = normAr(item);
+        return item === alias || nItem === nAlias || item.includes(alias) || alias.includes(item);
+      });
+    });
+
+    if (isMatch) {
+      aliases.forEach(a => {
+        set.add(a.toLowerCase());
+        set.add(normAr(a.toLowerCase()));
+      });
+    }
+  });
 
   return Array.from(set).filter(Boolean);
 }
@@ -677,16 +740,19 @@ export const HomeView: React.FC<HomeViewProps> = ({
   // Adjust default category: ALWAYS focus on the user's own tasks first
   useEffect(() => {
     if (!loading) {
-      if (stats.myPending > 0) {
-        setCategoryFilter('my_pending');
-      } else if (stats.myEdits > 0) {
+      if (stats.myEdits > 0) {
+        // High priority: my requested revisions/edits
         setCategoryFilter('my_edits');
+      } else if (stats.myPending > 0) {
+        // Active assigned work
+        setCategoryFilter('my_pending');
+      } else if (stats.availableUnassigned > 0) {
+        // Waiting tasks that nobody has claimed yet
+        setCategoryFilter('available_unassigned');
       } else if (stats.myPriority > 0) {
         setCategoryFilter('my_priority');
-      } else if (stats.myTotal > 0) {
-        setCategoryFilter('my_all');
       } else {
-        setCategoryFilter('my_pending');
+        setCategoryFilter('my_all');
       }
     }
   }, [loading, selectedUserName]);
@@ -899,9 +965,85 @@ export const HomeView: React.FC<HomeViewProps> = ({
         </div>
       </div>
 
-      {/* KPI Metric Cards: User's 5 Core States + Claimable Tasks Card (تجميعات - Ve - Cuts) */}
+      {/* Proactive Alert Banners: Edits requested from me OR Waiting tasks available */}
+      {stats.myEdits > 0 && (
+        <motion.div
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          onClick={() => setCategoryFilter('my_edits')}
+          className="p-4 rounded-2xl bg-gradient-to-r from-rose-950/70 via-amber-950/40 to-rose-950/70 border border-rose-500/50 shadow-xl shadow-rose-950/40 flex items-center justify-between gap-4 cursor-pointer hover:border-rose-400 transition-all group"
+        >
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 rounded-xl bg-rose-500/20 text-rose-400 border border-rose-500/40 shrink-0 group-hover:scale-105 transition-transform animate-pulse">
+              <Edit3 size={20} />
+            </div>
+            <div>
+              <h4 className="text-sm font-black text-rose-200 flex items-center gap-2">
+                <span>تعديلات وملاحظات مطلوبة منك ({stats.myEdits} مهام)! 📝</span>
+                <span className="text-[10px] bg-rose-500 text-white px-2 py-0.5 rounded-full font-mono">عاجل</span>
+              </h4>
+              <p className="text-xs text-rose-300/80 font-medium mt-0.5">
+                توجد مهام باسمك تم وضع علامة طلب إيديت عليها — اضغط هنا لعرضها ومراجعة الملاحظات والبدء بالتعديل فوراً.
+              </p>
+            </div>
+          </div>
+          <button className="px-4 py-2 rounded-xl bg-rose-500 hover:bg-rose-600 text-white font-black text-xs transition-all shadow-md shrink-0 flex items-center gap-1.5 cursor-pointer">
+            <span>عرض التعديلات الآن</span>
+            <ExternalLink size={13} />
+          </button>
+        </motion.div>
+      )}
+
+      {/* KPI Metric Cards: Prioritizing User's Revisions, Waiting Tasks, and Active Work */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
-        {/* 1. لسه متعملتش (Pending) */}
+        {/* 1. اطلب ايديت (Edits / Revisions) - First and prominent */}
+        <motion.div
+          whileHover={{ y: -3 }}
+          onClick={() => setCategoryFilter('my_edits')}
+          className={`p-4 rounded-2xl border backdrop-blur-xl transition-all cursor-pointer relative overflow-hidden ${
+            categoryFilter === 'my_edits'
+              ? 'bg-rose-950/60 border-rose-500/70 shadow-[0_0_25px_rgba(244,63,94,0.3)] ring-2 ring-rose-400/60'
+              : stats.myEdits > 0
+              ? 'bg-rose-950/20 border-rose-500/30 hover:bg-rose-950/30'
+              : 'bg-white/[0.02] border-white/[0.06] hover:bg-white/[0.04]'
+          }`}
+        >
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-bold text-rose-300 flex items-center gap-1">
+              <span>اطلب إيديت 📝</span>
+              {stats.myEdits > 0 && <span className="w-2 h-2 rounded-full bg-rose-500 animate-ping" />}
+            </span>
+            <div className="p-1.5 rounded-xl bg-rose-500/10 text-rose-400 border border-rose-500/20">
+              <Edit3 size={16} />
+            </div>
+          </div>
+          <div className="text-2xl font-black text-rose-400 font-mono">{stats.myEdits}</div>
+          <p className="text-[10px] text-rose-200/70 font-medium mt-1">تعديلات وملاحظات مطلوبة مني</p>
+        </motion.div>
+
+        {/* 2. تاسكات الانتظار المتاحة للاستلام (تجميعات • Ve • Cuts فقط) */}
+        <motion.div
+          whileHover={{ y: -3 }}
+          onClick={() => setCategoryFilter('available_unassigned')}
+          className={`p-4 rounded-2xl border backdrop-blur-xl transition-all cursor-pointer relative overflow-hidden ${
+            categoryFilter === 'available_unassigned'
+              ? 'bg-cyan-950/60 border-cyan-500/70 shadow-[0_0_25px_rgba(6,182,212,0.3)] ring-2 ring-cyan-400/60'
+              : 'bg-cyan-950/15 border-cyan-500/30 hover:bg-cyan-950/30'
+          }`}
+        >
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-xs font-bold text-cyan-300 flex items-center gap-1">
+              <span>مهام انتظار 📥</span>
+            </span>
+            <div className="p-1.5 rounded-xl bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
+              <HandMetal size={16} />
+            </div>
+          </div>
+          <div className="text-2xl font-black text-cyan-400 font-mono">{stats.availableUnassigned}</div>
+          <p className="text-[10px] text-cyan-200/80 font-medium mt-1 font-bold">لم تُسند لأحد (جاهزة للاستلام) ✋</p>
+        </motion.div>
+
+        {/* 3. لسه متعملتش (Pending) */}
         <motion.div
           whileHover={{ y: -3 }}
           onClick={() => setCategoryFilter('my_pending')}
@@ -912,36 +1054,16 @@ export const HomeView: React.FC<HomeViewProps> = ({
           }`}
         >
           <div className="flex items-center justify-between mb-2">
-            <span className="text-xs font-bold text-blue-300">لسه متعملتش ⏳</span>
+            <span className="text-xs font-bold text-blue-300">قيد العمل ⏳</span>
             <div className="p-1.5 rounded-xl bg-blue-500/10 text-blue-400 border border-blue-500/20">
               <Clock size={16} />
             </div>
           </div>
           <div className="text-2xl font-black text-blue-400 font-mono">{stats.myPending}</div>
-          <p className="text-[10px] text-blue-200/70 font-medium mt-1">مهام قيد العمل باسمك</p>
+          <p className="text-[10px] text-blue-200/70 font-medium mt-1">مهام مسندة إليك للبدء بها</p>
         </motion.div>
 
-        {/* 2. خلصت (Completed) */}
-        <motion.div
-          whileHover={{ y: -3 }}
-          onClick={() => setCategoryFilter('my_completed')}
-          className={`p-4 rounded-2xl border backdrop-blur-xl transition-all cursor-pointer relative overflow-hidden ${
-            categoryFilter === 'my_completed'
-              ? 'bg-emerald-950/50 border-emerald-500/60 shadow-[0_0_25px_rgba(16,185,129,0.25)] ring-2 ring-emerald-400/50'
-              : 'bg-white/[0.02] border-white/[0.06] hover:bg-white/[0.04]'
-          }`}
-        >
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-xs font-bold text-emerald-300">خلصت ✅</span>
-            <div className="p-1.5 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-              <CheckCircle2 size={16} />
-            </div>
-          </div>
-          <div className="text-2xl font-black text-emerald-400 font-mono">{stats.myCompleted}</div>
-          <p className="text-[10px] text-emerald-200/70 font-medium mt-1">تم إنجازها وتسليمها</p>
-        </motion.div>
-
-        {/* 3. اولوية (Priority) */}
+        {/* 4. اولوية (Priority) */}
         <motion.div
           whileHover={{ y: -3 }}
           onClick={() => setCategoryFilter('my_priority')}
@@ -961,46 +1083,24 @@ export const HomeView: React.FC<HomeViewProps> = ({
           <p className="text-[10px] text-amber-200/70 font-medium mt-1">مهام عاجلة مسندة إليك</p>
         </motion.div>
 
-        {/* 4. اطلب ايديت (Edits / Revisions) */}
+        {/* 5. خلصت (Completed) */}
         <motion.div
           whileHover={{ y: -3 }}
-          onClick={() => setCategoryFilter('my_edits')}
+          onClick={() => setCategoryFilter('my_completed')}
           className={`p-4 rounded-2xl border backdrop-blur-xl transition-all cursor-pointer relative overflow-hidden ${
-            categoryFilter === 'my_edits'
-              ? 'bg-rose-950/50 border-rose-500/60 shadow-[0_0_25px_rgba(244,63,94,0.25)] ring-2 ring-rose-400/50'
+            categoryFilter === 'my_completed'
+              ? 'bg-emerald-950/50 border-emerald-500/60 shadow-[0_0_25px_rgba(16,185,129,0.25)] ring-2 ring-emerald-400/50'
               : 'bg-white/[0.02] border-white/[0.06] hover:bg-white/[0.04]'
           }`}
         >
           <div className="flex items-center justify-between mb-2">
-            <span className="text-xs font-bold text-rose-300">اطلب إيديت 📝</span>
-            <div className="p-1.5 rounded-xl bg-rose-500/10 text-rose-400 border border-rose-500/20">
-              <Edit3 size={16} />
+            <span className="text-xs font-bold text-emerald-300">خلصت ✅</span>
+            <div className="p-1.5 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+              <CheckCircle2 size={16} />
             </div>
           </div>
-          <div className="text-2xl font-black text-rose-400 font-mono">{stats.myEdits}</div>
-          <p className="text-[10px] text-rose-200/70 font-medium mt-1">تعديلات وملاحظات مطلوبة</p>
-        </motion.div>
-
-        {/* 5. مهام متاحة للاستلام (تجميعات • Ve • Cuts فقط) */}
-        <motion.div
-          whileHover={{ y: -3 }}
-          onClick={() => setCategoryFilter('available_unassigned')}
-          className={`p-4 rounded-2xl border backdrop-blur-xl transition-all cursor-pointer relative overflow-hidden ${
-            categoryFilter === 'available_unassigned'
-              ? 'bg-cyan-950/50 border-cyan-500/60 shadow-[0_0_25px_rgba(6,182,212,0.25)] ring-2 ring-cyan-400/50'
-              : 'bg-cyan-950/10 border-cyan-500/20 hover:bg-cyan-950/20'
-          }`}
-        >
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-xs font-bold text-cyan-300 flex items-center gap-1">
-              <span>مهام متاحة 📥</span>
-            </span>
-            <div className="p-1.5 rounded-xl bg-cyan-500/10 text-cyan-400 border border-cyan-500/20">
-              <HandMetal size={16} />
-            </div>
-          </div>
-          <div className="text-2xl font-black text-cyan-400 font-mono">{stats.availableUnassigned}</div>
-          <p className="text-[10px] text-cyan-200/70 font-medium mt-1 font-bold text-cyan-300">تجميعات • Ve • Cuts ✋</p>
+          <div className="text-2xl font-black text-emerald-400 font-mono">{stats.myCompleted}</div>
+          <p className="text-[10px] text-emerald-200/70 font-medium mt-1">تم إنجازها وتسليمها</p>
         </motion.div>
 
         {/* 6. كل مهامي المسندة */}
@@ -1055,33 +1155,43 @@ export const HomeView: React.FC<HomeViewProps> = ({
             </div>
           )}
 
-          {/* Tabs Navigation */}
+          {/* Tabs Navigation: Focused on Personal Revisions & Real Unassigned Waiting Tasks */}
           <div className="flex items-center gap-1 bg-[#090d16] p-1 rounded-2xl border border-white/10 flex-wrap">
             {[
-              { id: 'my_pending', label: '⏳ لسه متعملتش', count: stats.myPending },
+              { id: 'my_edits', label: '📝 اطلب إيديت (تعديلاتي)', count: stats.myEdits, isEditTab: true },
+              { id: 'available_unassigned', label: '📥 مهام انتظار (متاحة للاستلام)', count: stats.availableUnassigned, isClaimTab: true },
+              { id: 'my_pending', label: '⏳ قيد العمل', count: stats.myPending },
               { id: 'my_priority', label: '⚡ أولوية', count: stats.myPriority },
-              { id: 'my_edits', label: '📝 اطلب إيديت', count: stats.myEdits },
               { id: 'my_completed', label: '✅ خلصت', count: stats.myCompleted },
-              { id: 'available_unassigned', label: '📥 متاحة للاستلام (تجميعات • Ve • Cuts)', count: stats.availableUnassigned, highlight: true },
               { id: 'my_all', label: '👤 كل مهامي', count: stats.myTotal },
-              ...(canSwitchUsers ? [{ id: 'all_system', label: '🌐 مهام النظام', count: stats.totalSystem }] : []),
+              ...(canSwitchUsers ? [{ id: 'all_system', label: '📁 سجل النظام الشامل', count: stats.totalSystem }] : []),
             ].map((st) => (
               <button
                 key={st.id}
                 onClick={() => setCategoryFilter(st.id as CategoryFilter)}
                 className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
                   categoryFilter === st.id
-                    ? (st as any).highlight
-                      ? 'bg-gradient-to-r from-cyan-600 to-blue-600 text-white shadow-lg shadow-cyan-500/20 ring-1 ring-cyan-400'
+                    ? (st as any).isEditTab
+                      ? 'bg-rose-600 text-white shadow-lg shadow-rose-500/30 ring-1 ring-rose-400'
+                      : (st as any).isClaimTab
+                      ? 'bg-gradient-to-r from-cyan-600 to-blue-600 text-white shadow-lg shadow-cyan-500/30 ring-1 ring-cyan-400'
                       : 'bg-purple-600 text-white shadow-md'
-                    : (st as any).highlight
+                    : (st as any).isEditTab && st.count > 0
+                    ? 'text-rose-300 hover:text-white bg-rose-500/10 hover:bg-rose-500/20 border border-rose-500/30 animate-pulse'
+                    : (st as any).isClaimTab
                     ? 'text-cyan-300 hover:text-white hover:bg-cyan-500/10'
                     : 'text-muted hover:text-white'
                 }`}
               >
                 <span>{st.label}</span>
-                <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${
-                  categoryFilter === st.id ? 'bg-white/20 text-white' : 'bg-white/5 text-muted'
+                <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono font-bold ${
+                  categoryFilter === st.id 
+                    ? 'bg-white/25 text-white' 
+                    : (st as any).isEditTab && st.count > 0
+                    ? 'bg-rose-500 text-white'
+                    : (st as any).isClaimTab && st.count > 0
+                    ? 'bg-cyan-500/20 text-cyan-300'
+                    : 'bg-white/5 text-muted'
                 }`}>
                   {st.count}
                 </span>
@@ -1097,13 +1207,13 @@ export const HomeView: React.FC<HomeViewProps> = ({
           <div className="flex items-center gap-2">
             <FileText size={18} className="text-purple-400" />
             <h3 className="text-sm font-black text-white">
-              {categoryFilter === 'my_pending' && `مهام ${activeDisplayName}: لسه متعملتش (قيد العمل)`}
-              {categoryFilter === 'my_priority' && `مهام ${activeDisplayName}: ذات أولوية ⚡`}
-              {categoryFilter === 'my_edits' && `مهام ${activeDisplayName}: مطلوب تعديل أو إيديت 📝`}
-              {categoryFilter === 'my_completed' && `مهام ${activeDisplayName}: تم الإنجاز والتسليم ✅`}
+              {categoryFilter === 'my_edits' && `تعديلات وملاحظات مطلوبة من (${activeDisplayName}) 📝`}
+              {categoryFilter === 'available_unassigned' && 'تاسكات الانتظار المتاحة للاستلام (لم تؤخذ بعد من تجميعات • Ve • Cuts) 📥'}
+              {categoryFilter === 'my_pending' && `مهام (${activeDisplayName}) قيد العمل ⏳`}
+              {categoryFilter === 'my_priority' && `مهام (${activeDisplayName}) ذات الأولوية العاجلة ⚡`}
+              {categoryFilter === 'my_completed' && `مهام (${activeDisplayName}) التي تم إنجازها وتسليمها ✅`}
               {categoryFilter === 'my_all' && `كافة المهام المرتبطة باسم (${activeDisplayName}) 👤`}
-              {categoryFilter === 'available_unassigned' && 'المهام المتاحة للاستلام (تجميعات، Ve، Cuts) 📥'}
-              {categoryFilter === 'all_system' && 'كافة مهام النظام (شامل للمدراء)'}
+              {categoryFilter === 'all_system' && 'سجل وأرشيف مهام النظام الشامل (للمدراء فقط) 📁'}
             </h3>
             <span className="px-2.5 py-0.5 rounded-full bg-white/5 border border-white/10 text-[11px] font-mono text-purple-300 font-bold">
               {filteredTasks.length} مهمة

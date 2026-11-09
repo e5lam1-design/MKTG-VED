@@ -3,6 +3,9 @@ import { AlertCircle, RefreshCw } from 'lucide-react';
 
 interface Props {
   children?: ReactNode;
+  inline?: boolean;
+  tabName?: string;
+  onRetry?: () => void;
 }
 
 interface State {
@@ -23,7 +26,7 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    console.error('Uncaught error:', error, errorInfo);
+    console.error(`[ErrorBoundary] Caught error in ${this.props.tabName || 'component'}:`, error, errorInfo);
     if (error?.name === 'QuotaExceededError' || error?.message?.includes('quota') || error?.toString()?.includes('quota')) {
       try {
         for (let i = localStorage.length - 1; i >= 0; i--) {
@@ -40,6 +43,50 @@ export class ErrorBoundary extends Component<Props, State> {
   public render() {
     if (this.state.hasError) {
       const isQuota = this.state.error?.name === 'QuotaExceededError' || this.state.error?.toString()?.includes('quota');
+
+      if (this.props.inline) {
+        return (
+          <div className="p-8 my-6 flex flex-col items-center justify-center text-center animate-fadeIn" dir="rtl">
+            <div className="bg-[#0c1019]/90 border border-amber-500/30 rounded-3xl p-8 max-w-xl w-full shadow-2xl backdrop-blur-xl flex flex-col items-center gap-4 relative overflow-hidden">
+              <div className="absolute top-0 right-0 left-0 h-1 bg-gradient-to-r from-amber-500 via-rose-500 to-amber-500 opacity-60" />
+              
+              <div className="w-16 h-16 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 shadow-[0_0_20px_rgba(245,158,11,0.2)]">
+                <AlertCircle size={32} />
+              </div>
+
+              <div>
+                <h3 className="text-xl font-black text-white arabic-text">
+                  تعذر تحميل قسم {this.props.tabName || 'الحالي'}
+                </h3>
+                <p className="text-xs text-muted/80 mt-1 arabic-text leading-relaxed">
+                  حدث خطأ غير متوقع أثناء معالجة بيانات هذا القسم فقط. باقي أقسام الداشبورد (الريلز، الكالندر، الاستوديو) تعمل بكامل طاقتها دون توقف.
+                </p>
+              </div>
+
+              <div className="bg-black/60 border border-white/10 rounded-xl p-3 w-full text-right text-[11px] font-mono text-rose-300/90 overflow-x-auto max-h-28 scrollbar-hide">
+                {this.state.error?.message || this.state.error?.toString()}
+              </div>
+
+              <div className="flex items-center gap-3 mt-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    this.setState({ hasError: false, error: null, errorInfo: null });
+                    if (this.props.onRetry) {
+                      this.props.onRetry();
+                    }
+                  }}
+                  className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-slate-950 font-black text-xs flex items-center gap-2 transition-all shadow-lg shadow-amber-500/20 cursor-pointer active:scale-95"
+                >
+                  <RefreshCw size={14} className="stroke-[2.5]" />
+                  <span>إعادة المحاولة (Retry)</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      }
+
       return (
         <div className="min-h-screen bg-[#05070a] text-white flex flex-col items-center justify-center p-6 text-center">
           <div className="bg-[#0a0d14] border border-rose-500/30 rounded-3xl p-8 max-w-xl w-full shadow-2xl flex flex-col items-center gap-4">

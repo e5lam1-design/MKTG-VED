@@ -43,6 +43,7 @@ import {
   Video,
   FileImage,
   Pin,
+  ShieldAlert,
   Trash2,
   Bookmark,
   FileSpreadsheet,
@@ -80,6 +81,7 @@ import { FeedbackModal } from './components/FeedbackModal';
 import { SystemGuideModal } from './components/SystemGuideModal';
 import { InteractiveTour } from './components/InteractiveTour';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { AuditTrailView, recordAuditLog } from './features/audit';
 import { GoogleSheetImportModal } from './components/GoogleSheetImportModal';
 import { sortTasksByChunkAscending, sortMultiLineLessonName, sortCombinedFilingName } from './lib/chunkSort';
 import { supabase, PERMISSIONS, ROLE_LABELS, ROLE_COLORS, DEFAULT_ROLE_PERMISSIONS, setRuntimeRolePermissions } from './lib/supabase';
@@ -5615,6 +5617,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
     } catch {}
   }, [profile?.id]);
   const isUsersPage = activeGid === '__users__';
+  const isAuditTrailPage = activeGid === '__audit_trail__';
 
   const isHome = activeGid === 'home';
   const isOperations = activeGid === '1476192399';
@@ -8208,6 +8211,17 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
       }
     }
 
+    // Audit Trail for Tagme3at actions
+    if (type === 'undone') {
+      recordAuditLog(profile, 'done_unmarked', itemKey, `قام بفك علامة Done عن التجميعة: ${taskName}`);
+    } else if (type === 'done') {
+      recordAuditLog(profile, 'done_marked', itemKey, `قام بتعليم التجميعة كمكتملة Done: ${taskName}`);
+    } else if (type === 'cancel' || type === 'missing_details') {
+      recordAuditLog(profile, 'canceled', itemKey, `قام بإلغاء/تحديد تفاصيل ناقصة على التجميعة: ${taskName}`);
+    } else if (type === 'uncancel' || type === 'unmissing_details') {
+      recordAuditLog(profile, 'restore', itemKey, `قام باستعادة التجميعة: ${taskName}`);
+    }
+
     if (type === 'done') {
       setTaskPriorities(prev => {
         const n = { ...prev, [itemKey]: false };
@@ -9807,6 +9821,34 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
     // Broadcast Realtime activity for task subscribers & instant multi-account sync:
     const taskNameStr = updatedItem.code || updatedItem.script || oldCode;
     const altKeysArr = [oldCode, newCode, updatedItem.id, updatedItem.code, updatedItem.uniqueKey, updatedItem.script].filter(Boolean);
+
+    // Record Audit Trail for Sensitive Actions:
+    if (updatedItem.done !== prevItem?.done) {
+      if (!updatedItem.done && prevItem?.done) {
+        recordAuditLog(profile, 'done_unmarked', newCode, 'قام بفك علامة Done عن الريل (إعادة فتحه)');
+      } else if (updatedItem.done && !prevItem?.done) {
+        recordAuditLog(profile, 'done_marked', newCode, 'قام بتعليم الريل كمكتمل Done');
+      }
+    }
+    if (updatedItem.driveFinal !== prevItem?.driveFinal) {
+      if (!updatedItem.driveFinal?.trim() && prevItem?.driveFinal?.trim()) {
+        recordAuditLog(profile, 'drive_final_cleared', newCode, `قام بحذف رابط الفاينال (السابق: ${prevItem.driveFinal})`);
+      } else if (updatedItem.driveFinal?.trim()) {
+        recordAuditLog(profile, 'drive_final_updated', newCode, `قام بتحديث رابط الفاينال إلى: ${updatedItem.driveFinal}`);
+      }
+    }
+    if (updatedItem.canceled !== prevItem?.canceled) {
+      if (updatedItem.canceled) {
+        recordAuditLog(profile, 'canceled', newCode, 'قام بإلغاء الريل');
+      } else {
+        recordAuditLog(profile, 'restore', newCode, 'قام باستعادة الريل الملغي');
+      }
+    }
+    if (updatedItem.missingDetails !== prevItem?.missingDetails) {
+      if (updatedItem.missingDetails) {
+        recordAuditLog(profile, 'missing_details', newCode, 'حدد تفاصيل ناقصة على الريل');
+      }
+    }
 
     broadcastTaskActivity({
       itemKey: oldCode,
@@ -11876,6 +11918,22 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
               }}
             />
           )}
+
+          {/* Audit Trail tab for admin and manager */}
+          {profile?.role && (profile.role === 'admin' || profile.role === 'manager') && (
+            <SidebarItem
+              key="audit_trail"
+              icon={ShieldAlert}
+              label="سجل الرقابة 🛡️"
+              colorHex="#38bdf8"
+              colorful={colorfulTabs}
+              active={activeGid === '__audit_trail__'}
+              onClick={() => {
+                setActiveGid('__audit_trail__');
+                setActiveLabel('سجل الرقابة');
+              }}
+            />
+          )}
         </nav>
 
         {/* User Profile Card */}
@@ -11917,7 +11975,15 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
       {/* Users Management Page */}
       {isUsersPage ? (
         <main className="flex-1 flex flex-col min-w-0 bg-[#05070a] p-12 overflow-y-auto">
-          <UserManagement />
+          <ErrorBoundary inline tabName="إدارة المستخدمين">
+            <UserManagement />
+          </ErrorBoundary>
+        </main>
+      ) : isAuditTrailPage ? (
+        <main className="flex-1 flex flex-col min-w-0 bg-[#05070a] p-6 sm:p-12 overflow-y-auto">
+          <ErrorBoundary inline tabName="سجل الرقابة">
+            <AuditTrailView profile={profile} toast={toast} />
+          </ErrorBoundary>
         </main>
       ) : (
         <main className="flex-1 flex flex-col min-w-0 bg-[#05070a]">
@@ -13432,7 +13498,9 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
               }}
             />
           ) : isReelsAnalytics ? (
-            <ReelsAnalytics isDemo={isDemo} />
+            <ErrorBoundary inline tabName="إحصائيات الريلز">
+              <ReelsAnalytics isDemo={isDemo} />
+            </ErrorBoundary>
           ) : isStudioCalendar ? (
             <ErrorBoundary>
               <StudioCalendarView
@@ -13484,9 +13552,13 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
               <EditorsManagement userRole={profile?.role} toast={toast} />
             </ErrorBoundary>
           ) : isAnalyticsTagme ? (
-            <TagmeAnalyticsDashboard combinedData={combinedData} tagmeTransfers={tagmeTransfers} loading={loading} taskStatuses={taskStatuses} taskPriorities={taskPriorities} priorityLimit={tabPriorityLimits['1535230545']} />
+            <ErrorBoundary inline tabName="إحصائيات التجميعات">
+              <TagmeAnalyticsDashboard combinedData={combinedData} tagmeTransfers={tagmeTransfers} loading={loading} taskStatuses={taskStatuses} taskPriorities={taskPriorities} priorityLimit={tabPriorityLimits['1535230545']} />
+            </ErrorBoundary>
           ) : isDesignAnalytics ? (
-            <DesignAnalytics liveData={liveData} loading={loading} />
+            <ErrorBoundary inline tabName="إحصائيات التصاميم">
+              <DesignAnalytics liveData={liveData} loading={loading} />
+            </ErrorBoundary>
           ) : isDesignersTeamPage ? (
             <ErrorBoundary>
               <DesignersTeamManagement userRole={profile?.role} toast={toast} />

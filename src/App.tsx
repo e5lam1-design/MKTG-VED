@@ -6735,7 +6735,10 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
     if (isDemo || !activeGid || !STAGE_WITH_BADGE_MAP[activeGid]) return;
     fetchCountsForGids([activeGid]);
     if (activeGid === '1436746012' || activeGid === '1939073164') {
-      reconcileShootingToVe();
+      const t = setTimeout(() => {
+        reconcileShootingToVe();
+      }, 2000);
+      return () => clearTimeout(t);
     }
   }, [activeGid, isDemo, fetchCountsForGids, reconcileShootingToVe]);
 
@@ -6998,19 +7001,37 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
     '0': 'reels_cuts_26',
   };
 
-  const [reelsDbByGid, setReelsDbByGid] = useState<Record<string, any[]>>({});
+  const [reelsDbByGid, setReelsDbByGid] = useState<Record<string, any[]>>(() => {
+    try {
+      const cached = localStorage.getItem('reels_db_cache_v2');
+      return cached ? JSON.parse(cached) : {};
+    } catch {
+      return {};
+    }
+  });
   const reelsDbRows = useMemo(() => reelsDbByGid[activeGid] || [], [reelsDbByGid, activeGid]);
 
   const setReelsDbRows = useCallback((updater: any) => {
     setReelsDbByGid(prev => {
       const cur = prev[activeGid] || [];
       const next = typeof updater === 'function' ? updater(cur) : updater;
-      return { ...prev, [activeGid]: next };
+      const updated = { ...prev, [activeGid]: next };
+      try {
+        localStorage.setItem('reels_db_cache_v2', JSON.stringify(updated));
+      } catch {}
+      return updated;
     });
   }, [activeGid]);
 
   const [isReelsDbLoading, setIsReelsDbLoading] = useState(false);
-  const lastReelsUpdatedAtRef = useRef<Record<string, string>>({});
+  const lastReelsUpdatedAtRef = useRef<Record<string, string>>((() => {
+    try {
+      const cached = localStorage.getItem('reels_db_updated_at_cache_v2');
+      return cached ? JSON.parse(cached) : {};
+    } catch {
+      return {};
+    }
+  })());
 
   const reelsTable = REELS_TABLE_MAP[activeGid];
   const isReelsTableTab = !!reelsTable;
@@ -7137,7 +7158,14 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
             updatedAt: i.updated_at
           }));
         }
-        setReelsDbByGid(prev => ({ ...prev, [gid]: mapped }));
+        setReelsDbByGid(prev => {
+          const next = { ...prev, [gid]: mapped };
+          try {
+            localStorage.setItem('reels_db_cache_v2', JSON.stringify(next));
+            localStorage.setItem('reels_db_updated_at_cache_v2', JSON.stringify(lastReelsUpdatedAtRef.current));
+          } catch {}
+          return next;
+        });
       }
     } catch (e) {
       console.error(`Error fetching ${tbl} from Supabase:`, e);
@@ -7148,7 +7176,8 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
 
   useEffect(() => {
     if (isReelsTableTab) {
-      fetchReelsDb(activeGid);
+      const hasCached = (reelsDbByGid[activeGid] || []).length > 0;
+      fetchReelsDb(activeGid, hasCached);
       const intervalId = setInterval(() => {
         if (document.visibilityState === 'visible') {
           fetchReelsDb(activeGid, true);
@@ -7157,6 +7186,17 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
       return () => clearInterval(intervalId);
     }
   }, [activeGid, isReelsTableTab]);
+
+  // Background pre-fetch for Reels tabs (Shooting, VE, Cuts) after app mount for instant transitions
+  useEffect(() => {
+    if (isDemo) return;
+    const prefetchTimer = setTimeout(() => {
+      ['1939073164', '0', '1436746012'].forEach(gid => {
+        fetchReelsDb(gid, true);
+      });
+    }, 2500);
+    return () => clearTimeout(prefetchTimer);
+  }, [isDemo]);
 
   // Realtime subscription on active reels table
   useEffect(() => {

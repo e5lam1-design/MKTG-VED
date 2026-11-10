@@ -11317,6 +11317,31 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
   }, [liveData, isOperations, isTagme3at, isAnalyticsTagme, isReelsAnalytics, isStudioCalendar]);
 
 
+  const tagmeStatusCounts = useMemo(() => {
+    if (!isTagme3at || !Array.isArray(combinedData)) return { All: 0, Pending: 0, Done: 0, Unassigned: 0 };
+    let all = 0, pending = 0, done = 0, unassigned = 0;
+
+    combinedData.forEach((item: any) => {
+      all++;
+      const itemKey = item.uniqueKey || generateKey(item);
+      const stOverride = taskStatuses?.[itemKey] || taskStatuses?.[item.uniqueKey] || taskStatuses?.[item.id];
+      const isDone = stOverride?.done !== undefined ? Boolean(stOverride.done) : (item.done === true || item.done === 'TRUE' || String(item.done) === 'true');
+      const isMissing = stOverride?.missingDetails !== undefined ? Boolean(stOverride.missingDetails) : (item.missingDetails === true || item.missing_details === true || item.cancel === true || String(item.cancel) === 'true');
+      const isAssigned = isAssignedEditor(item.editor);
+
+      if (isDone) {
+        done++;
+      } else {
+        pending++;
+        if (!isMissing && !isAssigned) {
+          unassigned++;
+        }
+      }
+    });
+
+    return { All: all, Pending: pending, Done: done, Unassigned: unassigned };
+  }, [isTagme3at, combinedData, taskStatuses]);
+
   const reelsStatusCounts = useMemo(() => {
     if (!isReelsStage) return { All: 0, Done: 0, Missing: 0, Canceled: 0, Filmed: 0, Pending: 0 };
     
@@ -11560,8 +11585,17 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
       }
       
       if (isTagme3at && statusFilter !== 'All') {
-        if (statusFilter === 'Done' && !item.done) return false;
-        if (statusFilter === 'Pending' && item.done) return false;
+        const itemKey = item.uniqueKey || generateKey(item);
+        const stOverride = taskStatuses?.[itemKey] || taskStatuses?.[item.uniqueKey] || taskStatuses?.[item.id];
+        const isDone = stOverride?.done !== undefined ? Boolean(stOverride.done) : (item.done === true || item.done === 'TRUE' || String(item.done) === 'true');
+        const isMissing = stOverride?.missingDetails !== undefined ? Boolean(stOverride.missingDetails) : (item.missingDetails === true || item.missing_details === true || item.cancel === true || String(item.cancel) === 'true');
+        const isAssigned = isAssignedEditor(item.editor);
+
+        if (statusFilter === 'Done' && !isDone) return false;
+        if (statusFilter === 'Pending' && isDone) return false;
+        if (statusFilter === 'Unassigned') {
+          if (isDone || isMissing || isAssigned) return false;
+        }
       }
 
       if (isReelsStage && statusFilter !== 'All') {
@@ -13332,15 +13366,38 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
               )}
               {isTagme3at && (
                 <>
-                  {['All', 'Pending', 'Done'].map((f) => (
-                    <button
-                      key={f}
-                      onClick={() => setStatusFilter(f)}
-                      className={`px-5 py-2.5 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all ${statusFilter === f ? 'bg-primary text-white shadow-lg shadow-primary/30' : 'text-muted hover:bg-white/5 hover:text-foreground'}`}
-                    >
-                      {f}
-                    </button>
-                  ))}
+                  {[
+                    { id: 'All', label: 'ALL' },
+                    { id: 'Pending', label: 'PENDING' },
+                    { id: 'Unassigned', label: 'بدون مونتير 👤' },
+                    { id: 'Done', label: 'DONE' }
+                  ].map((f) => {
+                    const count = (tagmeStatusCounts as any)[f.id] || 0;
+                    return (
+                      <button
+                        key={f.id}
+                        onClick={() => setStatusFilter(f.id)}
+                        className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all cursor-pointer flex items-center gap-1.5 ${
+                          statusFilter === f.id
+                            ? f.id === 'Unassigned'
+                              ? 'bg-amber-500 text-white shadow-lg shadow-amber-500/30 ring-2 ring-amber-400/50'
+                              : 'bg-primary text-white shadow-lg shadow-primary/30'
+                            : f.id === 'Unassigned'
+                              ? 'text-amber-300 hover:bg-amber-500/10'
+                              : 'text-muted hover:bg-white/5 hover:text-foreground'
+                        }`}
+                      >
+                        <span>{f.label}</span>
+                        {count > 0 && (
+                          <span className={`px-1.5 py-0.5 rounded-md text-[9px] font-mono ${
+                            statusFilter === f.id ? 'bg-black/30 text-white' : 'bg-white/10 text-white/70'
+                          }`}>
+                            {count}
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
                   <div className="h-6 w-px bg-white/10 mx-2" />
                   <button
                     onClick={() => setTagmeViewMode(prev => prev === 'SIMPLE' ? 'DETAILED' : 'SIMPLE')}

@@ -12509,19 +12509,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
             </button>
 
 
-            {/* Demo Sheets Link Button (Admin / Manager only) */}
-            {profile?.role && PERMISSIONS.canManageUsers(profile.role) && (
-              <a
-                href="/demo.html"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="px-4 py-3 rounded-2xl bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-300 text-xs font-black uppercase tracking-wider flex items-center gap-2 shadow-lg shadow-amber-500/5 transition-all hover:scale-105 active:scale-95 cursor-pointer"
-                title="فتح النسخة التجريبية المتصلة بالشيتات الأصلية للشرح (للأدمن فقط)"
-              >
-                <FileSpreadsheet size={16} className="text-amber-400" />
-                <span>🟡 (DEMO) نسخة الشرح</span>
-              </a>
-            )}
+
 
             {profile?.role && PERMISSIONS.canSync(profile.role) && (
               <button onClick={() => refresh()} className="btn-glass px-7 py-3.5 rounded-2xl flex items-center gap-3 text-xs font-black uppercase tracking-widest cursor-pointer hover:scale-105 active:scale-95 transition-all">

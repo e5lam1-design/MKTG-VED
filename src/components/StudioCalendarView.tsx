@@ -1358,17 +1358,8 @@ export const StudioCalendarView: React.FC<StudioCalendarViewProps> = ({
         .ilike('code', taskCode)
         .maybeSingle();
 
-      const hasWorkDone = existingVe && (
-        existingVe.done === true ||
-        Boolean(existingVe.drive_final && existingVe.drive_final.trim()) ||
-        (existingVe.editor_col && existingVe.editor_col !== 'غير محدد' && existingVe.editor_col !== '---')
-      );
-
-      if (hasWorkDone) {
-        await supabase.from('reels_ve_26').update({ filmed: false, updated_at: nowIso }).eq('code', existingVe.code);
-      } else {
-        await supabase.from('reels_ve_26').delete().ilike('code', taskCode);
-      }
+      // Direct rule: If unfilmed, remove completely from VE!
+      await supabase.from('reels_ve_26').delete().ilike('code', taskCode);
     }
 
     if (toast) {

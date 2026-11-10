@@ -9775,29 +9775,20 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
           (existingVeRow.editor_col && existingVeRow.editor_col !== 'غير محدد' && existingVeRow.editor_col !== '---')
         );
 
-        if (hasWorkDone) {
-          // Protect completed / editor work! NEVER DELETE! Just update filmed: false in VE
-          await supabase
-            .from('reels_ve_26')
-            .update({ filmed: false, updated_at: new Date().toISOString() })
-            .eq('code', existingVeRow.code);
-          toast.warning("تم إلغاء التصوير مع الحفاظ على عمل المونتير ورابط الفاينال في شيت VE دون حذفه! 🛡️");
-        } else {
-          // No work done yet, safe to remove
-          await supabase
-            .from('reels_ve_26')
-            .delete()
-            .ilike('code', targetCode);
-          toast.info("تمت إزالة الريل من شيت VE لإلغاء التصوير");
-          setReelsDbByGid(prev => {
-            const veRows = prev['1939073164'];
-            if (!veRows) return prev;
-            return {
-              ...prev,
-              ['1939073164']: veRows.filter((r: any) => String(r.code || '').trim().toLowerCase() !== targetCode.toLowerCase())
-            };
-          });
-        }
+        // Direct rule: If unfilmed in Shooting, remove completely from VE!
+        await supabase
+          .from('reels_ve_26')
+          .delete()
+          .ilike('code', targetCode);
+        toast.info("تمت إزالة الريل تلقائياً من شيت VE لإلغاء علامة التصوير 🎬");
+        setReelsDbByGid(prev => {
+          const veRows = prev['1939073164'];
+          if (!veRows) return prev;
+          return {
+            ...prev,
+            ['1939073164']: veRows.filter((r: any) => String(r.code || '').trim().toLowerCase() !== targetCode.toLowerCase())
+          };
+        });
         notifyCoreCountsChanged(['1939073164']);
       }
     } catch (syncErr) {

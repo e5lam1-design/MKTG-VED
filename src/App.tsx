@@ -12452,18 +12452,6 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
               <span className="text-xs font-black arabic-text hidden xl:inline">فيدباك / ملاحظة</span>
             </button>
 
-            {/* Interactive Step-by-Step Tour Icon Button */}
-            <button
-              onClick={() => setShowTour(true)}
-              className="relative p-3.5 rounded-2xl bg-gradient-to-br from-blue-500/10 via-indigo-500/10 to-purple-500/10 hover:from-blue-500/25 hover:to-purple-500/25 border border-blue-500/30 hover:border-blue-400 text-blue-300 hover:text-white transition-all flex items-center justify-center cursor-pointer shadow-lg shadow-blue-500/10 hover:scale-105 active:scale-95 group"
-              title="جولة إرشادية تفاعلية خطوة بخطوة في الصفحة (Step-by-step Tour)"
-            >
-              <BookOpen size={20} className="text-blue-400 group-hover:scale-110 transition-transform" />
-              <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-blue-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-blue-500"></span>
-              </span>
-            </button>
 
             {/* Demo Sheets Link Button (Admin / Manager only) */}
             {profile?.role && PERMISSIONS.canManageUsers(profile.role) && (

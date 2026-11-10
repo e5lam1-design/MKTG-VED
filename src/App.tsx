@@ -474,7 +474,7 @@ const HistoryInput = ({ itemKey, fieldKey, value, onChange, placeholder, updated
   const typingTimerRef = useRef<any>(null);
 
   const commitValue = (newVal: string) => {
-    if (isUndoRedoRef.current) return;
+    if (disabled || isUndoRedoRef.current) return;
     if (typingTimerRef.current) clearTimeout(typingTimerRef.current);
     const trimmed = (newVal || '').trim();
     if (trimmed === (value || '').trim() && history.length > 0 && history[currentIndex]?.text === trimmed) return;
@@ -532,6 +532,7 @@ const HistoryInput = ({ itemKey, fieldKey, value, onChange, placeholder, updated
 
   // ── Undo: Go back to previous historical snapshot (preserving its original time & author) ──
   const undo = () => {
+    if (disabled) return;
     if (currentIndex > 0) {
       const prevEntry = history[currentIndex - 1];
       if (!prevEntry) return;
@@ -552,6 +553,7 @@ const HistoryInput = ({ itemKey, fieldKey, value, onChange, placeholder, updated
 
   // ── Redo: Advance to next historical snapshot (preserving its original time & author) ──
   const redo = () => {
+    if (disabled) return;
     if (currentIndex < history.length - 1) {
       const nextEntry = history[currentIndex + 1];
       if (!nextEntry) return;
@@ -592,14 +594,14 @@ const HistoryInput = ({ itemKey, fieldKey, value, onChange, placeholder, updated
       <button 
         onMouseDown={(e) => e.preventDefault()}
         onClick={undo} 
-        disabled={currentIndex <= 0 || !hasValue}
+        disabled={disabled || currentIndex <= 0 || !hasValue}
         type="button"
         className={`absolute -left-6 p-1.5 rounded-full border transition-all z-10 ${
-          currentIndex > 0 && hasValue
+          !disabled && currentIndex > 0 && hasValue
             ? 'bg-blue-500/15 border-blue-400/70 text-blue-300 hover:bg-blue-500/30 hover:scale-110 shadow-[0_0_10px_rgba(59,130,246,0.3)] opacity-100 cursor-pointer' 
-            : 'bg-white/[0.04] border-white/15 text-white/40 opacity-55 cursor-not-allowed'
+            : 'bg-white/[0.04] border-white/15 text-white/40 opacity-30 cursor-not-allowed pointer-events-none'
         }`}
-        title={currentIndex > 0 && hasValue ? `تراجع إلى النسخة السابقة (${formatArabicTimestamp(history[currentIndex - 1]?.timestamp) || 'فراغ'})` : "لا يوجد تراجع"}
+        title={disabled ? "غير مسموح بتعديل أو مسح ملاحظات هذا القسم 🔒" : (currentIndex > 0 && hasValue ? `تراجع إلى النسخة السابقة (${formatArabicTimestamp(history[currentIndex - 1]?.timestamp) || 'فراغ'})` : "لا يوجد تراجع")}
       >
         <Undo2 size={12} />
       </button>
@@ -613,25 +615,30 @@ const HistoryInput = ({ itemKey, fieldKey, value, onChange, placeholder, updated
         onBlur={handleBlur}
         onKeyDown={handleKeyDown}
         placeholder={placeholder}
+        disabled={disabled}
+        readOnly={disabled}
         className={`w-full min-w-[190px] resize-none overflow-y-auto max-h-48 scrollbar-thin rounded-xl px-3.5 py-2 text-xs font-bold text-white text-center outline-none transition-all shadow-inner leading-relaxed arabic-text placeholder:text-[11px] placeholder:text-muted/60 ${
-          hasValue 
-            ? 'bg-emerald-500/5 border border-emerald-500/40 shadow-[0_0_15px_rgba(16,185,129,0.1)] text-emerald-200' 
-            : 'bg-white/5 border border-white/10 hover:border-white/20'
-        } focus:bg-[#0b1019] focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/40`}
+          disabled
+            ? 'cursor-not-allowed opacity-75 bg-white/[0.03] border border-white/5 select-none'
+            : hasValue 
+              ? 'bg-emerald-500/5 border border-emerald-500/40 shadow-[0_0_15px_rgba(16,185,129,0.1)] text-emerald-200 focus:bg-[#0b1019] focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/40' 
+              : 'bg-white/5 border border-white/10 hover:border-white/20 focus:bg-[#0b1019] focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/40'
+        }`}
         style={{ minHeight: '38px', lineHeight: '1.5' }}
+        title={disabled ? "خاص بفريق آخر (للقراءة فقط - لا يمكن التعديل أو المسح) 🔒" : undefined}
       />
 
       <button 
         onMouseDown={(e) => e.preventDefault()}
         onClick={redo} 
-        disabled={currentIndex >= history.length - 1}
+        disabled={disabled || currentIndex >= history.length - 1}
         type="button"
         className={`absolute -right-6 p-1.5 rounded-full border transition-all z-10 ${
-          currentIndex < history.length - 1 
+          !disabled && currentIndex < history.length - 1 
             ? 'bg-emerald-500/15 border-emerald-400/70 text-emerald-300 hover:bg-emerald-500/30 hover:scale-110 shadow-[0_0_10px_rgba(16,185,129,0.3)] opacity-100 cursor-pointer' 
-            : 'bg-white/[0.04] border-white/15 text-white/40 opacity-55 cursor-not-allowed'
+            : 'bg-white/[0.04] border-white/15 text-white/40 opacity-30 cursor-not-allowed pointer-events-none'
         }`}
-        title={currentIndex < history.length - 1 ? `تقدم إلى النسخة التالية (${formatArabicTimestamp(history[currentIndex + 1]?.timestamp)})` : "لا يوجد تقدم"}
+        title={disabled ? "غير مسموح بتعديل أو مسح ملاحظات هذا القسم 🔒" : (currentIndex < history.length - 1 ? `تقدم إلى النسخة التالية (${formatArabicTimestamp(history[currentIndex + 1]?.timestamp)})` : "لا يوجد تقدم")}
       >
         <Redo2 size={12} />
       </button>
@@ -2938,6 +2945,21 @@ const ShootingRow = React.memo(({ item, index, activeGid, onToggleFilmed, loadin
 
   const handleFieldChange = async (fieldName: string, value: string, time?: string, author?: string) => {
     const isMarketingUser = profile?.team?.toLowerCase() === 'marketing' && profile?.role !== 'admin' && profile?.role !== 'manager';
+    const isVideoUser = profile?.team?.toLowerCase() === 'video' && profile?.role !== 'admin' && profile?.role !== 'manager';
+
+    if (activeGid === '1939073164') {
+      if (fieldName === 'editorNotes' && isMarketingUser) {
+        const msg = "غير مسموح لتيم الماركتينج بتعديل أو مسح ملاحظات المونتير 🎬🔒 (خاصة بتيم الفيديو فقط)";
+        if (toast && toast.error) toast.error(msg); else alert(msg);
+        return;
+      }
+      if (fieldName === 'notes' && isVideoUser) {
+        const msg = "غير مسموح لتيم الفيديو بتعديل أو مسح ملاحظات الماركتينج 📝🔒 (خاصة بتيم الماركتينج فقط)";
+        if (toast && toast.error) toast.error(msg); else alert(msg);
+        return;
+      }
+    }
+
     if (fieldName === 'driveFinal' && isMarketingUser && activeGid === '1939073164') {
       if (toast && toast.error) {
         toast.error("غير مسموح لتيم الماركتينج بتعديل أو إزالة رابط الفاينال 🎬🔒 (خاص بتيم الفيديو)");
@@ -3380,7 +3402,7 @@ const ShootingRow = React.memo(({ item, index, activeGid, onToggleFilmed, loadin
           fallbackAuthor={item.extraName || item.teacher}
           onChange={(val: string, time?: string, author?: string) => handleFieldChange('notes', val, time, author)}
           placeholder="اكتب ملاحظة..."
-          disabled={isCanceled}
+          disabled={isCanceled || (activeGid === '1939073164' && isVideoTeam && !isPrivilegedUser)}
         />
       </AutofillCell>
       {activeGid === '1939073164' && (
@@ -3394,7 +3416,7 @@ const ShootingRow = React.memo(({ item, index, activeGid, onToggleFilmed, loadin
             fallbackAuthor={item.editorCol && item.editorCol !== 'غير محدد' ? item.editorCol : undefined}
             onChange={(val: string, time?: string, author?: string) => handleFieldChange('editorNotes', val, time, author)}
             placeholder="ملاحظات المونتير..."
-            disabled={isCanceled}
+            disabled={isCanceled || (!isVideoTeam && !isPrivilegedUser)}
           />
         </AutofillCell>
       )}
@@ -4220,6 +4242,17 @@ const CutsRow = React.memo(({
   };
 
   const handleFieldChange = async (fieldName: string, value: string, time?: string, author?: string) => {
+    const isVideoUser = profile?.team?.toLowerCase() === 'video' && profile?.role !== 'admin' && profile?.role !== 'manager';
+    if (fieldName === 'editorNotes' && isMarketingUser) {
+      const msg = "غير مسموح لتيم الماركتينج بتعديل أو مسح ملاحظات المحرر 🎬🔒 (خاصة بتيم الفيديو فقط)";
+      if (toast && toast.error) toast.error(msg); else alert(msg);
+      return;
+    }
+    if (fieldName === 'creatorNotes' && isVideoUser) {
+      const msg = "غير مسموح لتيم الفيديو بتعديل أو مسح ملاحظات المبتكر 📝🔒 (خاصة بتيم الماركتينج فقط)";
+      if (toast && toast.error) toast.error(msg); else alert(msg);
+      return;
+    }
     if (fieldName === 'driveFinal' && isMarketingUser) {
       if (toast && toast.error) {
         toast.error("غير مسموح لتيم الماركتينج بتعديل أو إزالة رابط الفاينال 🎬🔒 (خاص بتيم الفيديو)");
@@ -4673,7 +4706,7 @@ const CutsRow = React.memo(({
           fallbackAuthor={item.creator}
           onChange={(val: string, time?: string, author?: string) => handleFieldChange('creatorNotes', val, time, author)}
           placeholder="ملاحظات المبتكر..."
-          disabled={false}
+          disabled={isVideoTeam && !isPrivileged}
         />
       </AutofillCell>
 
@@ -4687,7 +4720,7 @@ const CutsRow = React.memo(({
           fallbackAuthor={item.editor && item.editor !== 'غير محدد' ? item.editor : undefined}
           onChange={(val: string, time?: string, author?: string) => handleFieldChange('editorNotes', val, time, author)}
           placeholder="ملاحظات المحرر..."
-          disabled={false}
+          disabled={!isVideoTeam && !isPrivileged}
         />
       </AutofillCell>
 
@@ -9813,6 +9846,29 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
     const newCode = newRowData[5] || oldCode;
 
     if (noteMeta?.author && noteMeta?.fieldName) {
+      const isVideoUser = profile?.team?.toLowerCase() === 'video' && profile?.role !== 'admin' && profile?.role !== 'manager';
+      const isMarketingUser = (profile?.team?.toLowerCase() === 'marketing' || !isVideoUser) && profile?.role !== 'admin' && profile?.role !== 'manager';
+
+      if (activeGid === '1939073164') {
+        if (noteMeta.fieldName === 'editorNotes' && isMarketingUser) {
+          if (toast && toast.error) toast.error("غير مسموح لتيم الماركتينج بتعديل أو مسح ملاحظات المونتير 🎬🔒");
+          return;
+        }
+        if (noteMeta.fieldName === 'notes' && isVideoUser) {
+          if (toast && toast.error) toast.error("غير مسموح لتيم الفيديو بتعديل أو مسح ملاحظات الماركتينج 📝🔒");
+          return;
+        }
+      } else if (activeGid === '0') {
+        if (noteMeta.fieldName === 'editorNotes' && isMarketingUser) {
+          if (toast && toast.error) toast.error("غير مسموح لتيم الماركتينج بتعديل أو مسح ملاحظات المحرر 🎬🔒");
+          return;
+        }
+        if (noteMeta.fieldName === 'creatorNotes' && isVideoUser) {
+          if (toast && toast.error) toast.error("غير مسموح لتيم الفيديو بتعديل أو مسح ملاحظات المبتكر 📝🔒");
+          return;
+        }
+      }
+
       let fieldKey = noteMeta.fieldName;
       if (activeGid === '0') {
         fieldKey = noteMeta.fieldName === 'creatorNotes' ? 'cuts_creator_notes' : 'cuts_editor_notes';

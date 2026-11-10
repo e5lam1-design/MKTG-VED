@@ -5800,10 +5800,10 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
     const interval = setInterval(() => {
       if (document.visibilityState === 'visible' && !loading) {
         if (sheetGidToFetch !== '1476192399' && activeGid !== '1476192399') {
-          refresh(true); // silent refresh
+          refresh(true); // gentle 5-minute safety sync
         }
       }
-    }, 45000);
+    }, 5 * 60 * 1000);
     return () => clearInterval(interval);
   }, [refresh, loading, sheetGidToFetch, activeGid]);
 
@@ -6260,9 +6260,9 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
       fetchTagmeDb();
       const intervalId = setInterval(() => {
         if (document.visibilityState === 'visible') {
-          fetchTagmeDb(true);
+          fetchTagmeDb(true); // gentle 5-minute safety sync (Realtime handles instant updates)
         }
-      }, 30000);
+      }, 5 * 60 * 1000);
       return () => clearInterval(intervalId);
     }
   }, [activeGid, isTagme3at, isAnalyticsTagme]);
@@ -6565,7 +6565,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
 
     const rolloverTimer = setInterval(() => {
       fetchTodayCalendar();
-    }, 60000);
+    }, 10 * 60 * 1000); // 10-minute rollover check
 
     return () => {
       isCancelled = true;
@@ -6980,10 +6980,10 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
   // Background periodic auto-refresh for OP 26/27 tasks every 15 minutes
   useEffect(() => {
     if (isDemo) return;
-    const FIFTEEN_MINS = 15 * 60 * 1000;
+    const THIRTY_MINS = 30 * 60 * 1000;
     const op27Interval = setInterval(() => {
       fetch('/api/sync-op27', { method: 'POST' }).catch(() => {});
-    }, FIFTEEN_MINS);
+    }, THIRTY_MINS);
 
     return () => clearInterval(op27Interval);
   }, [isDemo]);
@@ -6993,9 +6993,9 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
       fetchStageDb(activeGid);
       const intervalId = setInterval(() => {
         if (document.visibilityState === 'visible') {
-          fetchStageDb(activeGid, true);
+          fetchStageDb(activeGid, true); // gentle 5-minute safety sync (Realtime handles instant updates)
         }
-      }, 30000);
+      }, 5 * 60 * 1000);
       return () => clearInterval(intervalId);
     }
   }, [activeGid, isStageTab]);
@@ -7362,9 +7362,9 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
       fetchReelsDb(activeGid, hasCached);
       const intervalId = setInterval(() => {
         if (document.visibilityState === 'visible') {
-          fetchReelsDb(activeGid, true);
+          fetchReelsDb(activeGid, true); // gentle 5-minute safety sync (Realtime handles instant updates)
         }
-      }, 30000);
+      }, 5 * 60 * 1000);
       return () => clearInterval(intervalId);
     }
   }, [activeGid, isReelsTableTab]);

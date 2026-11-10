@@ -3114,6 +3114,8 @@ const ShootingRow = React.memo(({ item, index, activeGid, onToggleFilmed, loadin
   const isFilmed = Boolean(editForm.filmed || item.filmed === true || item.filmed === 'TRUE');
   const isRowActive = activeCell?.rowIndex === index;
   const isPrivilegedUser = profile?.role === 'admin' || profile?.role === 'manager' || profile?.role === 'supervisor';
+  const isVideoTeam = profile?.team?.toLowerCase() === 'video';
+  const canModifyDone = isVideoTeam || profile?.role === 'admin' || profile?.role === 'manager';
   const isMarketingUser = profile?.team?.toLowerCase() === 'marketing' && profile?.role !== 'admin' && profile?.role !== 'manager';
 
   return (
@@ -3514,7 +3516,7 @@ const ShootingRow = React.memo(({ item, index, activeGid, onToggleFilmed, loadin
                 if (isCanceled) return;
                 const rowCode = item.code || item.id;
                 if (!rowCode) { alert("لا يمكن تعديل هذا الصف لعدم وجود كود (Code)"); return; }
-                if (isMarketingUser && activeGid === '1939073164') {
+                if (!canModifyDone && activeGid === '1939073164') {
                   const msg = isDone 
                     ? "غير مسموح لتيم الماركتينج بإلغاء Done 🔒 (المسموح لك فقط هو طلب تعديل عبر زر EDIT)"
                     : "تحديد حالة Done خاص بتيم الفيديو فقط 🎬🔒";
@@ -3584,8 +3586,8 @@ const ShootingRow = React.memo(({ item, index, activeGid, onToggleFilmed, loadin
               className={`w-7 h-7 rounded-lg flex items-center justify-center mx-auto transition-all duration-300 ${
                 isCanceled
                   ? 'opacity-20 cursor-not-allowed bg-white/5 text-muted/40'
-                  : isMarketingUser && activeGid === '1939073164'
-                    ? (isDone ? 'bg-emerald-500 text-white shadow-[0_0_20px_rgba(16,185,129,0.95)] ring-2 ring-emerald-300 scale-110 cursor-not-allowed' : 'bg-white/10 text-muted cursor-not-allowed')
+                  : (!canModifyDone && activeGid === '1939073164')
+                    ? (isDone ? 'bg-emerald-500 text-white shadow-[0_0_20px_rgba(16,185,129,0.95)] ring-2 ring-emerald-300 scale-110 cursor-not-allowed opacity-90' : 'bg-white/10 text-muted cursor-not-allowed opacity-60')
                     : isDone 
                       ? 'bg-emerald-500 text-white shadow-[0_0_20px_rgba(16,185,129,0.95)] ring-2 ring-emerald-300 scale-110 cursor-pointer' 
                       : 'bg-white/10 text-muted hover:bg-emerald-500/30 hover:text-emerald-300 cursor-pointer'
@@ -3593,7 +3595,7 @@ const ShootingRow = React.memo(({ item, index, activeGid, onToggleFilmed, loadin
               title={
                 isCanceled 
                   ? "المهمة ملغية - لا يمكن إنجازها" 
-                  : (isMarketingUser && activeGid === '1939073164')
+                  : (!canModifyDone && activeGid === '1939073164')
                     ? (isDone ? "غير مسموح لتيم الماركتينج بإلغاء Done 🔒 (استخدم زر EDIT لطلب تعديل)" : "خاص بتيم الفيديو فقط 🔒")
                     : "تم الإنجاز"
               }
@@ -3665,9 +3667,13 @@ const ShootingRow = React.memo(({ item, index, activeGid, onToggleFilmed, loadin
           {activeGid === '1939073164' && (
             <td className="px-3 py-5 text-center">
               <button
-                disabled={isEditChecked}
                 onClick={async () => {
-                  if (isEditChecked) return;
+                  if (isEditChecked) {
+                    const msg = "تم طلب تعديل مسبقاً لهذا الريل (مسموح بطلب تعديل مرة واحدة فقط) 🔒";
+                    if (toast && toast.error) toast.error(msg);
+                    else alert(msg);
+                    return;
+                  }
                   const rowCode = item.code || item.id;
                   if (!rowCode) { alert("لا يمكن تعديل هذا الصف لعدم وجود كود (Code)"); return; }
                   
@@ -3678,10 +3684,10 @@ const ShootingRow = React.memo(({ item, index, activeGid, onToggleFilmed, loadin
                 }}
                 className={`w-6 h-6 rounded-md flex items-center justify-center mx-auto transition-all duration-300 ${
                   isEditChecked
-                    ? 'bg-blue-600 text-white shadow-[0_0_12px_rgba(37,99,235,0.6)] cursor-default'
+                    ? 'bg-blue-600 text-white shadow-[0_0_12px_rgba(37,99,235,0.6)] cursor-not-allowed opacity-90'
                     : 'bg-white/10 text-muted hover:bg-blue-500/30 hover:text-blue-300 cursor-pointer'
                 }`}
-                title={isEditChecked ? "تم طلب تعديل (مغلق)" : "طلب تعديل (EDIT)"}
+                title={isEditChecked ? "تم طلب تعديل مسبقاً (مغلق - مسموح بطلب تعديل مرة واحدة فقط)" : "طلب تعديل (EDIT - مسموح مرة واحدة فقط)"}
               >
                 {isEditChecked ? <CheckCircle2 size={14} /> : null}
               </button>
@@ -4074,6 +4080,8 @@ const CutsRow = React.memo(({
   const [copied, setCopied] = useState(false);
   const [optimisticHardDriveStatus, setOptimisticHardDriveStatus] = useState<string | null | undefined>(undefined);
   const { profile } = useAuth();
+  const isVideoTeam = profile?.team?.toLowerCase() === 'video';
+  const canModifyDone = isVideoTeam || profile?.role === 'admin' || profile?.role === 'manager';
   const isMarketingUser = profile?.team?.toLowerCase() === 'marketing' && profile?.role !== 'admin' && profile?.role !== 'manager';
   const [isEditChecked, setIsEditChecked] = useState(Boolean(item.editCheck || item.edit_check));
 
@@ -4370,7 +4378,7 @@ const CutsRow = React.memo(({
 
   const toggleStatus = async (fieldName: string, currentVal: boolean) => {
     if (!item.id) { alert("لا يمكن تعديل هذا الصف لعدم وجود كود (Code)"); return; }
-    if (fieldName === 'done' && isMarketingUser) {
+    if (fieldName === 'done' && !canModifyDone) {
       const msg = currentVal 
         ? "غير مسموح لتيم الماركتينج بإلغاء Done 🔒 (المسموح لك فقط هو طلب تعديل عبر زر EDIT)"
         : "تحديد حالة Done خاص بتيم الفيديو فقط 🎬🔒";
@@ -4714,14 +4722,14 @@ const CutsRow = React.memo(({
         <button
           onClick={() => toggleStatus('done', isDone)}
           className={`w-7 h-7 rounded-lg flex items-center justify-center mx-auto transition-all duration-300 ${
-            isMarketingUser
-              ? (isDone ? 'bg-emerald-500 text-white shadow-[0_0_20px_rgba(16,185,129,0.95)] ring-2 ring-emerald-300 scale-110 cursor-not-allowed' : 'bg-white/10 text-muted cursor-not-allowed')
+            !canModifyDone
+              ? (isDone ? 'bg-emerald-500 text-white shadow-[0_0_20px_rgba(16,185,129,0.95)] ring-2 ring-emerald-300 scale-110 cursor-not-allowed opacity-90' : 'bg-white/10 text-muted cursor-not-allowed opacity-60')
               : isDone 
                 ? 'bg-emerald-500 text-white shadow-[0_0_20px_rgba(16,185,129,0.95)] ring-2 ring-emerald-300 scale-110 cursor-pointer' 
                 : 'bg-white/10 text-muted hover:bg-emerald-500/30 hover:text-emerald-300 cursor-pointer'
           }`}
           title={
-            isMarketingUser
+            !canModifyDone
               ? (isDone ? "غير مسموح لتيم الماركتينج بإلغاء Done 🔒 (استخدم زر EDIT لطلب تعديل)" : "خاص بتيم الفيديو فقط 🔒")
               : "تم الإنجاز"
           }
@@ -4733,9 +4741,13 @@ const CutsRow = React.memo(({
       {/* EDIT Checkmark (طلب تعديل) - Cuts: clicked once, cannot be unclicked, unchecks DONE */}
       <td className="px-3 py-5 text-center">
         <button
-          disabled={isEditChecked}
           onClick={async () => {
-            if (isEditChecked) return;
+            if (isEditChecked) {
+              const msg = "تم طلب تعديل مسبقاً لهذا الريل (مسموح بطلب تعديل مرة واحدة فقط) 🔒";
+              if (toast && toast.error) toast.error(msg);
+              else alert(msg);
+              return;
+            }
             const rowCode = item.code || item.id;
             if (!rowCode) { alert("لا يمكن تعديل هذا الصف لعدم وجود كود (Code)"); return; }
             
@@ -4746,10 +4758,10 @@ const CutsRow = React.memo(({
           }}
           className={`w-6 h-6 rounded-md flex items-center justify-center mx-auto transition-all duration-300 ${
             isEditChecked
-              ? 'bg-blue-600 text-white shadow-[0_0_12px_rgba(37,99,235,0.6)] cursor-default'
+              ? 'bg-blue-600 text-white shadow-[0_0_12px_rgba(37,99,235,0.6)] cursor-not-allowed opacity-90'
               : 'bg-white/10 text-muted hover:bg-blue-500/30 hover:text-blue-300 cursor-pointer'
           }`}
-          title={isEditChecked ? "تم طلب تعديل (مغلق)" : "طلب تعديل (EDIT)"}
+          title={isEditChecked ? "تم طلب تعديل مسبقاً (مغلق - مسموح بطلب تعديل مرة واحدة فقط)" : "طلب تعديل (EDIT - مسموح مرة واحدة فقط)"}
         >
           {isEditChecked ? <CheckCircle2 size={14} /> : null}
         </button>
@@ -9961,6 +9973,19 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
       };
     }
 
+    // Guard: Prevent marketing/non-video users from modifying Done in VE (1939073164) and Cuts (0)
+    if ((activeGid === '1939073164' || activeGid === '0') && updatedItem.done !== prevItem?.done) {
+      const isVideoTeam = profile?.team?.toLowerCase() === 'video';
+      const isPrivileged = profile?.role === 'admin' || profile?.role === 'manager';
+      if (!isVideoTeam && !isPrivileged) {
+        const msg = prevItem?.done 
+          ? "غير مسموح لتيم الماركتينج بإلغاء Done 🔒 (المسموح لك فقط هو طلب تعديل عبر زر EDIT)"
+          : "تعديل حالة Done خاص بفريق الفيديو فقط 🎬🔒";
+        if (toast && toast.error) toast.error(msg);
+        return;
+      }
+    }
+
     // 1. Optimistic UI update
     setReelsDbRows(prev => prev.map(r => (r.code === oldCode || r.id === oldCode) ? updatedItem : r));
     setLiveData((prev: any[]) => {
@@ -10500,12 +10525,28 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
   const handleToggleEditCheck = async (item: any, nextVal: boolean) => {
     const rowCode = item.code || item.id;
     if (!rowCode) return;
+    if (item.editCheck || item.edit_check) {
+      if (toast && toast.error) {
+        toast.error("تم طلب تعديل مسبقاً لهذا الصف (مسموح بطلب تعديل مرة واحدة فقط) 🔒");
+      }
+      return;
+    }
 
     // 1. Optimistic UI update: editCheck = true, and uncheck done if it was done!
     setReelsDbRows(prev => prev.map(r => (r.code === rowCode || r.id === rowCode) ? { ...r, editCheck: true, edit_check: true, done: false } : r));
     setLiveData((prev: any[]) => {
       if (!Array.isArray(prev)) return prev;
       return prev.map((r: any) => (r.code === rowCode || r.id === rowCode) ? { ...r, editCheck: true, edit_check: true, done: false } : r);
+    });
+    setReelsDbByGid(prev => {
+      const currentList = prev[activeGid];
+      if (!Array.isArray(currentList)) return prev;
+      return {
+        ...prev,
+        [activeGid]: currentList.map((r: any) =>
+          (r.code === rowCode || r.id === rowCode) ? { ...r, editCheck: true, edit_check: true, done: false } : r
+        )
+      };
     });
 
     // Broadcast Realtime activity for subscribers

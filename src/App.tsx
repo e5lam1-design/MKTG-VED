@@ -11232,7 +11232,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
   const reelsStatusCounts = useMemo(() => {
     if (!isReelsStage) return { All: 0, Done: 0, Missing: 0, Canceled: 0, Filmed: 0, Pending: 0 };
     
-    let all = 0, done = 0, missing = 0, canceled = 0, filmed = 0, pending = 0;
+    let all = 0, done = 0, missing = 0, canceled = 0, filmed = 0, pending = 0, unassigned = 0;
 
     combinedData.forEach((item: any) => {
       const searchVal = searchQuery.trim().toLowerCase();
@@ -11376,9 +11376,12 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
       if (isCanceled) canceled++;
       if (isFilmed) filmed++;
       if (!isDone && !isCanceled) pending++;
+      const editorVal = item.editorCol || item.editor || '';
+      const isUnassigned = !isAssignedEditor(editorVal);
+      if (!isDone && !isCanceled && !isMissing && isUnassigned) unassigned++;
     });
 
-    return { All: all, Done: done, Missing: missing, Canceled: canceled, Filmed: filmed, Pending: pending };
+    return { All: all, Done: done, Missing: missing, Canceled: canceled, Filmed: filmed, Pending: pending, Unassigned: unassigned };
   }, [combinedData, isReelsStage, searchQuery, isMyTasksOnly, currentUserName, colFilters]);
 
   const filteredData = useMemo(() => {
@@ -11484,6 +11487,11 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
         if (statusFilter === 'Canceled' && !isCanceled) return false;
         if (statusFilter === 'Filmed' && !isFilmed) return false;
         if (statusFilter === 'Pending' && (isDone || isCanceled)) return false;
+        if (statusFilter === 'Unassigned') {
+          const editorVal = item.editorCol || item.editor || '';
+          const isUnassigned = !isAssignedEditor(editorVal);
+          if (isDone || isCanceled || isMissing || !isUnassigned) return false;
+        }
       }
 
       if (isStage && stageWeekFilter !== 'All') {
@@ -13336,6 +13344,9 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
                     { id: 'Missing', label: 'تفاصيل ناقصة ⚠️' },
                     { id: 'Canceled', label: 'Cancel ❌' },
                     { id: 'Filmed', label: 'اتصور 🎬' },
+                    ...(activeGid === '1939073164' || activeGid === '0'
+                      ? [{ id: 'Unassigned', label: 'بدون مونتير 👤' }]
+                      : []),
                     { id: 'Pending', label: 'قيد الانتظار ⏳' }
                   ].map((f) => {
                     const count = (reelsStatusCounts as any)[f.id] || 0;
@@ -13349,6 +13360,8 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
                               : f.id === 'Missing' ? 'bg-amber-500 text-white shadow-md shadow-amber-500/20'
                               : f.id === 'Canceled' ? 'bg-rose-500 text-white shadow-md shadow-rose-500/20'
                               : f.id === 'Filmed' ? 'bg-cyan-500 text-white shadow-md shadow-cyan-500/20'
+                              : f.id === 'Unassigned' ? 'bg-rose-500 text-white shadow-md shadow-rose-500/30 ring-2 ring-rose-400/50'
+                              : f.id === 'Pending' ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
                               : 'bg-primary text-white shadow-md shadow-primary/30'
                             : 'bg-white/5 text-muted border border-white/10 hover:bg-white/10 hover:text-white'
                         }`}

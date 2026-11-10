@@ -3136,6 +3136,7 @@ const ShootingRow = React.memo(({ item, index, activeGid, onToggleFilmed, loadin
   const isFilmed = Boolean(editForm.filmed || item.filmed === true || item.filmed === 'TRUE');
   const isRowActive = activeCell?.rowIndex === index;
   const isPrivilegedUser = profile?.role === 'admin' || profile?.role === 'manager' || profile?.role === 'supervisor';
+  const isPrivileged = isPrivilegedUser;
   const isVideoTeam = profile?.team?.toLowerCase() === 'video';
   const canModifyDone = isVideoTeam || profile?.role === 'admin' || profile?.role === 'manager';
   const isMarketingUser = profile?.team?.toLowerCase() === 'marketing' && profile?.role !== 'admin' && profile?.role !== 'manager';
@@ -4507,6 +4508,7 @@ const CutsRow = React.memo(({
   const isDone = isHardDrive ? hardDriveStatus === 'approved' : getOverrideVal('done', item.done === true || item.done === 'TRUE');
   const isRowActive = activeCell?.rowIndex === index;
   const isPrivilegedUser = profile?.role === 'admin' || profile?.role === 'manager' || profile?.role === 'supervisor';
+  const isPrivileged = isPrivilegedUser;
 
   return (
     <tr

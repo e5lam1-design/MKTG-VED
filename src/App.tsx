@@ -2229,6 +2229,20 @@ const TagmeRow = ({
 };
 
 // ─── Stage Row (Junior/Middle/Senior) ─────────────────────────────────────────
+const getWeekColor = (w: string) => {
+  if (!w) return 'bg-white/5 border-white/10 text-muted';
+  const num = w.replace(/\D/g, '');
+  const code = parseInt(num) || (w.charCodeAt(w.length - 1) % 6);
+  switch (code % 6) {
+    case 1: return 'bg-emerald-500/15 border-emerald-500/30 text-emerald-300 shadow-[0_0_15px_rgba(16,185,129,0.15)]';
+    case 2: return 'bg-cyan-500/15 border-cyan-500/30 text-cyan-300 shadow-[0_0_15px_rgba(6,182,212,0.15)]';
+    case 3: return 'bg-amber-500/15 border-amber-500/30 text-amber-300 shadow-[0_0_15px_rgba(245,158,11,0.15)]';
+    case 4: return 'bg-purple-500/15 border-purple-500/30 text-purple-300 shadow-[0_0_15px_rgba(168,85,247,0.15)]';
+    case 5: return 'bg-rose-500/15 border-rose-500/30 text-rose-300 shadow-[0_0_15px_rgba(244,63,94,0.15)]';
+    default: return 'bg-indigo-500/15 border-indigo-500/30 text-indigo-300 shadow-[0_0_15px_rgba(99,102,241,0.15)]';
+  }
+};
+
 const StageRow = ({ item, index, tagmeTransfers, onTagmeToggle, activeLabel, isGlowing, onUpdateDate, onUpdateWeek, onUpdateThumbnailLink, onUpdateTime, onUpdateYoutubeLink, onUpdateUploaded, onToggleDelivered, onDeleteRow }: any) => {
   const { profile } = useAuth();
   const rowKey = item.uniqueKey || generateKey(item);
@@ -2297,19 +2311,7 @@ const StageRow = ({ item, index, tagmeTransfers, onTagmeToggle, activeLabel, isG
     return dStr;
   };
 
-  const getWeekColor = (w: string) => {
-    if (!w) return 'bg-white/5 border-white/10 text-muted';
-    const num = w.replace(/\D/g, '');
-    const code = parseInt(num) || (w.charCodeAt(w.length - 1) % 6);
-    switch (code % 6) {
-      case 1: return 'bg-emerald-500/15 border-emerald-500/30 text-emerald-300 shadow-[0_0_15px_rgba(16,185,129,0.15)]';
-      case 2: return 'bg-cyan-500/15 border-cyan-500/30 text-cyan-300 shadow-[0_0_15px_rgba(6,182,212,0.15)]';
-      case 3: return 'bg-amber-500/15 border-amber-500/30 text-amber-300 shadow-[0_0_15px_rgba(245,158,11,0.15)]';
-      case 4: return 'bg-purple-500/15 border-purple-500/30 text-purple-300 shadow-[0_0_15px_rgba(168,85,247,0.15)]';
-      case 5: return 'bg-rose-500/15 border-rose-500/30 text-rose-300 shadow-[0_0_15px_rgba(244,63,94,0.15)]';
-      default: return 'bg-indigo-500/15 border-indigo-500/30 text-indigo-300 shadow-[0_0_15px_rgba(99,102,241,0.15)]';
-    }
-  };
+
 
   return (
     <motion.tr

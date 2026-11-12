@@ -71,6 +71,7 @@ import { DesignAnalytics } from './components/DesignAnalytics';
 import { DesignersTeamManagement } from './components/DesignersTeamManagement';
 import { EditorsManagement } from './components/EditorsManagement';
 import { StudioCalendarView } from './components/StudioCalendarView';
+import { StageCalendarView } from './components/StageCalendarView';
 import { TeachersFollowUpView } from './components/TeachersFollowUpView';
 import { useEditorsOptions, getGlobalEditorColor } from './hooks/useEditorsOptions';
 import { Op27View, getTargetStage26 } from './components/Op27View';
@@ -5685,6 +5686,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
   const [activeLabel, setActiveLabel] = useState(() => getInitialLabel(initialMode));
   const [appMode, setAppMode] = useState<'OP' | 'REELS' | 'DESIGNERS'>(initialMode);
   const [isCardsView, setIsCardsView] = useState(false);
+  const [stageViewMode, setStageViewMode] = useState<'TABLE' | 'CALENDAR'>('TABLE');
 
   // Persist active tab and mode
   useEffect(() => {
@@ -11314,9 +11316,26 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
 
   const availableWeeks = useMemo(() => {
     if (isOperations || isTagme3at || isAnalyticsTagme || isReelsAnalytics || isStudioCalendar) return [];
-    const set = new Set(liveData.map((i: any) => i.week ? String(i.week).trim() : '').filter(Boolean));
+    const sourceData = isStageTab ? combinedData : liveData;
+    const set = new Set(sourceData.map((i: any) => i.week ? String(i.week).trim() : '').filter(Boolean));
     return Array.from(set) as string[];
-  }, [liveData, isOperations, isTagme3at, isAnalyticsTagme, isReelsAnalytics, isStudioCalendar]);
+  }, [liveData, combinedData, isStageTab, isOperations, isTagme3at, isAnalyticsTagme, isReelsAnalytics, isStudioCalendar]);
+
+  const stageUploadedCount = useMemo(() => {
+    if (!isStage || !Array.isArray(combinedData)) return 0;
+    return combinedData.filter((item: any) => 
+      item.delivered === true || item.check2 === true || item.received === true || item.uploaded === true || item.uploaded === 'TRUE' || item.uploaded === 'true'
+    ).length;
+  }, [isStage, combinedData]);
+
+  const stageReviewsCount = useMemo(() => {
+    if (!isStage || !Array.isArray(combinedData)) return 0;
+    return combinedData.filter((item: any) => {
+      const weekStr = String(item.week || '');
+      const nameStr = String(item.name || item.filingName || '');
+      return weekStr.includes('مراجعة') || weekStr.includes('مراجعات') || nameStr.includes('مراجعة') || nameStr.includes('مراجعات');
+    }).length;
+  }, [isStage, combinedData]);
 
 
   const tagmeStatusCounts = useMemo(() => {
@@ -11638,6 +11657,16 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
             const isTagmeChecked = item.isTagme3a === true || item.check1 === true || String(item.check1).toLowerCase() === 'true' || (tagmeTransfers || []).some((i: any) => i.uniqueKey === itemKey);
             const filterBool = val === 'TRUE';
             if (isTagmeChecked !== filterBool) return false;
+          } else if (key === 'uploaded') {
+            const isUp = item.delivered === true || item.check2 === true || item.received === true || item.uploaded === true || item.uploaded === 'TRUE' || item.uploaded === 'true';
+            const filterBool = val === 'TRUE';
+            if (isUp !== filterBool) return false;
+          } else if (key === 'monthReviews') {
+            const weekStr = String(item.week || '');
+            const nameStr = String(item.name || item.filingName || '');
+            const isRev = weekStr.includes('مراجعة') || weekStr.includes('مراجعات') || nameStr.includes('مراجعة') || nameStr.includes('مراجعات');
+            const filterBool = val === 'TRUE';
+            if (isRev !== filterBool) return false;
           } else if (key === 'branch') {
             const norm = (s: string) => {
               let t = String(s || '').trim().toLowerCase();
@@ -13420,20 +13449,30 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
                 </>
               )}
 
-              {/* Responsive Cards Mode Toggle Button */}
-              {!isReelsAnalytics && !isStudioCalendar && !isAnalyticsTagme && !isDesignAnalytics && !isDesignersPage && (
-                <button
-                  onClick={() => setIsCardsView(prev => !prev)}
-                  className={`flex items-center gap-2 px-3.5 py-2 rounded-2xl border text-xs font-bold transition-all cursor-pointer shadow-sm ${
-                    isCardsView
-                      ? 'bg-amber-500/20 border-amber-500/50 text-amber-300 shadow-[0_0_15px_rgba(245,158,11,0.2)]'
-                      : 'bg-white/5 border-white/10 text-muted hover:bg-white/10 hover:text-white'
-                  }`}
-                  title={isCardsView ? 'التحويل لوضع الجدول' : 'التحويل لوضع البطاقات/الموبايل'}
-                >
-                  <span className="text-base">{isCardsView ? '📱' : '💻'}</span>
-                  <span>{isCardsView ? 'عرض كروت (Cards)' : 'عرض جدول (Table)'}</span>
-                </button>
+              {/* Stage Table vs Calendar View Mode Toggle */}
+              {isStageTab && (
+                <div className="flex items-center gap-1 bg-white/5 border border-white/10 p-1 rounded-2xl">
+                  <button
+                    onClick={() => setStageViewMode('TABLE')}
+                    className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                      stageViewMode === 'TABLE'
+                        ? 'bg-primary text-white shadow-md shadow-primary/30 font-black'
+                        : 'text-muted hover:text-white hover:bg-white/5'
+                    }`}
+                  >
+                    <span>💻 عرض جدول (Table)</span>
+                  </button>
+                  <button
+                    onClick={() => setStageViewMode('CALENDAR')}
+                    className={`flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer ${
+                      stageViewMode === 'CALENDAR'
+                        ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md shadow-indigo-500/30 font-black'
+                        : 'text-muted hover:text-white hover:bg-white/5'
+                    }`}
+                  >
+                    <span>📅 عرض تقويم (Calendar)</span>
+                  </button>
+                </div>
               )}
               {/* VE Simple Mode Toggle */}
               {activeGid === '1939073164' && (
@@ -13674,6 +13713,60 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
                   title="فلترة الدروس التي لم تُجمع بعد"
                 >
                   <span>لم تُجمع ⏳</span>
+                </button>
+
+                {/* Uploaded Filter Button */}
+                <button
+                  onClick={() => {
+                    setColFilters(prev => {
+                      const updated = { ...prev };
+                      if (updated.uploaded === 'TRUE') delete updated.uploaded;
+                      else updated.uploaded = 'TRUE';
+                      return updated;
+                    });
+                  }}
+                  className={`px-3 py-1.5 rounded-xl border font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                    colFilters.uploaded === 'TRUE'
+                      ? 'bg-blue-500/30 border-blue-400 text-blue-300 font-black scale-105 shadow-lg shadow-blue-500/20 ring-2 ring-blue-400/40'
+                      : 'bg-white/5 border-white/10 text-muted hover:bg-blue-500/10 hover:text-blue-300'
+                  }`}
+                  title="فلترة الدروس المرفوعة (Uploaded ✓)"
+                >
+                  <span className="text-blue-400 font-black">Uploaded ✓</span>
+                  {stageUploadedCount > 0 && (
+                    <span className={`px-1.5 py-0.5 rounded-md text-[9px] font-mono ${
+                      colFilters.uploaded === 'TRUE' ? 'bg-blue-500 text-white' : 'bg-white/10 text-blue-300'
+                    }`}>
+                      {stageUploadedCount}
+                    </span>
+                  )}
+                </button>
+
+                {/* Monthly Revisions Filter Button */}
+                <button
+                  onClick={() => {
+                    setColFilters(prev => {
+                      const updated = { ...prev };
+                      if (updated.monthReviews === 'TRUE') delete updated.monthReviews;
+                      else updated.monthReviews = 'TRUE';
+                      return updated;
+                    });
+                  }}
+                  className={`px-3 py-1.5 rounded-xl border font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                    colFilters.monthReviews === 'TRUE'
+                      ? 'bg-amber-500/30 border-amber-400 text-amber-300 font-black scale-105 shadow-lg shadow-amber-500/20 ring-2 ring-amber-400/40'
+                      : 'bg-white/5 border-white/10 text-muted hover:bg-amber-500/10 hover:text-amber-300'
+                  }`}
+                  title="فلترة مراجعات الشهر والمراجعات النهائية فقط"
+                >
+                  <span>مراجعات الشهر 📚</span>
+                  {stageReviewsCount > 0 && (
+                    <span className={`px-1.5 py-0.5 rounded-md text-[9px] font-mono ${
+                      colFilters.monthReviews === 'TRUE' ? 'bg-amber-500 text-white' : 'bg-white/10 text-amber-300'
+                    }`}>
+                      {stageReviewsCount}
+                    </span>
+                  )}
                 </button>
               </div>
             )}
@@ -14012,6 +14105,20 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
             <ErrorBoundary>
               <DesignersDashboard isDemoMode={isDemo} liveData={liveData} />
             </ErrorBoundary>
+          ) : isStageTab && stageViewMode === 'CALENDAR' ? (
+            <StageCalendarView
+              items={filteredData}
+              activeLabel={activeLabel}
+              activeGid={activeGid}
+              profile={profile}
+              tagmeTransfers={tagmeTransfers}
+              onTagmeToggle={handleTagmeToggle}
+              onToggleDelivered={handleToggleDelivered}
+              onUpdateDate={handleUpdateDate}
+              getChipColor={getChipColor}
+              getWeekColor={getWeekColor}
+              parseDriveLink={parseDriveLink}
+            />
           ) : isCardsView ? (
             /* 📱 Responsive Mobile Cards Mode View */
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 p-2 animate-fadeIn" dir="rtl">

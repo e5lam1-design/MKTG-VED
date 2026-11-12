@@ -11330,6 +11330,13 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
     ).length;
   }, [isStage, combinedData]);
 
+  const stageNotUploadedCount = useMemo(() => {
+    if (!isStage || !Array.isArray(combinedData)) return 0;
+    return combinedData.filter((item: any) => 
+      !(item.delivered === true || item.check2 === true || item.received === true || item.uploaded === true || item.uploaded === 'TRUE' || item.uploaded === 'true')
+    ).length;
+  }, [isStage, combinedData]);
+
   const stageReviewsCount = useMemo(() => {
     if (!isStage || !Array.isArray(combinedData)) return 0;
     return combinedData.filter((item: any) => {
@@ -13740,6 +13747,33 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
                       colFilters.uploaded === 'TRUE' ? 'bg-blue-500 text-white' : 'bg-white/10 text-blue-300'
                     }`}>
                       {stageUploadedCount}
+                    </span>
+                  )}
+                </button>
+
+                {/* Not Uploaded Yet Filter Button */}
+                <button
+                  onClick={() => {
+                    setColFilters(prev => {
+                      const updated = { ...prev };
+                      if (updated.uploaded === 'FALSE') delete updated.uploaded;
+                      else updated.uploaded = 'FALSE';
+                      return updated;
+                    });
+                  }}
+                  className={`px-3 py-1.5 rounded-xl border font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                    colFilters.uploaded === 'FALSE'
+                      ? 'bg-rose-500/30 border-rose-400 text-rose-300 font-black scale-105 shadow-lg shadow-rose-500/20 ring-2 ring-rose-400/40'
+                      : 'bg-white/5 border-white/10 text-muted hover:bg-rose-500/10 hover:text-rose-300'
+                  }`}
+                  title="فلترة الدروس التي لم تُرفع بعد (Not Uploaded Yet ⏳)"
+                >
+                  <span className="text-rose-400 font-black">Not Uploaded ⏳</span>
+                  {stageNotUploadedCount > 0 && (
+                    <span className={`px-1.5 py-0.5 rounded-md text-[9px] font-mono ${
+                      colFilters.uploaded === 'FALSE' ? 'bg-rose-500 text-white' : 'bg-white/10 text-rose-300'
+                    }`}>
+                      {stageNotUploadedCount}
                     </span>
                   )}
                 </button>

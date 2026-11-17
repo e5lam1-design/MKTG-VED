@@ -3018,6 +3018,11 @@ const ShootingRow = React.memo(({ item, index, activeGid, onToggleFilmed, loadin
     const isPrivileged = profile?.role === 'admin' || profile?.role === 'manager' || profile?.role === 'supervisor';
 
     if (fieldName === 'driveFinal') {
+      if (isMarketingUser) {
+        const msg = "غير مسموح لتيم الماركتينج بتعديل أو إزالة رابط الفاينال 🎬🔒 (خاص بتيم الفيديو فقط)";
+        if (toast && toast.error) toast.error(msg); else alert(msg);
+        return;
+      }
       const val = String(value || '').trim();
       const driveIdRegex = /^[a-zA-Z0-9_-]{25,55}$/;
       const isHardDrive = val.includes('هارد') || val.toLowerCase().includes('hard');
@@ -3141,8 +3146,9 @@ const ShootingRow = React.memo(({ item, index, activeGid, onToggleFilmed, loadin
   const isPrivilegedUser = profile?.role === 'admin' || profile?.role === 'manager' || profile?.role === 'supervisor';
   const isPrivileged = isPrivilegedUser;
   const isVideoTeam = profile?.team?.toLowerCase() === 'video';
-  const canModifyDone = isVideoTeam || profile?.role === 'admin' || profile?.role === 'manager';
-  const isMarketingUser = profile?.team?.toLowerCase() === 'marketing' && profile?.role !== 'admin' && profile?.role !== 'manager';
+  const isMarketingTeam = profile?.team?.toLowerCase() === 'marketing' && profile?.role !== 'admin';
+  const canModifyDone = (isVideoTeam || profile?.role === 'admin') && !isMarketingTeam;
+  const isMarketingUser = isMarketingTeam;
 
   return (
     <tr
@@ -4107,8 +4113,9 @@ const CutsRow = React.memo(({
   const [optimisticHardDriveStatus, setOptimisticHardDriveStatus] = useState<string | null | undefined>(undefined);
   const { profile } = useAuth();
   const isVideoTeam = profile?.team?.toLowerCase() === 'video';
-  const canModifyDone = isVideoTeam || profile?.role === 'admin' || profile?.role === 'manager';
-  const isMarketingUser = profile?.team?.toLowerCase() === 'marketing' && profile?.role !== 'admin' && profile?.role !== 'manager';
+  const isMarketingTeam = profile?.team?.toLowerCase() === 'marketing' && profile?.role !== 'admin';
+  const canModifyDone = (isVideoTeam || profile?.role === 'admin') && !isMarketingTeam;
+  const isMarketingUser = isMarketingTeam;
   const [isEditChecked, setIsEditChecked] = useState(Boolean(item.editCheck || item.edit_check));
 
   useEffect(() => {
@@ -10040,14 +10047,25 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
       };
     }
 
-    // Guard: Prevent marketing/non-video users from modifying Done in VE (1939073164) and Cuts (0)
-    if ((activeGid === '1939073164' || activeGid === '0') && updatedItem.done !== prevItem?.done) {
+    // Guard: Prevent marketing users (both juniors and managers) from modifying Done or removing/modifying Final Link in VE (1939073164) and Cuts (0)
+    if (activeGid === '1939073164' || activeGid === '0') {
       const isVideoTeam = profile?.team?.toLowerCase() === 'video';
-      const isPrivileged = profile?.role === 'admin' || profile?.role === 'manager';
-      if (!isVideoTeam && !isPrivileged) {
+      const isMarketingTeam = profile?.team?.toLowerCase() === 'marketing' && profile?.role !== 'admin';
+      const canModifyDone = (isVideoTeam || profile?.role === 'admin') && !isMarketingTeam;
+      const canEditFinal = (isVideoTeam || profile?.role === 'admin') && !isMarketingTeam;
+
+      if (updatedItem.done !== prevItem?.done && !canModifyDone) {
         const msg = prevItem?.done 
           ? "غير مسموح لتيم الماركتينج بإلغاء Done 🔒 (المسموح لك فقط هو طلب تعديل عبر زر EDIT)"
           : "تعديل حالة Done خاص بفريق الفيديو فقط 🎬🔒";
+        if (toast && toast.error) toast.error(msg);
+        return;
+      }
+
+      const prevFinal = String(prevItem?.driveFinal || prevItem?.drive_final || '').trim();
+      const nextFinal = String(updatedItem.driveFinal || updatedItem.drive_final || '').trim();
+      if (!canEditFinal && prevFinal && prevFinal !== nextFinal) {
+        const msg = "غير مسموح لتيم الماركتينج بإزالة أو تعديل رابط الفاينال 🎬🔒 (خاص بتيم الفيديو فقط)";
         if (toast && toast.error) toast.error(msg);
         return;
       }

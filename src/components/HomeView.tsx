@@ -110,6 +110,9 @@ const BILINGUAL_NAME_MAP: Record<string, string[]> = {
   'rawan': ['rawan', 'روان'],
   'nada': ['nada', 'ندى', 'ندا'],
   'hima': ['hima', 'هيما', 'ابراهيم', 'إبراهيم'],
+  'sherif': ['sherif', 'shrief', 'shereef', 'sharif', 'شريف', 'م/ شريف', 'shrieeali'],
+  'shrief': ['sherif', 'shrief', 'shereef', 'sharif', 'شريف', 'م/ شريف', 'shrieeali'],
+  'شريف': ['sherif', 'shrief', 'shereef', 'sharif', 'شريف', 'م/ شريف', 'shrieeali'],
 };
 
 export function resolveUserAliases(user: UserProfile | null, overrideName?: string): string[] {

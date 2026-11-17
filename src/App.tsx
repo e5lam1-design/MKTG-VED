@@ -5813,7 +5813,12 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
     return () => clearInterval(interval);
   }, [refresh, loading, sheetGidToFetch, activeGid]);
 
-  const currentUserName = profile?.name || localStorage.getItem('user_editor_name') || 'ESLAM';
+  const currentUserName = (() => {
+    const raw = profile?.name || localStorage.getItem('user_editor_name') || 'ESLAM';
+    const clean = raw.trim();
+    if (clean.toLowerCase() === 'shrief') return 'Sherif';
+    return clean;
+  })();
   const [isMyTasksOnly, setIsMyTasksOnly] = useState(false);
 
   const [pinnedTabs, setPinnedTabs] = useState<string[]>(() => {
@@ -11420,6 +11425,14 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
           aliases.add('eslam');
           aliases.add('admin');
         }
+        if (aliases.has('sherif') || aliases.has('shrief') || aliases.has('شريف') || aliases.has('shrieeali') || (profile?.email && profile.email.includes('shrieeali'))) {
+          aliases.add('sherif');
+          aliases.add('shrief');
+          aliases.add('شريف');
+          aliases.add('shereef');
+          aliases.add('sharif');
+          aliases.add('shrieeali');
+        }
         if (aliases.has('esraa') || aliases.has('esraaaboelkheir')) {
           aliases.add('esraa');
           aliases.add('esraaaboelkheir');
@@ -11561,6 +11574,14 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
         if (aliases.has('eslam') || aliases.has('admin')) {
           aliases.add('eslam');
           aliases.add('admin');
+        }
+        if (aliases.has('sherif') || aliases.has('shrief') || aliases.has('شريف') || aliases.has('shrieeali') || (profile?.email && profile.email.includes('shrieeali'))) {
+          aliases.add('sherif');
+          aliases.add('shrief');
+          aliases.add('شريف');
+          aliases.add('shereef');
+          aliases.add('sharif');
+          aliases.add('shrieeali');
         }
         if (aliases.has('esraa') || aliases.has('esraaaboelkheir')) {
           aliases.add('esraa');

@@ -753,7 +753,7 @@ const InlineCombobox = React.memo(({ value, onChange, options, placeholder }: an
             bottom: dropdownPos.bottom !== undefined ? `${dropdownPos.bottom}px` : 'auto',
             left: `${dropdownPos.left}px`,
             width: `${dropdownPos.width}px`,
-            backgroundColor: '#0c1222',
+            backgroundColor: 'var(--dropdown-bg, #0c1222)',
             zIndex: 999999
           }}
           className="border border-white/25 rounded-2xl shadow-[0_25px_70px_rgba(0,0,0,0.98)] py-2 flex flex-col justify-between max-h-96 overflow-hidden animate-fadeIn"
@@ -794,7 +794,7 @@ const InlineCombobox = React.memo(({ value, onChange, options, placeholder }: an
           </div>
           
           <div 
-            style={{ backgroundColor: '#0c1222' }}
+            style={{ backgroundColor: 'var(--dropdown-bg, #0c1222)' }}
             className="px-2 pt-2 mt-2 border-t border-white/10 shrink-0 z-10 pb-1"
           >
              <input 
@@ -951,7 +951,7 @@ const CustomSelect = ({ value, onChange, options, placeholder, isColumn = false 
             bottom: dropdownPos.bottom !== undefined ? `${dropdownPos.bottom}px` : 'auto',
             left: `${dropdownPos.left}px`,
             width: `${dropdownPos.width}px`,
-            backgroundColor: '#0c1222',
+            backgroundColor: 'var(--dropdown-bg, #0c1222)',
             zIndex: 999999
           }}
           className="border border-white/25 rounded-2xl shadow-[0_25px_70px_rgba(0,0,0,0.98)] py-2 flex flex-col max-h-64 overflow-hidden animate-fadeIn"
@@ -959,7 +959,7 @@ const CustomSelect = ({ value, onChange, options, placeholder, isColumn = false 
         >
           {/* Search Input Box */}
           <div 
-            style={{ backgroundColor: '#0c1222' }}
+            style={{ backgroundColor: 'var(--dropdown-bg, #0c1222)' }}
             className="px-2 pb-2 border-b border-white/10 shrink-0"
           >
             <input
@@ -1060,25 +1060,29 @@ const SidebarItem = ({
   inProgressCount,
   missingDetailsCount,
   showDoneGreenBadge,
+  lightMode,
   badgeTitle 
 }: any) => {
   const cHex = colorHex || '#3b82f6';
+  const isLight = lightMode ?? (typeof document !== 'undefined' && document.documentElement.classList.contains('light-mode'));
 
   const bgStyle = colorful
     ? (active 
-        ? { backgroundColor: `${cHex}35`, color: '#ffffff', borderColor: `${cHex}80`, boxShadow: `0 0 25px ${cHex}40` } 
-        : { backgroundColor: `${cHex}18`, color: '#ffffff', borderColor: `${cHex}30` })
+        ? { backgroundColor: isLight ? `${cHex}24` : `${cHex}35`, color: isLight ? '#0f172a' : '#ffffff', borderColor: `${cHex}80`, boxShadow: isLight ? `0 4px 16px ${cHex}28` : `0 0 25px ${cHex}40` } 
+        : { backgroundColor: isLight ? `${cHex}14` : `${cHex}18`, color: isLight ? '#1e293b' : '#ffffff', borderColor: isLight ? `${cHex}35` : `${cHex}30` })
     : (active
-        ? { backgroundColor: `rgba(255,255,255,0.08)`, color: '#ffffff', borderColor: `rgba(255,255,255,0.15)` }
-        : { backgroundColor: `transparent`, color: '#94a3b8', borderColor: `transparent` });
+        ? (isLight
+            ? { backgroundColor: `rgba(99, 102, 241, 0.13)`, color: '#1e1b4b', borderColor: `rgba(99, 102, 241, 0.35)`, boxShadow: '0 4px 12px rgba(99, 102, 241, 0.12)' }
+            : { backgroundColor: `rgba(255,255,255,0.08)`, color: '#ffffff', borderColor: `rgba(255,255,255,0.15)` })
+        : { backgroundColor: `transparent`, color: isLight ? '#475569' : '#94a3b8', borderColor: `transparent` });
 
   const iconBgStyle = colorful
     ? (active 
-        ? { backgroundColor: cHex, color: '#ffffff', boxShadow: `0 0 20px ${cHex}` } 
-        : { backgroundColor: `${cHex}30`, color: cHex })
+        ? { backgroundColor: cHex, color: '#ffffff', boxShadow: isLight ? `0 4px 12px ${cHex}55` : `0 0 20px ${cHex}` } 
+        : { backgroundColor: isLight ? `${cHex}25` : `${cHex}30`, color: cHex })
     : (active
-        ? { backgroundColor: `#3b82f6`, color: '#ffffff', boxShadow: `0 0 20px rgba(59,130,246,0.5)` }
-        : { backgroundColor: `rgba(255,255,255,0.05)`, color: '#94a3b8' });
+        ? { backgroundColor: `#3b82f6`, color: '#ffffff', boxShadow: isLight ? `0 4px 14px rgba(59,130,246,0.4)` : `0 0 20px rgba(59,130,246,0.5)` }
+        : { backgroundColor: isLight ? `#e2e8f0` : `rgba(255,255,255,0.05)`, color: isLight ? '#475569' : '#94a3b8' });
 
   const hasPending = typeof badgeCount === 'number' && badgeCount > 0;
   const hasInProgress = typeof inProgressCount === 'number' && inProgressCount > 0;
@@ -1095,13 +1099,13 @@ const SidebarItem = ({
       className={`w-full flex items-center gap-4 px-5 py-3.5 rounded-2xl border transition-all duration-300 group cursor-pointer ${
         active 
           ? 'font-black scale-[1.03]' 
-          : 'hover:scale-[1.01] hover:brightness-125 opacity-85 hover:opacity-100'
+          : `hover:scale-[1.01] ${isLight ? 'hover:bg-slate-200/70' : 'hover:brightness-125'} opacity-85 hover:opacity-100`
       }`}
     >
       <div style={iconBgStyle} className="p-2.5 rounded-xl transition-all duration-300 group-hover:scale-110 flex items-center justify-center shrink-0">
         <Icon size={20} />
       </div>
-      <span className="font-bold text-sm tracking-tight truncate text-left text-white flex-1">{label}</span>
+      <span style={isLight ? { color: bgStyle.color } : undefined} className={`font-bold text-sm tracking-tight truncate text-left flex-1 ${isLight ? '' : 'text-white'}`}>{label}</span>
       
       {/* Badges Container: Yellow (Problem/Missing) + Orange (In Progress) + Red (Unassigned Pending) / Green checkmark for done */}
       <div className="flex items-center gap-1.5 shrink-0">
@@ -1206,13 +1210,13 @@ const SidebarItem = ({
           <Pin size={14} className={isPinned ? 'fill-amber-400' : ''} />
         </span>
       )}
-      {active && <motion.div layoutId="active-pill" className="text-white"><ChevronRight size={16} /></motion.div>}
+      {active && <motion.div layoutId="active-pill" style={isLight ? { color: bgStyle.color } : undefined} className={isLight ? '' : 'text-white'}><ChevronRight size={16} /></motion.div>}
     </button>
   );
 };
 
 // ─── Collapsible Sidebar Group ────────────────────────────────────────────────
-const SidebarGroup = ({ title, iconEmoji, colorHex, stagesList, activeGid, onSelectStage, pinnedTabs, togglePinTab, colorful, profile, stageUncompletedCounts, stageInProgressCounts, stageMissingDetailsCounts }: any) => {
+const SidebarGroup = ({ title, iconEmoji, colorHex, stagesList, activeGid, onSelectStage, pinnedTabs, togglePinTab, colorful, lightMode, profile, stageUncompletedCounts, stageInProgressCounts, stageMissingDetailsCounts }: any) => {
   const visibleStages = stagesList.filter((stage: any) =>
     !profile?.role || PERMISSIONS.canViewTab(profile.role, stage.label, profile.allowed_tabs || [])
   );
@@ -1262,6 +1266,7 @@ const SidebarGroup = ({ title, iconEmoji, colorHex, stagesList, activeGid, onSel
                 label={stage.label}
                 colorHex={stage.colorHex}
                 colorful={colorful}
+                lightMode={lightMode}
                 active={activeGid === stage.gid}
                 badgeCount={STAGE_WITH_BADGE_MAP[stage.gid] ? stageUncompletedCounts?.[stage.gid] : undefined}
                 inProgressCount={STAGE_WITH_BADGE_MAP[stage.gid] ? stageInProgressCounts?.[stage.gid] : undefined}
@@ -8712,7 +8717,76 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
     return null;
   }, [shootingAddForm.scriptName, shootingAddForm.year, shootingAddForm.teacher, shootingAddForm.extraName, activeGid, reelsDbRows]);
 
-  const [colorfulTabs, setColorfulTabs] = useState(false);
+  const syncedThemeUserRef = useRef<string | null>(null);
+  const [colorfulTabs, setColorfulTabs] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('dashboard_colorful_ui_v1') === 'true';
+    } catch {
+      return false;
+    }
+  });
+
+  const [lightMode, setLightMode] = useState<boolean>(() => {
+    try {
+      const saved = localStorage.getItem('dashboard_light_mode_v1') === 'true';
+      if (typeof document !== 'undefined') {
+        document.documentElement.classList.toggle('light-mode', saved);
+        document.body.classList.toggle('light-mode', saved);
+      }
+      return saved;
+    } catch {
+      return false;
+    }
+  });
+
+  // Load user-specific UI preferences once profile is available
+  useEffect(() => {
+    if (!profile?.id) {
+      syncedThemeUserRef.current = null;
+      return;
+    }
+    try {
+      const userLight = localStorage.getItem(`dashboard_light_mode_user_${profile.id}`);
+      if (userLight !== null) {
+        const parsed = userLight === 'true';
+        setLightMode(parsed);
+        localStorage.setItem('dashboard_light_mode_v1', String(parsed));
+      } else {
+        localStorage.setItem(`dashboard_light_mode_user_${profile.id}`, String(lightMode));
+      }
+      const userColorful = localStorage.getItem(`dashboard_colorful_ui_user_${profile.id}`);
+      if (userColorful !== null) {
+        const parsedColor = userColorful === 'true';
+        setColorfulTabs(parsedColor);
+        localStorage.setItem('dashboard_colorful_ui_v1', String(parsedColor));
+      } else {
+        localStorage.setItem(`dashboard_colorful_ui_user_${profile.id}`, String(colorfulTabs));
+      }
+      syncedThemeUserRef.current = profile.id;
+    } catch {}
+  }, [profile?.id]);
+
+  // Sync lightMode to DOM and localStorage
+  useEffect(() => {
+    try {
+      document.documentElement.classList.toggle('light-mode', lightMode);
+      document.body.classList.toggle('light-mode', lightMode);
+      localStorage.setItem('dashboard_light_mode_v1', String(lightMode));
+      if (profile?.id && syncedThemeUserRef.current === profile.id) {
+        localStorage.setItem(`dashboard_light_mode_user_${profile.id}`, String(lightMode));
+      }
+    } catch {}
+  }, [lightMode, profile?.id]);
+
+  // Sync colorfulTabs to localStorage
+  useEffect(() => {
+    try {
+      localStorage.setItem('dashboard_colorful_ui_v1', String(colorfulTabs));
+      if (profile?.id && syncedThemeUserRef.current === profile.id) {
+        localStorage.setItem(`dashboard_colorful_ui_user_${profile.id}`, String(colorfulTabs));
+      }
+    } catch {}
+  }, [colorfulTabs, profile?.id]);
   const [visibleRecordsLimit, setVisibleRecordsLimit] = useState(200);
   const [veViewMode, setVeViewMode] = useState<'SIMPLE' | 'DETAILED'>(() => {
     try {
@@ -12210,14 +12284,29 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
         </div>
 
         <nav className="flex flex-col gap-2 flex-1 overflow-y-auto pr-2 scrollbar-hide">
-          <div className="flex items-center justify-between px-4 py-2.5 mb-6 bg-white/[0.03] border border-white/[0.05] rounded-2xl">
-            <span className="text-[10px] font-black uppercase tracking-[0.2em] text-muted">🎨 Colorful UI</span>
-            <button
-              onClick={() => setColorfulTabs(!colorfulTabs)}
-              className={`w-11 h-6 rounded-full p-1 transition-colors duration-300 cursor-pointer ${colorfulTabs ? 'bg-primary shadow-lg shadow-primary/40' : 'bg-white/10'}`}
-            >
-              <div className={`w-4 h-4 rounded-full bg-white transition-transform duration-300 ${colorfulTabs ? 'translate-x-5' : 'translate-x-0'}`} />
-            </button>
+          <div className="flex flex-col gap-2 mb-6">
+            <div className="flex items-center justify-between px-4 py-2.5 bg-white/[0.03] border border-white/[0.05] rounded-2xl">
+              <span className="text-[10px] font-black uppercase tracking-[0.2em] text-muted">🎨 Colorful UI</span>
+              <button
+                onClick={() => setColorfulTabs(!colorfulTabs)}
+                className={`w-11 h-6 rounded-full p-1 transition-colors duration-300 cursor-pointer ${colorfulTabs ? 'bg-primary shadow-lg shadow-primary/40' : 'bg-white/10 toggle-track-off'}`}
+              >
+                <div className={`w-4 h-4 rounded-full bg-white toggle-knob transition-transform duration-300 ${colorfulTabs ? 'translate-x-5' : 'translate-x-0'}`} />
+              </button>
+            </div>
+
+            <div className="flex items-center justify-between px-4 py-2.5 bg-white/[0.03] border border-white/[0.05] rounded-2xl">
+              <span className="text-[10px] font-black uppercase tracking-[0.2em] text-muted">
+                {lightMode ? '☀️ Light Mode' : '🌤️ Light Mode'}
+              </span>
+              <button
+                onClick={() => setLightMode(!lightMode)}
+                className={`w-11 h-6 rounded-full p-1 transition-colors duration-300 cursor-pointer ${lightMode ? 'bg-amber-500 shadow-lg shadow-amber-500/40' : 'bg-white/10 toggle-track-off'}`}
+                title={lightMode ? 'الوضع الفاتح مفعل (مريح للعين) - اضغط للتبديل للوضع الداكن' : 'تفعيل الوضع الفاتح المريح للعين (Light Mode)'}
+              >
+                <div className={`w-4 h-4 rounded-full bg-white toggle-knob transition-transform duration-300 ${lightMode ? 'translate-x-5' : 'translate-x-0'}`} />
+              </button>
+            </div>
           </div>
           {/* Top Static Tabs */}
           {stages.filter(s => s.gid === 'home' || s.gid === '1476192399' || s.gid === 'op_27' || s.gid === '1535230545').filter(stage => {
@@ -12231,6 +12320,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
               label={stage.label}
               colorHex={stage.colorHex}
               colorful={colorfulTabs}
+              lightMode={lightMode}
               active={activeGid === stage.gid}
               badgeCount={STAGE_WITH_BADGE_MAP[stage.gid] ? stageUncompletedCounts[stage.gid] : undefined}
               inProgressCount={STAGE_WITH_BADGE_MAP[stage.gid] ? stageInProgressCounts[stage.gid] : undefined}
@@ -12351,6 +12441,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
                 label={stage.label}
                 colorHex={stage.colorHex}
                 colorful={colorfulTabs}
+                lightMode={lightMode}
                 active={activeGid === stage.gid}
                 badgeCount={stage.gid === 'reels-calendar' ? (todayCalendarScriptsCount > 0 ? todayCalendarScriptsCount : undefined) : (STAGE_WITH_BADGE_MAP[stage.gid] ? stageUncompletedCounts[stage.gid] : undefined)}
                 badgeTitle={stage.gid === 'reels-calendar' ? `${todayCalendarScriptsCount} مواعيد تصوير مسجلة لليوم 🎬📅` : undefined}
@@ -12384,6 +12475,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
               label="المستخدمين 👥"
               colorHex="#f43f5e"
               colorful={colorfulTabs}
+              lightMode={lightMode}
               active={activeGid === '__users__'}
               onClick={() => {
                 setActiveGid('__users__');
@@ -12400,6 +12492,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
               label="سجل الرقابة 🛡️"
               colorHex="#38bdf8"
               colorful={colorfulTabs}
+              lightMode={lightMode}
               active={activeGid === '__audit_trail__'}
               onClick={() => {
                 setActiveGid('__audit_trail__');
@@ -14116,37 +14209,39 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
             </ErrorBoundary>
           ) : isStudioCalendar ? (
             <ErrorBoundary>
-              <StudioCalendarView
-                isDemo={isDemo}
-                userProfile={profile}
-                toast={toast}
-                onNavigateToShootingTeacher={(teacherName: string) => {
-                  const cleanTarget = String(teacherName || '').trim();
-                  if (!cleanTarget) return;
+              <div className="studio-calendar-isolated">
+                <StudioCalendarView
+                  isDemo={isDemo}
+                  userProfile={profile}
+                  toast={toast}
+                  onNavigateToShootingTeacher={(teacherName: string) => {
+                    const cleanTarget = String(teacherName || '').trim();
+                    if (!cleanTarget) return;
 
-                  const shootingRows = reelsDbByGid['1436746012'] || [];
-                  const exactRow = shootingRows.find(
-                    (r: any) => String(r.teacher || '').trim().toLowerCase() === cleanTarget.toLowerCase()
-                  );
-                  const matchedTeacher = exactRow?.teacher ? String(exactRow.teacher).trim() : cleanTarget;
+                    const shootingRows = reelsDbByGid['1436746012'] || [];
+                    const exactRow = shootingRows.find(
+                      (r: any) => String(r.teacher || '').trim().toLowerCase() === cleanTarget.toLowerCase()
+                    );
+                    const matchedTeacher = exactRow?.teacher ? String(exactRow.teacher).trim() : cleanTarget;
 
-                  setAppMode('REELS');
-                  setActiveGid('1436746012');
-                  setActiveLabel('Shooting');
-                  setStatusFilter('All');
-                  setYearFilter('All');
-                  setTermFilter('All');
-                  setBypassYearTerm(false);
-                  setStageWeekFilter('All');
-                  setSearchQuery('');
-                  setIsMyTasksOnly(false);
-                  setTeacherFilter(matchedTeacher);
-                  setColFilters({ teacher: matchedTeacher });
+                    setAppMode('REELS');
+                    setActiveGid('1436746012');
+                    setActiveLabel('Shooting');
+                    setStatusFilter('All');
+                    setYearFilter('All');
+                    setTermFilter('All');
+                    setBypassYearTerm(false);
+                    setStageWeekFilter('All');
+                    setSearchQuery('');
+                    setIsMyTasksOnly(false);
+                    setTeacherFilter(matchedTeacher);
+                    setColFilters({ teacher: matchedTeacher });
 
-                  window.scrollTo({ top: 0, behavior: 'smooth' });
-                  toast.success(`🎬 تم فتح شيت Shooting وفلترته على المدرس: ${matchedTeacher}`);
-                }}
-              />
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                    toast.success(`🎬 تم فتح شيت Shooting وفلترته على المدرس: ${matchedTeacher}`);
+                  }}
+                />
+              </div>
             </ErrorBoundary>
           ) : isTeachersTab ? (
             PERMISSIONS.canViewTab(profile?.role || 'junior', 'Teachers', profile?.allowed_tabs || []) ? (

@@ -191,6 +191,7 @@ export const GlobalAnnouncementBar: React.FC<GlobalAnnouncementBarProps> = ({
 
   // Suggestion Client Interaction State
   const [userSuggestionInput, setUserSuggestionInput] = useState<string>('');
+  const [sendAsAnonymous, setSendAsAnonymous] = useState<boolean>(false);
   const [isSubmittingSuggestion, setIsSubmittingSuggestion] = useState<boolean>(false);
   const [showSuggestionsListModal, setShowSuggestionsListModal] = useState<boolean>(false);
   const [loadedSuggestions, setLoadedSuggestions] = useState<SuggestionEntry[]>([]);
@@ -564,7 +565,9 @@ export const GlobalAnnouncementBar: React.FC<GlobalAnnouncementBarProps> = ({
     }
 
     setIsSubmittingSuggestion(true);
-    const res = await submitBroadcastSuggestion(clean, currentUserId, currentUserName);
+    const senderId = sendAsAnonymous ? `anon_${Date.now()}` : currentUserId;
+    const senderName = sendAsAnonymous ? 'مجهول 🕵️' : currentUserName;
+    const res = await submitBroadcastSuggestion(clean, senderId, senderName);
     setIsSubmittingSuggestion(false);
 
     if (res.success) {
@@ -1125,7 +1128,11 @@ export const GlobalAnnouncementBar: React.FC<GlobalAnnouncementBarProps> = ({
                     <div className="flex items-center justify-between text-xs text-white/80">
                       <span className="font-bold flex items-center gap-1.5">
                         <Lightbulb size={13} className="text-amber-400" />
-                        <span>اكتب إجابتك أو اقتراحك هنا (ستسجل باسمك فوراً):</span>
+                        <span>
+                          {sendAsAnonymous
+                            ? 'اكتب إجابتك أو اقتراحك هنا (سيتم الإرسال كمجهول 🕵️ بدون إظهار اسمك):'
+                            : 'اكتب إجابتك أو اقتراحك هنا (ستسجل باسمك فوراً):'}
+                        </span>
                       </span>
                       <button
                         type="button"
@@ -1137,14 +1144,27 @@ export const GlobalAnnouncementBar: React.FC<GlobalAnnouncementBarProps> = ({
                       </button>
                     </div>
 
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap sm:flex-nowrap items-center gap-2">
                       <input
                         type="text"
                         value={userSuggestionInput}
                         onChange={(e) => setUserSuggestionInput(e.target.value)}
-                        placeholder="اكتب اقتراحك بوضوح..."
-                        className="flex-1 bg-black/40 border border-white/15 focus:border-amber-400 rounded-xl px-4 py-2.5 text-sm text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-amber-400/30 transition-all font-medium"
+                        placeholder={sendAsAnonymous ? 'اكتب اقتراحك بوضوح (سيُرسل كمجهول 🕵️)...' : 'اكتب اقتراحك بوضوح...'}
+                        className="flex-1 min-w-[200px] bg-black/40 border border-white/15 focus:border-amber-400 rounded-xl px-4 py-2.5 text-sm text-white placeholder-white/40 focus:outline-none focus:ring-2 focus:ring-amber-400/30 transition-all font-medium"
                       />
+                      <button
+                        type="button"
+                        onClick={() => setSendAsAnonymous(prev => !prev)}
+                        className={`px-3.5 py-2.5 rounded-xl border text-xs font-black transition-all flex items-center gap-1.5 shrink-0 cursor-pointer ${
+                          sendAsAnonymous
+                            ? 'bg-purple-600 text-white border-purple-400 shadow-md shadow-purple-500/25'
+                            : 'bg-white/5 border-white/15 text-muted hover:text-white hover:bg-white/10'
+                        }`}
+                        title="تفعيل أو إلغاء الإرسال كمجهول بدون إظهار اسمك"
+                      >
+                        <span>🕵️</span>
+                        <span>{sendAsAnonymous ? 'كمجهول ✓' : 'إرسال كمجهول'}</span>
+                      </button>
                       <button
                         type="submit"
                         disabled={isSubmittingSuggestion || !userSuggestionInput.trim()}

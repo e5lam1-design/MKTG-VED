@@ -201,6 +201,7 @@ export const GlobalAnnouncementBar: React.FC<GlobalAnnouncementBarProps> = ({
   const [isSaving, setIsSaving] = useState<boolean>(false);
 
   // Management permissions: Admin or Manager only
+  const isAdmin = userRole === 'admin';
   const canManage = userRole === 'admin' || userRole === 'manager';
 
   const handleImageFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -580,6 +581,7 @@ export const GlobalAnnouncementBar: React.FC<GlobalAnnouncementBarProps> = ({
   };
 
   const handleOpenSuggestionsModal = async () => {
+    if (!isAdmin) return;
     setShowSuggestionsListModal(true);
     setIsLoadingSuggestions(true);
     const list = await fetchBroadcastSuggestions('__global__');
@@ -588,7 +590,7 @@ export const GlobalAnnouncementBar: React.FC<GlobalAnnouncementBarProps> = ({
   };
 
   const handleDeleteSuggestionItem = async (sugId: string) => {
-    if (!canManage) return;
+    if (!isAdmin) return;
     const ok = await deleteBroadcastSuggestion(sugId);
     if (ok) {
       setLoadedSuggestions(prev => prev.filter(s => s.id !== sugId));
@@ -776,8 +778,8 @@ export const GlobalAnnouncementBar: React.FC<GlobalAnnouncementBarProps> = ({
                 {isQaMode ? 'سؤال ومقترحات 💡' : isPollMode ? 'استطلاع رأي مباشر 🗳️' : activeColor.label}
               </span>
 
-              {/* Suggestions count badge for Q&A */}
-              {isQaMode && (
+              {/* Suggestions count badge for Q&A (Admin only) */}
+              {isQaMode && isAdmin && (
                 <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 border border-amber-500/30 text-amber-200">
                   <MessageSquare size={11} className="text-amber-300" />
                   <span>{announcement.qa_data?.totalResponses || announcement.qa_data?.suggestions?.length || 0} اقتراح</span>
@@ -832,7 +834,7 @@ export const GlobalAnnouncementBar: React.FC<GlobalAnnouncementBarProps> = ({
                     </button>
                   </>
                 )}
-                {isQaMode && (
+                {isQaMode && isAdmin && (
                   <button
                     onClick={handleOpenSuggestionsModal}
                     className="p-1.5 px-2.5 rounded-lg bg-amber-500/10 hover:bg-amber-500/25 border border-amber-500/20 hover:border-amber-500/40 text-amber-300 transition-all text-xs flex items-center gap-1 cursor-pointer"
@@ -1134,14 +1136,16 @@ export const GlobalAnnouncementBar: React.FC<GlobalAnnouncementBarProps> = ({
                             : 'اكتب إجابتك أو اقتراحك هنا (ستسجل باسمك فوراً):'}
                         </span>
                       </span>
-                      <button
-                        type="button"
-                        onClick={handleOpenSuggestionsModal}
-                        className="text-amber-300 hover:text-amber-200 text-[11px] font-bold hover:underline flex items-center gap-1 cursor-pointer transition-colors"
-                      >
-                        <MessageSquare size={12} />
-                        <span>عرض مقترحات الفريق ({announcement.qa_data.totalResponses || announcement.qa_data.suggestions?.length || 0})</span>
-                      </button>
+                      {isAdmin && (
+                        <button
+                          type="button"
+                          onClick={handleOpenSuggestionsModal}
+                          className="text-amber-300 hover:text-amber-200 text-[11px] font-bold hover:underline flex items-center gap-1 cursor-pointer transition-colors"
+                        >
+                          <MessageSquare size={12} />
+                          <span>عرض مقترحات الفريق ({announcement.qa_data.totalResponses || announcement.qa_data.suggestions?.length || 0})</span>
+                        </button>
+                      )}
                     </div>
 
                     <div className="flex flex-wrap sm:flex-nowrap items-center gap-2">
@@ -1198,7 +1202,7 @@ export const GlobalAnnouncementBar: React.FC<GlobalAnnouncementBarProps> = ({
                   </span>
                 )}
 
-                {isQaMode && (
+                {isQaMode && isAdmin && (
                   <button
                     type="button"
                     onClick={handleOpenSuggestionsModal}
@@ -1268,7 +1272,7 @@ export const GlobalAnnouncementBar: React.FC<GlobalAnnouncementBarProps> = ({
       {showVotersModal && renderVotersModal()}
 
       {/* Suggestions List Modal */}
-      {showSuggestionsListModal && renderSuggestionsModal()}
+      {isAdmin && showSuggestionsListModal && renderSuggestionsModal()}
 
       {/* Full-Screen Image Lightbox Modal */}
       {showImageLightbox && announcement.imageUrl && (
@@ -1388,6 +1392,7 @@ export const GlobalAnnouncementBar: React.FC<GlobalAnnouncementBarProps> = ({
 
   // Render Suggestions List Modal (Q&A / Ideas from Supabase)
   function renderSuggestionsModal() {
+    if (!isAdmin) return null;
     return (
       <div className="fixed inset-0 z-[10000] flex items-center justify-center p-4 bg-black/80 backdrop-blur-md animate-fadeIn" dir="rtl">
         <motion.div

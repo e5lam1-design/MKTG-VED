@@ -2897,7 +2897,7 @@ const DocLinksDropdown = ({ docUrl, toast }: { docUrl: string; toast?: any }) =>
     }
     setLoading(true);
     try {
-      const res = await fetch(`/api/doc-extract?url=${encodeURIComponent(docUrl)}`);
+      const res = await fetch(`/api/duration?action=doc-extract&url=${encodeURIComponent(docUrl)}`);
       const json = await res.json();
       const result = {
         codes: Array.isArray(json.codes) ? json.codes : [],

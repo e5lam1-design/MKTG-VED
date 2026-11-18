@@ -5,9 +5,12 @@ function localDocExtractPlugin() {
   return {
     name: 'local-doc-extract',
     configureServer(server: any) {
-      server.middlewares.use('/api/doc-extract', async (req: any, res: any, next: any) => {
+      server.middlewares.use('/api/duration', async (req: any, res: any, next: any) => {
         try {
           const reqUrl = new URL(req.url || '', 'http://localhost');
+          if (reqUrl.searchParams.get('action') !== 'doc-extract') {
+            return next();
+          }
           const rawUrl = reqUrl.searchParams.get('url') || reqUrl.searchParams.get('docId') || '';
           const match = rawUrl.match(/\/document\/d\/([a-zA-Z0-9_-]+)/i);
           const docId = (match && match[1]) || (/^[a-zA-Z0-9_-]{20,}$/.test(rawUrl.trim()) ? rawUrl.trim() : null);

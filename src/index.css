@@ -261,43 +261,49 @@ body {
 }
 
 /* ========================================================
-   LIGHT MODE THEME (Eye-Comfortable Warm Daylight Palette)
+   LIGHT MODE THEME (Soft Matte Gray & Calm Eye-Comfort Palette)
    Isolated away from StudioCalendarView via :not(.studio-calendar-isolated *)
 ======================================================== */
 html.light-mode {
-  --background: #eef2f6;
-  --foreground: #0f172a;
+  --background: #e2e6ec;
+  --foreground: #1e293b;
   --primary: #4f46e5;
   --primary-bright: #6366f1;
-  --secondary: #e2e8f0;
-  --accent: #7c3aed;
-  --border: rgba(15, 23, 42, 0.09);
-  --glass: rgba(255, 255, 255, 0.9);
-  --dropdown-bg: #ffffff;
+  --secondary: #d8dfe8;
+  --accent: #6d28d9;
+  --border: rgba(15, 23, 42, 0.1);
+  --glass: rgba(235, 239, 244, 0.94);
+  --dropdown-bg: #f3f5f8;
   color-scheme: light;
 }
 
 html.light-mode,
 html.light-mode body {
-  background-color: #eef2f6 !important;
-  color: #0f172a !important;
+  background-color: #e2e6ec !important;
+  color: #1e293b !important;
   background-image:
-    radial-gradient(circle at 0% 0%, rgba(99, 102, 241, 0.05) 0%, transparent 48%),
-    radial-gradient(circle at 100% 100%, rgba(16, 185, 129, 0.04) 0%, transparent 48%) !important;
+    radial-gradient(circle at 0% 0%, rgba(99, 102, 241, 0.04) 0%, transparent 45%),
+    radial-gradient(circle at 100% 100%, rgba(15, 23, 42, 0.03) 0%, transparent 45%) !important;
 }
 
-/* Root/page-level dark backgrounds -> warm eye-friendly alabaster canvas */
+/* Top sticky header bar (bg-background/30 uses dark #020617 in tailwind.config) */
+html.light-mode .bg-background\/30:not(.studio-calendar-isolated *) {
+  background-color: rgba(226, 230, 236, 0.92) !important;
+  border-color: rgba(15, 23, 42, 0.09) !important;
+}
+
+/* Root/page-level dark backgrounds -> calm matte cool gray */
 html.light-mode .bg-\[\#05070a\]:not(.studio-calendar-isolated *),
 html.light-mode .bg-\[\#060a12\]:not(.studio-calendar-isolated *),
 html.light-mode .bg-\[\#070a10\]:not(.studio-calendar-isolated *),
 html.light-mode .bg-\[\#070a12\]:not(.studio-calendar-isolated *),
 html.light-mode .bg-\[\#070b14\]:not(.studio-calendar-isolated *),
 html.light-mode .bg-\[\#080a0f\]:not(.studio-calendar-isolated *) {
-  background-color: #eef2f6 !important;
-  color: #0f172a;
+  background-color: #e2e6ec !important;
+  color: #1e293b;
 }
 
-/* Card, panel, modal, and dark slate surface backgrounds -> soft pure white / ivory */
+/* Card, panel, modal, and dark slate surface backgrounds -> soft pearl gray (zero glare) */
 html.light-mode .bg-\[\#090d16\]:not(.studio-calendar-isolated *),
 html.light-mode .bg-\[\#0a0d14\]:not(.studio-calendar-isolated *),
 html.light-mode .bg-\[\#0a0e14\]:not(.studio-calendar-isolated *),
@@ -330,11 +336,11 @@ html.light-mode .bg-\[\#1e293b\]:not(.studio-calendar-isolated *),
 html.light-mode .bg-slate-950:not(.studio-calendar-isolated *),
 html.light-mode .bg-slate-900:not(.studio-calendar-isolated *),
 html.light-mode .bg-slate-800:not(.studio-calendar-isolated *) {
-  background-color: #ffffff !important;
-  color: #0f172a;
+  background-color: #f3f5f8 !important;
+  color: #1e293b;
 }
 
-/* Dark gradient card surfaces -> clean white cards */
+/* Dark gradient card surfaces -> soft pearl gray */
 html.light-mode .from-\[\#0a0e18\]:not(.studio-calendar-isolated *),
 html.light-mode .from-\[\#0c101a\]:not(.studio-calendar-isolated *),
 html.light-mode .from-\[\#0c1628\]:not(.studio-calendar-isolated *),
@@ -343,21 +349,76 @@ html.light-mode .from-\[\#1b0f24\]:not(.studio-calendar-isolated *),
 html.light-mode .from-\[\#1d120a\]:not(.studio-calendar-isolated *),
 html.light-mode .from-slate-950:not(.studio-calendar-isolated *) {
   background-image: none !important;
-  background-color: #ffffff !important;
-  color: #0f172a;
+  background-color: #f3f5f8 !important;
+  color: #1e293b;
+}
+
+/* Dark 800/900/950 colored banners & selected KPI cards -> calm muted gray-pastel tints */
+html.light-mode .from-purple-950\/40:not(.studio-calendar-isolated *),
+html.light-mode .from-purple-950\/70:not(.studio-calendar-isolated *),
+html.light-mode .bg-purple-950\/50:not(.studio-calendar-isolated *) {
+  background-image: none !important;
+  background-color: #eceaf4 !important;
+}
+
+html.light-mode .from-rose-950\/70:not(.studio-calendar-isolated *),
+html.light-mode .from-orange-950\/70:not(.studio-calendar-isolated *),
+html.light-mode .bg-rose-950\/60:not(.studio-calendar-isolated *),
+html.light-mode .bg-rose-950\/90:not(.studio-calendar-isolated *) {
+  background-image: none !important;
+  background-color: #f3eaec !important;
+}
+
+html.light-mode .bg-rose-950\/20:not(.studio-calendar-isolated *),
+html.light-mode .bg-rose-950\/30:not(.studio-calendar-isolated *) {
+  background-color: #f6eff1 !important;
+}
+
+html.light-mode .from-blue-950\/70:not(.studio-calendar-isolated *),
+html.light-mode .from-blue-900\/20:not(.studio-calendar-isolated *),
+html.light-mode .bg-blue-950:not(.studio-calendar-isolated *),
+html.light-mode .bg-blue-950\/50:not(.studio-calendar-isolated *) {
+  background-image: none !important;
+  background-color: #e7edf5 !important;
+}
+
+html.light-mode .from-cyan-950\/70:not(.studio-calendar-isolated *),
+html.light-mode .bg-cyan-950\/60:not(.studio-calendar-isolated *),
+html.light-mode .bg-cyan-950\/30:not(.studio-calendar-isolated *),
+html.light-mode .bg-cyan-950\/15:not(.studio-calendar-isolated *),
+html.light-mode .bg-cyan-800\/30:not(.studio-calendar-isolated *) {
+  background-image: none !important;
+  background-color: #e6eff2 !important;
+}
+
+html.light-mode .from-emerald-950\/70:not(.studio-calendar-isolated *),
+html.light-mode .bg-emerald-950\/50:not(.studio-calendar-isolated *),
+html.light-mode .bg-emerald-950\/40:not(.studio-calendar-isolated *),
+html.light-mode .bg-emerald-900\/50:not(.studio-calendar-isolated *),
+html.light-mode .bg-emerald-900\/60:not(.studio-calendar-isolated *),
+html.light-mode .bg-emerald-800\/30:not(.studio-calendar-isolated *) {
+  background-image: none !important;
+  background-color: #e6efe9 !important;
+}
+
+html.light-mode .from-amber-950\/70:not(.studio-calendar-isolated *),
+html.light-mode .bg-amber-950\/50:not(.studio-calendar-isolated *),
+html.light-mode .bg-amber-900\/30:not(.studio-calendar-isolated *) {
+  background-image: none !important;
+  background-color: #f3efe6 !important;
 }
 
 html.light-mode .glass-panel:not(.studio-calendar-isolated *) {
-  background: rgba(255, 255, 255, 0.94) !important;
+  background: rgba(235, 239, 244, 0.94) !important;
   border-color: rgba(15, 23, 42, 0.09) !important;
-  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.06) !important;
+  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.05) !important;
 }
 
 /* Tables & sticky headers */
 html.light-mode .table-container:not(.studio-calendar-isolated *) {
-  background: #ffffff !important;
+  background: #f3f5f8 !important;
   border-color: #cbd5e1 !important;
-  box-shadow: 0 8px 28px rgba(15, 23, 42, 0.06) !important;
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.05) !important;
 }
 
 html.light-mode .table-container thead:not(.studio-calendar-isolated *),
@@ -366,9 +427,9 @@ html.light-mode .table-container thead th:not(.studio-calendar-isolated *),
 html.light-mode .th-style:not(.studio-calendar-isolated *),
 html.light-mode .bg-\[\#0c1222\]:not(.studio-calendar-isolated *),
 html.light-mode .bg-\[\#0c1222\]\/95:not(.studio-calendar-isolated *) {
-  background-color: #e6ecf4 !important;
+  background-color: #d8dfe8 !important;
   color: #1e293b !important;
-  border-bottom: 1px solid #cbd5e1 !important;
+  border-bottom: 1px solid #c2cbd8 !important;
 }
 
 html.light-mode .row-hover:hover:not(.studio-calendar-isolated *) {
@@ -376,16 +437,16 @@ html.light-mode .row-hover:hover:not(.studio-calendar-isolated *) {
 }
 
 html.light-mode tbody tr:not(.studio-calendar-isolated *) {
-  border-color: rgba(15, 23, 42, 0.07) !important;
+  border-color: rgba(15, 23, 42, 0.08) !important;
 }
 
-/* Translucent white/black surface overrides */
+/* Translucent white/black surface overrides -> soft matte grays */
 html.light-mode .bg-white\/\[0\.01\]:not(.studio-calendar-isolated *),
 html.light-mode .bg-white\/\[0\.015\]:not(.studio-calendar-isolated *),
 html.light-mode .bg-white\/\[0\.02\]:not(.studio-calendar-isolated *),
 html.light-mode .bg-white\/\[0\.03\]:not(.studio-calendar-isolated *),
 html.light-mode .bg-white\/\[0\.04\]:not(.studio-calendar-isolated *) {
-  background-color: #f8fafc !important;
+  background-color: #eef1f5 !important;
 }
 
 html.light-mode .bg-white\/5:not(.studio-calendar-isolated *),
@@ -393,19 +454,19 @@ html.light-mode .bg-white\/\[0\.05\]:not(.studio-calendar-isolated *),
 html.light-mode .bg-white\/\[0\.06\]:not(.studio-calendar-isolated *),
 html.light-mode .bg-white\/\[0\.07\]:not(.studio-calendar-isolated *),
 html.light-mode .bg-white\/\[0\.08\]:not(.studio-calendar-isolated *) {
-  background-color: #f1f5f9 !important;
+  background-color: #e4e9f0 !important;
 }
 
 html.light-mode .bg-white\/10:not(.studio-calendar-isolated *),
 html.light-mode .bg-white\/\[0\.12\]:not(.studio-calendar-isolated *),
 html.light-mode .bg-white\/15:not(.studio-calendar-isolated *),
 html.light-mode .bg-white\/20:not(.studio-calendar-isolated *) {
-  background-color: #e2e8f0 !important;
+  background-color: #d8dfe8 !important;
 }
 
 html.light-mode .hover\:bg-white\/5:hover:not(.studio-calendar-isolated *),
 html.light-mode .hover\:bg-white\/10:hover:not(.studio-calendar-isolated *) {
-  background-color: #e2e8f0 !important;
+  background-color: #d3dbe6 !important;
 }
 
 html.light-mode .toggle-track-off:not(.studio-calendar-isolated *) {
@@ -422,7 +483,7 @@ html.light-mode .bg-black\/20:not(.fixed):not(.studio-calendar-isolated *),
 html.light-mode .bg-black\/25:not(.fixed):not(.studio-calendar-isolated *),
 html.light-mode .bg-black\/30:not(.fixed):not(.studio-calendar-isolated *),
 html.light-mode .bg-black\/40:not(.fixed):not(.studio-calendar-isolated *) {
-  background-color: #f1f5f9 !important;
+  background-color: #e4e9f0 !important;
 }
 
 /* Full-screen dialog overlays: soften harsh 90% black backdrops */
@@ -613,11 +674,16 @@ html.light-mode .hover\:bg-blue-600.hover\:text-white:hover:not(.studio-calendar
   color: #ffffff !important;
 }
 
-/* High-contrast -700/-800 semantic & badge text colors in Light Mode */
+/* High-contrast calm semantic & badge text colors in Light Mode */
+html.light-mode .text-emerald-50:not(.studio-calendar-isolated *),
 html.light-mode .text-emerald-100:not(.studio-calendar-isolated *),
 html.light-mode .text-emerald-200:not(.studio-calendar-isolated *),
+html.light-mode .text-emerald-200\/70:not(.studio-calendar-isolated *),
 html.light-mode .text-emerald-300:not(.studio-calendar-isolated *),
-html.light-mode .text-emerald-400:not(.studio-calendar-isolated *) { color: #047857 !important; }
+html.light-mode .text-emerald-300\/80:not(.studio-calendar-isolated *),
+html.light-mode .text-emerald-300\/90:not(.studio-calendar-isolated *),
+html.light-mode .text-emerald-400:not(.studio-calendar-isolated *),
+html.light-mode .text-emerald-400\/80:not(.studio-calendar-isolated *) { color: #047857 !important; }
 
 html.light-mode .text-green-300:not(.studio-calendar-isolated *) { color: #15803d !important; }
 
@@ -625,7 +691,10 @@ html.light-mode .text-teal-300:not(.studio-calendar-isolated *),
 html.light-mode .text-teal-400:not(.studio-calendar-isolated *) { color: #0f766e !important; }
 
 html.light-mode .text-cyan-200:not(.studio-calendar-isolated *),
+html.light-mode .text-cyan-200\/80:not(.studio-calendar-isolated *),
 html.light-mode .text-cyan-300:not(.studio-calendar-isolated *),
+html.light-mode .text-cyan-300\/70:not(.studio-calendar-isolated *),
+html.light-mode .text-cyan-300\/80:not(.studio-calendar-isolated *),
 html.light-mode .text-cyan-400:not(.studio-calendar-isolated *) { color: #0e7490 !important; }
 
 html.light-mode .text-sky-200:not(.studio-calendar-isolated *),
@@ -634,6 +703,7 @@ html.light-mode .text-sky-400:not(.studio-calendar-isolated *) { color: #0369a1 
 
 html.light-mode .text-blue-100:not(.studio-calendar-isolated *),
 html.light-mode .text-blue-200:not(.studio-calendar-isolated *),
+html.light-mode .text-blue-200\/70:not(.studio-calendar-isolated *),
 html.light-mode .text-blue-300:not(.studio-calendar-isolated *),
 html.light-mode .text-blue-400:not(.studio-calendar-isolated *) { color: #1d4ed8 !important; }
 
@@ -644,8 +714,10 @@ html.light-mode .text-violet-300:not(.studio-calendar-isolated *),
 html.light-mode .text-violet-400:not(.studio-calendar-isolated *) { color: #6d28d9 !important; }
 
 html.light-mode .text-purple-200:not(.studio-calendar-isolated *),
+html.light-mode .text-purple-200\/70:not(.studio-calendar-isolated *),
+html.light-mode .text-purple-200\/80:not(.studio-calendar-isolated *),
 html.light-mode .text-purple-300:not(.studio-calendar-isolated *),
-html.light-mode .text-purple-400:not(.studio-calendar-isolated *) { color: #7e22ce !important; }
+html.light-mode .text-purple-400:not(.studio-calendar-isolated *) { color: #6b21a8 !important; }
 
 html.light-mode .text-fuchsia-300:not(.studio-calendar-isolated *),
 html.light-mode .text-fuchsia-400:not(.studio-calendar-isolated *) { color: #a21caf !important; }
@@ -653,9 +725,13 @@ html.light-mode .text-fuchsia-400:not(.studio-calendar-isolated *) { color: #a21
 html.light-mode .text-pink-300:not(.studio-calendar-isolated *) { color: #be185d !important; }
 
 html.light-mode .text-rose-100:not(.studio-calendar-isolated *),
+html.light-mode .text-rose-100\/90:not(.studio-calendar-isolated *),
 html.light-mode .text-rose-200:not(.studio-calendar-isolated *),
+html.light-mode .text-rose-200\/70:not(.studio-calendar-isolated *),
 html.light-mode .text-rose-300:not(.studio-calendar-isolated *),
-html.light-mode .text-rose-400:not(.studio-calendar-isolated *) { color: #be123c !important; }
+html.light-mode .text-rose-300\/80:not(.studio-calendar-isolated *),
+html.light-mode .text-rose-400:not(.studio-calendar-isolated *),
+html.light-mode .text-rose-400\/80:not(.studio-calendar-isolated *) { color: #9f1239 !important; }
 
 html.light-mode .text-red-300:not(.studio-calendar-isolated *),
 html.light-mode .text-red-400:not(.studio-calendar-isolated *) { color: #b91c1c !important; }
@@ -665,28 +741,37 @@ html.light-mode .text-orange-300:not(.studio-calendar-isolated *),
 html.light-mode .text-orange-400:not(.studio-calendar-isolated *) { color: #c2410c !important; }
 
 html.light-mode .text-amber-100:not(.studio-calendar-isolated *),
+html.light-mode .text-amber-100\/90:not(.studio-calendar-isolated *),
 html.light-mode .text-amber-200:not(.studio-calendar-isolated *),
+html.light-mode .text-amber-200\/70:not(.studio-calendar-isolated *),
 html.light-mode .text-amber-300:not(.studio-calendar-isolated *),
-html.light-mode .text-amber-400:not(.studio-calendar-isolated *) { color: #b45309 !important; }
+html.light-mode .text-amber-300\/70:not(.studio-calendar-isolated *),
+html.light-mode .text-amber-300\/90:not(.studio-calendar-isolated *),
+html.light-mode .text-amber-400:not(.studio-calendar-isolated *),
+html.light-mode .text-amber-400\/80:not(.studio-calendar-isolated *) { color: #b45309 !important; }
 
 html.light-mode .text-yellow-300:not(.studio-calendar-isolated *),
 html.light-mode .text-yellow-400:not(.studio-calendar-isolated *) { color: #a16207 !important; }
 
 html.light-mode .text-lime-300:not(.studio-calendar-isolated *) { color: #4d7c0f !important; }
 
+html.light-mode .text-muted\/80:not(.studio-calendar-isolated *),
+html.light-mode .text-muted\/60:not(.studio-calendar-isolated *),
+html.light-mode .text-muted\/40:not(.studio-calendar-isolated *) { color: #475569 !important; }
+
 /* Inputs, selects, textareas */
 html.light-mode input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]):not(.studio-calendar-isolated *),
 html.light-mode textarea:not(.studio-calendar-isolated *),
 html.light-mode select:not(.studio-calendar-isolated *) {
-  background-color: #ffffff !important;
-  color: #0f172a !important;
+  background-color: #f8fafc !important;
+  color: #1e293b !important;
   border-color: #cbd5e1 !important;
   color-scheme: light !important;
 }
 
 html.light-mode select option:not(.studio-calendar-isolated *) {
-  background-color: #ffffff !important;
-  color: #0f172a !important;
+  background-color: #f3f5f8 !important;
+  color: #1e293b !important;
 }
 
 /* Canceled rows in Light Mode */

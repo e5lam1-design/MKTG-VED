@@ -441,12 +441,49 @@ export const ReelsAnalytics = ({ isDemo = false }: ReelsAnalyticsProps) => {
     ensureMonth('2026-10');
     ensureMonth('2026-11');
 
+    // ── Weekly Breakdown inside each Month (4 Weeks: 1-7, 8-14, 15-21, 22-End) ──
+    interface WeekBucket {
+      weekNum: number;
+      label: string;
+      dayRange: string;
+      filmed: number;
+      doneVE: number;
+      doneCuts: number;
+      totalDone: number;
+      edited: number;
+    }
+
+    const weeklyByMonth: Record<string, WeekBucket[]> = {};
+    const ensureMonthWeeks = (mKey: string) => {
+      if (!weeklyByMonth[mKey]) {
+        weeklyByMonth[mKey] = [
+          { weekNum: 1, label: 'الأسبوع الأول', dayRange: '1 – 7', filmed: 0, doneVE: 0, doneCuts: 0, totalDone: 0, edited: 0 },
+          { weekNum: 2, label: 'الأسبوع الثاني', dayRange: '8 – 14', filmed: 0, doneVE: 0, doneCuts: 0, totalDone: 0, edited: 0 },
+          { weekNum: 3, label: 'الأسبوع الثالث', dayRange: '15 – 21', filmed: 0, doneVE: 0, doneCuts: 0, totalDone: 0, edited: 0 },
+          { weekNum: 4, label: 'الأسبوع الرابع', dayRange: '22 – نهاية الشهر', filmed: 0, doneVE: 0, doneCuts: 0, totalDone: 0, edited: 0 }
+        ];
+      }
+      return weeklyByMonth[mKey];
+    };
+
+    const getWeekIndex = (d: Date | null): number => {
+      if (!d) return -1;
+      const day = d.getDate();
+      if (day <= 7) return 0;
+      if (day <= 14) return 1;
+      if (day <= 21) return 2;
+      return 3;
+    };
+
+    ['2026-08', '2026-09', '2026-10', '2026-11'].forEach(ensureMonthWeeks);
+
     // 1. Shooting: count shootingTotal and filmed
     shootingData.forEach(item => {
       const sDate = parseDate(item.date) || parseDate(item.createdAt);
       const sKey = getYearMonth(sDate);
       if (sKey) {
         ensureMonth(sKey).shootingTotal++;
+        ensureMonthWeeks(sKey);
       }
 
       if (item.filmed) {
@@ -454,42 +491,74 @@ export const ReelsAnalytics = ({ isDemo = false }: ReelsAnalyticsProps) => {
         const fKey = getYearMonth(fDate);
         if (fKey) {
           ensureMonth(fKey).filmed++;
+          const wIdx = getWeekIndex(fDate);
+          if (wIdx >= 0) ensureMonthWeeks(fKey)[wIdx].filmed++;
         }
       }
     });
 
-    // 2. VE: count veTotal and doneVE
+    // 2. VE: count veTotal, doneVE, and edited
     veData.forEach(item => {
       const vDate = parseDate(item.filmingDate) || parseDate(item.date) || parseDate(item.createdAt);
       const vKey = getYearMonth(vDate);
       if (vKey) {
         ensureMonth(vKey).veTotal++;
+        ensureMonthWeeks(vKey);
       }
-      if (item.done) {
+      if (item.done && !item.canceled) {
         const dDate = parseDate(item.filmingDate) || parseDate(item.updatedAt) || vDate;
         const dKey = getYearMonth(dDate);
         if (dKey) {
           const m = ensureMonth(dKey);
           m.doneVE++;
           m.totalDone++;
+          const wIdx = getWeekIndex(dDate);
+          if (wIdx >= 0) {
+            const wb = ensureMonthWeeks(dKey)[wIdx];
+            wb.doneVE++;
+            wb.totalDone++;
+          }
+        }
+      }
+      if (item.editCheck && !item.canceled) {
+        const eDate = parseDate(item.updatedAt) || parseDate(item.filmingDate) || vDate;
+        const eKey = getYearMonth(eDate);
+        const wIdx = getWeekIndex(eDate);
+        if (eKey && wIdx >= 0) {
+          ensureMonthWeeks(eKey)[wIdx].edited++;
         }
       }
     });
 
-    // 3. Cuts: count cutsTotal and doneCuts
+    // 3. Cuts: count cutsTotal, doneCuts, and edited
     cutsData.forEach(item => {
       const cDate = parseDate(item.date) || parseDate(item.createdAt);
       const cKey = getYearMonth(cDate);
       if (cKey) {
         ensureMonth(cKey).cutsTotal++;
+        ensureMonthWeeks(cKey);
       }
-      if (item.done) {
+      if (item.done && !item.canceled) {
         const dDate = parseDate(item.updatedAt) || cDate;
         const dKey = getYearMonth(dDate);
         if (dKey) {
           const m = ensureMonth(dKey);
           m.doneCuts++;
           m.totalDone++;
+          const wIdx = getWeekIndex(dDate);
+          if (wIdx >= 0) {
+            const wb = ensureMonthWeeks(dKey)[wIdx];
+            wb.doneCuts++;
+            wb.totalDone++;
+          }
+        }
+      }
+      if ((item as any).editCheck && !item.canceled) {
+        const eDate = parseDate(item.updatedAt) || cDate;
+        const eKey = getYearMonth(eDate);
+        const wIdx = getWeekIndex(eDate);
+        if (eKey && wIdx >= 0) {
+          ensureMonthWeeks(eKey)[wIdx].edited++;
         }
       }
     });
@@ -724,6 +793,7 @@ export const ReelsAnalytics = ({ isDemo = false }: ReelsAnalyticsProps) => {
       avgEditToFinalDone,
       sampleCodes,
       monthlyBreakdown,
+      weeklyByMonth,
       bottlenecks,
       qualityStats,
       editorsList,
@@ -1332,6 +1402,113 @@ export const ReelsAnalytics = ({ isDemo = false }: ReelsAnalyticsProps) => {
             </table>
           </div>
         </div>
+
+        {/* ── Weekly Breakdown Inside Selected Month (4 Weeks) ── */}
+        {(() => {
+          const activeWeeklyMonthKey =
+            selectedMonth !== 'ALL'
+              ? selectedMonth
+              : (stats.monthlyBreakdown[0]?.key || '2026-11');
+          const activeWeeklyMonthObj = stats.monthlyBreakdown.find(m => m.key === activeWeeklyMonthKey);
+          const weeks = stats.weeklyByMonth?.[activeWeeklyMonthKey] || [];
+          const sumFilmed = weeks.reduce((a, w) => a + w.filmed, 0);
+          const sumDoneVE = weeks.reduce((a, w) => a + w.doneVE, 0);
+          const sumDoneCuts = weeks.reduce((a, w) => a + w.doneCuts, 0);
+          const sumTotalDone = weeks.reduce((a, w) => a + w.totalDone, 0);
+          const sumEdited = weeks.reduce((a, w) => a + w.edited, 0);
+
+          return (
+            <div className="bg-white/[0.02] border border-white/10 rounded-2xl overflow-hidden mt-4">
+              <div className="px-4 py-3.5 bg-white/[0.03] border-b border-white/10 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                <div className="flex items-center gap-2.5 flex-wrap">
+                  <span className="text-xs font-black text-white arabic-text flex items-center gap-2">
+                    <Calendar size={14} className="text-indigo-400" />
+                    <span>📅 تفصيل الإنتاج الأسبوعي داخل الشهر (4 أسابيع)</span>
+                  </span>
+                  <span className="px-2.5 py-0.5 rounded-full text-[11px] font-black bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 arabic-text">
+                    {activeWeeklyMonthObj?.label || activeWeeklyMonthKey}
+                  </span>
+                </div>
+                <div className="flex items-center gap-1.5 flex-wrap">
+                  {stats.monthlyBreakdown.map((m) => (
+                    <button
+                      key={`wk-btn-${m.key}`}
+                      type="button"
+                      onClick={() => setSelectedMonth(m.key)}
+                      className={`px-2.5 py-1 rounded-lg text-[10px] font-black transition-all cursor-pointer arabic-text ${
+                        activeWeeklyMonthKey === m.key
+                          ? 'bg-indigo-600 text-white shadow-sm'
+                          : 'bg-white/5 text-muted hover:text-white hover:bg-white/10 border border-white/10'
+                      }`}
+                    >
+                      {m.monthName}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-right text-xs">
+                  <thead>
+                    <tr className="border-b border-white/10 text-white/60 font-bold arabic-text bg-white/[0.01]">
+                      <th className="py-3 px-4">الأسبوع</th>
+                      <th className="py-3 px-4 text-center">الأيام</th>
+                      <th className="py-3 px-4 text-center text-cyan-400">🎥 اتصور (Filmed)</th>
+                      <th className="py-3 px-4 text-center text-emerald-400">🎬 VE (Done)</th>
+                      <th className="py-3 px-4 text-center text-orange-400">✂️ Cuts (Done)</th>
+                      <th className="py-3 px-4 text-center text-purple-300">🏆 إجمالي DONE</th>
+                      <th className="py-3 px-4 text-center text-amber-400">🛠️ اتعدل (Edit)</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-white/5 font-mono">
+                    {weeks.map((w) => (
+                      <tr key={`week-${w.weekNum}`} className="hover:bg-white/[0.04] transition-colors">
+                        <td className="py-3.5 px-4 font-black text-white arabic-text flex items-center gap-2">
+                          <span className="w-6 h-6 rounded-lg bg-indigo-500/15 border border-indigo-500/30 text-indigo-300 text-[11px] font-mono font-black flex items-center justify-center shrink-0">
+                            W{w.weekNum}
+                          </span>
+                          <span>{w.label}</span>
+                        </td>
+                        <td className="py-3.5 px-4 text-center text-[11px] text-muted arabic-text">
+                          {w.dayRange}
+                        </td>
+                        <td className="py-3.5 px-4 text-center font-bold text-cyan-400">{w.filmed}</td>
+                        <td className="py-3.5 px-4 text-center font-bold text-emerald-400">{w.doneVE}</td>
+                        <td className="py-3.5 px-4 text-center font-bold text-orange-400">{w.doneCuts}</td>
+                        <td className="py-3.5 px-4 text-center">
+                          <span className="px-2.5 py-1 rounded-lg bg-purple-500/15 text-purple-300 border border-purple-500/30 font-black text-xs">
+                            {w.totalDone}
+                          </span>
+                        </td>
+                        <td className="py-3.5 px-4 text-center">
+                          <span className={`px-2.5 py-1 rounded-lg font-black text-xs border ${
+                            w.edited > 0
+                              ? 'bg-amber-500/15 text-amber-300 border-amber-500/30'
+                              : 'bg-white/5 text-white/40 border-white/10'
+                          }`}>
+                            {w.edited}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr className="border-t-2 border-white/15 bg-white/[0.03] font-mono font-black">
+                      <td className="py-3.5 px-4 text-white arabic-text" colSpan={2}>
+                        إجمالي الشهر ({activeWeeklyMonthObj?.monthName || activeWeeklyMonthKey})
+                      </td>
+                      <td className="py-3.5 px-4 text-center text-cyan-300 text-sm">{sumFilmed}</td>
+                      <td className="py-3.5 px-4 text-center text-emerald-300 text-sm">{sumDoneVE}</td>
+                      <td className="py-3.5 px-4 text-center text-orange-300 text-sm">{sumDoneCuts}</td>
+                      <td className="py-3.5 px-4 text-center text-purple-300 text-sm">{sumTotalDone}</td>
+                      <td className="py-3.5 px-4 text-center text-amber-300 text-sm">{sumEdited}</td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </div>
+          );
+        })()}
       </div>
 
       {/* Production Progress Bar (Leader Dashboard Banner) */}

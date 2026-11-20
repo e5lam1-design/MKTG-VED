@@ -112,6 +112,7 @@ export const ReelsAnalytics = ({ isDemo = false }: ReelsAnalyticsProps) => {
             missingDetails: i.missing_details === true,
             problem: i.problem === true,
             done: i.done === true,
+            editCheck: i.edit_check === true,
             editor: i.editor || '',
             driveFinal: i.drive_final || '',
             canceled: i.canceled === true,
@@ -175,22 +176,22 @@ export const ReelsAnalytics = ({ isDemo = false }: ReelsAnalyticsProps) => {
     const shootingUnfilmed = Math.max(0, shootingTotal - shootingFilmed);
 
     const veTotal = veData.length;
-    const veCompleted = veData.filter(i => i.done).length;
-    const vePending = Math.max(0, veTotal - veCompleted);
     const veCanceled = veData.filter(i => i.canceled).length;
-    const veMissing = veData.filter(i => i.missingDetails).length;
+    const veCompleted = veData.filter(i => i.done && !i.canceled).length;
+    const veMissing = veData.filter(i => i.missingDetails && !i.done && !i.canceled).length;
+    const vePending = veData.filter(i => !i.done && !i.canceled && !i.missingDetails).length;
     const veRate = veTotal > 0 ? Math.round((veCompleted / veTotal) * 100) : 0;
     const veOverallRate = shootingTotal > 0 ? Math.round((veCompleted / shootingTotal) * 100) : 0;
 
     // ── 2. مسار التقطيع المنفصل (CUTS) ──
     const cutsTotal = cutsData.length;
-    const cutsCompleted = cutsData.filter(i => i.done).length;
-    const cutsPending = Math.max(0, cutsTotal - cutsCompleted);
     const cutsCanceled = cutsData.filter(i => i.canceled).length;
-    const cutsMissing = cutsData.filter(i => i.missingDetails || (i as any).problem).length;
+    const cutsCompleted = cutsData.filter(i => i.done && !i.canceled).length;
+    const cutsMissing = cutsData.filter(i => (i.missingDetails || (i as any).problem) && !i.done && !i.canceled).length;
+    const cutsPending = cutsData.filter(i => !i.done && !i.canceled && !(i.missingDetails || (i as any).problem)).length;
     const cutsRate = cutsTotal > 0 ? Math.round((cutsCompleted / cutsTotal) * 100) : 0;
 
-    // Deduplicate reels by unique code (id or script name)
+    // Deduplicate all reels across Shooting + VE + Cuts (for teacher/branch breakdown)
     const uniqueReelsMap = new Map();
     [...shootingData, ...veData, ...cutsData].forEach(item => {
       const codeKey = (item.id || item.script || item.name || '').trim().toLowerCase();
@@ -198,23 +199,43 @@ export const ReelsAnalytics = ({ isDemo = false }: ReelsAnalyticsProps) => {
       if (!uniqueReelsMap.has(codeKey)) {
         uniqueReelsMap.set(codeKey, item);
       } else {
-        // Merge status flags (if marked done/canceled in Ve or Cuts, update status)
         const existing = uniqueReelsMap.get(codeKey);
         uniqueReelsMap.set(codeKey, {
           ...existing,
           done: existing.done || item.done,
           canceled: existing.canceled || item.canceled,
-          missingDetails: existing.missingDetails || item.missingDetails
+          missingDetails: existing.missingDetails || item.missingDetails,
+          problem: (existing as any).problem || (item as any).problem
+        });
+      }
+    });
+
+    // Deduplicate production reels only (VE + Cuts) so unfilmed Shooting scripts don't inflate "قيد التنفيذ والمونتاج"
+    const uniqueProductionMap = new Map();
+    [...veData, ...cutsData].forEach(item => {
+      const codeKey = `${item.stage}:${(item.id || item.script || item.name || '').trim().toLowerCase()}`;
+      if (!codeKey) return;
+      if (!uniqueProductionMap.has(codeKey)) {
+        uniqueProductionMap.set(codeKey, item);
+      } else {
+        const existing = uniqueProductionMap.get(codeKey);
+        uniqueProductionMap.set(codeKey, {
+          ...existing,
+          done: existing.done || item.done,
+          canceled: existing.canceled || item.canceled,
+          missingDetails: existing.missingDetails || item.missingDetails,
+          problem: (existing as any).problem || (item as any).problem
         });
       }
     });
 
     const uniqueAllData = Array.from(uniqueReelsMap.values());
-    const total = uniqueAllData.length;
-    const completed = uniqueAllData.filter(i => i.done).length;
-    const pending = total - completed;
-    const canceled = uniqueAllData.filter(i => i.canceled).length;
-    const missing = uniqueAllData.filter(i => i.missingDetails).length;
+    const uniqueProductionData = Array.from(uniqueProductionMap.values());
+    const total = uniqueProductionData.length;
+    const canceled = uniqueProductionData.filter(i => i.canceled).length;
+    const completed = uniqueProductionData.filter(i => i.done && !i.canceled).length;
+    const missing = uniqueProductionData.filter(i => (i.missingDetails || (i as any).problem) && !i.done && !i.canceled).length;
+    const pending = uniqueProductionData.filter(i => !i.done && !i.canceled && !(i.missingDetails || (i as any).problem)).length;
     const totalRate = total > 0 ? Math.round((completed / total) * 100) : 0;
 
     // Stage breakdown: total and completed for each of the three stages
@@ -534,6 +555,58 @@ export const ReelsAnalytics = ({ isDemo = false }: ReelsAnalyticsProps) => {
 
     const editorsList = Object.values(editorsMap).sort((a, b) => b.total - a.total);
 
+    // ── 6b. CUTS Editors Performance Leaderboard (إنجاز كل مونتير لحجم التاسكات في الـ CUTS) ──
+    const cutsEditorsMap: Record<string, {
+      name: string;
+      total: number;
+      done: number;
+      pending: number;
+      zeroEdit: number;
+      withEdit: number;
+      completionRate: number;
+      zeroEditRate: number;
+      volumeShare: number;
+    }> = {};
+
+    let totalAssignedCuts = 0;
+    cutsData.forEach(c => {
+      if (c.canceled) return;
+      const rawName = (c.editor || (c as any).editorCol || '').trim();
+      if (!rawName || rawName === 'غير محدد' || rawName === '---') return;
+      const key = rawName.toLowerCase();
+      totalAssignedCuts++;
+      if (!cutsEditorsMap[key]) {
+        cutsEditorsMap[key] = {
+          name: rawName,
+          total: 0,
+          done: 0,
+          pending: 0,
+          zeroEdit: 0,
+          withEdit: 0,
+          completionRate: 0,
+          zeroEditRate: 0,
+          volumeShare: 0
+        };
+      }
+      const ed = cutsEditorsMap[key];
+      ed.total++;
+      if (c.done) {
+        ed.done++;
+        if ((c as any).editCheck) ed.withEdit++;
+        else ed.zeroEdit++;
+      } else {
+        ed.pending++;
+      }
+    });
+
+    Object.values(cutsEditorsMap).forEach(ed => {
+      ed.completionRate = ed.total > 0 ? Math.round((ed.done / ed.total) * 100) : 0;
+      ed.zeroEditRate = ed.done > 0 ? Math.round((ed.zeroEdit / ed.done) * 100) : 100;
+      ed.volumeShare = totalAssignedCuts > 0 ? Math.round((ed.total / totalAssignedCuts) * 100) : 0;
+    });
+
+    const cutsEditorsList = Object.values(cutsEditorsMap).sort((a, b) => b.total - a.total);
+
     // ── 7. Bottlenecks Radar (رادار نقاط الاختناق) ──
     const nowMs = Date.now();
     const FIVE_DAYS_MS = 5 * 24 * 3600 * 1000;
@@ -653,7 +726,9 @@ export const ReelsAnalytics = ({ isDemo = false }: ReelsAnalyticsProps) => {
       monthlyBreakdown,
       bottlenecks,
       qualityStats,
-      editorsList
+      editorsList,
+      cutsEditorsList,
+      totalAssignedCuts
     };
   }, [rawShootingData, rawVeData, rawCutsData, loading]);
 
@@ -694,8 +769,8 @@ export const ReelsAnalytics = ({ isDemo = false }: ReelsAnalyticsProps) => {
       title: 'مؤشر نسبة الإنجاز والإنتاج الكلية',
       subtitle: 'متابعة دقيقة لنسب المكتمل، قيد التنفيذ، والتفاصيل الناقصة/الملغية لجميع الريلز',
       total: stats.total,
-      totalLabel: 'إجمالي الريلز',
-      totalSub: 'تشمل التصوير والمونتاج والتقطيع',
+      totalLabel: 'إجمالي ريلز المونتاج والكتس',
+      totalSub: 'تشمل شيتات VE و CUTS الفعلية (بدون غير المصوّر في Shooting)',
       completed: stats.completed,
       pending: stats.pending,
       missing: stats.missing,
@@ -2117,6 +2192,128 @@ export const ReelsAnalytics = ({ isDemo = false }: ReelsAnalyticsProps) => {
               })}
             </tbody>
           </table>
+        </div>
+      </div>
+
+      {/* ── CUTS Editors Performance & Task Volume Leaderboard ── */}
+      <div className="glass-panel p-6 md:p-8 rounded-3xl border border-white/10 space-y-6 relative overflow-hidden group hover:border-cyan-500/30 transition-all">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-white/10 pb-4">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-cyan-500/20 text-cyan-400 flex items-center justify-center shrink-0 shadow-lg shadow-cyan-500/20">
+              <Scissors size={22} />
+            </div>
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h3 className="text-xl font-black text-white arabic-text">لوحة إنجاز وحجم تاسكات المونتيرين — CUTS (Cuts Editors Performance)</h3>
+                <span className="px-2.5 py-0.5 rounded-full text-xs font-black bg-cyan-500/20 text-cyan-300 border border-cyan-500/30 font-mono">
+                  {stats.cutsEditorsList.length} مونتير
+                </span>
+                <span className="px-2.5 py-0.5 rounded-full text-xs font-black bg-white/5 text-white/70 border border-white/10 font-mono">
+                  {stats.totalAssignedCuts} تاسك مسند
+                </span>
+              </div>
+              <p className="text-xs text-muted arabic-text">متابعة إنجاز كل مونتير وحصته من حجم المهام في شيت التقطيع (CUTS) ومعدل الاعتماد المباشر</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2 text-xs font-bold text-white/60">
+            <span className="flex items-center gap-1.5 px-3 py-1.5 bg-white/5 rounded-xl border border-white/5">
+              <span className="w-2 h-2 rounded-full bg-cyan-400"></span>
+              <span>شيت التقطيع (CUTS فقط)</span>
+            </span>
+          </div>
+        </div>
+
+        {/* CUTS Editors Table */}
+        <div className="overflow-x-auto">
+          {stats.cutsEditorsList.length === 0 ? (
+            <div className="py-10 text-center text-xs text-muted font-bold arabic-text">
+              لا توجد مهام مسندة لمونتيرين في شيت CUTS حالياً
+            </div>
+          ) : (
+            <table className="w-full text-right text-xs">
+              <thead>
+                <tr className="border-b border-white/10 text-white/60 font-bold pb-3">
+                  <th className="py-3 px-4">#</th>
+                  <th className="py-3 px-4">اسم المونتير</th>
+                  <th className="py-3 px-4 text-center">إجمالي المسند (Cuts)</th>
+                  <th className="py-3 px-4 text-center">حصة حجم العمل</th>
+                  <th className="py-3 px-4 text-center">المنجز (Done)</th>
+                  <th className="py-3 px-4 text-center">قيد التنفيذ</th>
+                  <th className="py-3 px-4 text-center">نسبة الإنجاز</th>
+                  <th className="py-3 px-4 text-center">الاعتماد المباشر (Zero-Edit)</th>
+                  <th className="py-3 px-4 text-center">تقييم الالتزام</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/5">
+                {stats.cutsEditorsList.map((editor, index) => {
+                  const isHighPerformer = editor.completionRate >= 95 && editor.zeroEditRate >= 95;
+                  const isGood = editor.completionRate >= 85;
+                  return (
+                    <tr key={editor.name} className="hover:bg-white/[0.03] transition-colors">
+                      <td className="py-3.5 px-4 font-mono font-bold text-white/40">{index + 1}</td>
+                      <td className="py-3.5 px-4 font-black text-white flex items-center gap-2">
+                        <div className="w-7 h-7 rounded-lg bg-cyan-500/10 text-cyan-300 border border-cyan-500/20 flex items-center justify-center font-bold text-[11px]">
+                          {editor.name.charAt(0).toUpperCase()}
+                        </div>
+                        <span>{editor.name}</span>
+                        {isHighPerformer && (
+                          <span className="px-1.5 py-0.5 bg-amber-500/10 text-amber-400 rounded text-[10px] font-bold flex items-center gap-1">
+                            <Zap size={10} />
+                            <span>مميز</span>
+                          </span>
+                        )}
+                      </td>
+                      <td className="py-3.5 px-4 text-center font-mono font-bold text-white/90">{editor.total}</td>
+                      <td className="py-3.5 px-4 text-center">
+                        <div className="flex items-center justify-center gap-2">
+                          <div className="w-16 bg-white/10 rounded-full h-1.5 overflow-hidden">
+                            <div
+                              className="bg-cyan-400 h-full rounded-full"
+                              style={{ width: `${Math.min(100, editor.volumeShare)}%` }}
+                            />
+                          </div>
+                          <span className="font-mono font-black text-cyan-400 text-[11px]">%{editor.volumeShare}</span>
+                        </div>
+                      </td>
+                      <td className="py-3.5 px-4 text-center font-mono font-bold text-emerald-400">{editor.done}</td>
+                      <td className="py-3.5 px-4 text-center font-mono font-bold text-amber-400">{editor.pending}</td>
+                      <td className="py-3.5 px-4 text-center">
+                        <div className="flex items-center justify-center gap-2">
+                          <div className="w-16 bg-white/10 rounded-full h-1.5 overflow-hidden">
+                            <div
+                              className="bg-emerald-400 h-full rounded-full"
+                              style={{ width: `${editor.completionRate}%` }}
+                            />
+                          </div>
+                          <span className="font-mono font-black text-emerald-400 text-[11px]">%{editor.completionRate}</span>
+                        </div>
+                      </td>
+                      <td className="py-3.5 px-4 text-center font-mono">
+                        <span className="px-2.5 py-1 rounded-lg bg-emerald-500/10 text-emerald-400 font-black text-[11px] border border-emerald-500/20">
+                          %{editor.zeroEditRate}
+                        </span>
+                      </td>
+                      <td className="py-3.5 px-4 text-center">
+                        {isHighPerformer ? (
+                          <span className="px-2.5 py-1 rounded-lg bg-emerald-500/20 text-emerald-300 font-bold text-[10px] border border-emerald-500/30">
+                            🟢 التزام فائق
+                          </span>
+                        ) : isGood ? (
+                          <span className="px-2.5 py-1 rounded-lg bg-blue-500/20 text-blue-300 font-bold text-[10px] border border-blue-500/30">
+                            🔵 أداء جيد جداً
+                          </span>
+                        ) : (
+                          <span className="px-2.5 py-1 rounded-lg bg-amber-500/20 text-amber-300 font-bold text-[10px] border border-amber-500/30">
+                            🟡 يتطلب متابعة
+                          </span>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
         </div>
       </div>
     </div>

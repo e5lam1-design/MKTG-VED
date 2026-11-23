@@ -160,16 +160,18 @@ export const CutsRow = React.memo(({
 
   useEffect(() => {
     let localFinal = item.driveFinal || '';
-    try {
-      const raw = localStorage.getItem('cuts_overrides');
-      if (raw) {
-        const overrides = JSON.parse(raw);
-        const code = item.id;
-        if (overrides[code] && overrides[code].driveFinal !== undefined) {
-          localFinal = overrides[code].driveFinal;
+    if (!localFinal) {
+      try {
+        const raw = localStorage.getItem('cuts_overrides');
+        if (raw) {
+          const overrides = JSON.parse(raw);
+          const code = item.id;
+          if (overrides[code] && overrides[code].driveFinal) {
+            localFinal = overrides[code].driveFinal;
+          }
         }
-      }
-    } catch {}
+      } catch {}
+    }
 
     setEditForm({
       branch: item.branch || '',
@@ -365,8 +367,14 @@ export const CutsRow = React.memo(({
       undefined, // index 20 unused
       nextHardDriveStatus // index 21: hard_drive_status
     ];
+    const changedFields = [fieldName];
+    if (targetCode && targetCode !== currentCutCode) changedFields.push('code');
+    if (fieldName === 'driveFinal') {
+      changedFields.push('done');
+      if (nextHardDriveStatus !== undefined) changedFields.push('hardDriveStatus');
+    }
     try {
-      await onUpdateShootingRow(item.id, rowData, { fieldName, value, time, author });
+      await onUpdateShootingRow(item.id, rowData, { fieldName, value, time, author }, changedFields);
     } catch(e) {
       console.error(e);
     } finally {
@@ -441,7 +449,7 @@ export const CutsRow = React.memo(({
     
     saveCutsOverrideLocally(item.id, fieldName, newVal);
     try {
-      await onUpdateShootingRow(item.id, rowData);
+      await onUpdateShootingRow(item.id, rowData, undefined, [fieldName]);
     } catch(e) {
       console.error(e);
     } finally {

@@ -45,8 +45,9 @@ export const ShootingRow = React.memo(({ item, index, activeGid, onToggleFilmed,
     storage: item.storage || '',
     script: item.script || '',
     notes: item.notes || '',
+    editorNotes: item.editorNotes || item.editor_notes || '',
     driveRaw: item.driveRaw || '',
-    editorCol: item.editorCol || '',
+    editorCol: item.editorCol || item.editor || '',
     driveFinal: item.driveFinal || '',
     filmed: item.filmed === true || item.filmed === 'TRUE',
     filmingDate: item.filmingDate || ''
@@ -98,7 +99,7 @@ export const ShootingRow = React.memo(({ item, index, activeGid, onToggleFilmed,
       filmed: item.filmed === true || item.filmed === 'TRUE',
       filmingDate: item.filmingDate || ''
     });
-  }, [item.notes, item.editorNotes, item.creatorNotes, item.creator_notes, item.filmed, item.driveFinal, item.driveRaw, item.editorCol, item.branch, item.year, item.teacher, item.extraName, item.type, item.format, item.by, item.storage, item.script]);
+  }, [item.notes, item.editorNotes, item.editor_notes, item.creatorNotes, item.creator_notes, item.filmed, item.filmingDate, item.driveFinal, item.driveRaw, item.editorCol, item.editor, item.branch, item.year, item.teacher, item.extraName, item.type, item.format, item.by, item.storage, item.script, item.done, item.canceled, item.missingDetails]);
 
   const generatedCode = useMemo(() => {
     const baseCode = item.code || item.id || '';
@@ -311,8 +312,14 @@ export const ShootingRow = React.memo(({ item, index, activeGid, onToggleFilmed,
       updatedForm.editorNotes || '',
       nextHardDriveStatus // index 21: hard_drive_status (only set when changed)
     ];
+    const changedFields = [fieldName];
+    if (newCode && newCode !== rowCode) changedFields.push('code');
+    if (fieldName === 'driveFinal') {
+      changedFields.push('done');
+      if (nextHardDriveStatus !== undefined) changedFields.push('hardDriveStatus');
+    }
     try {
-      await onUpdateShootingRow(rowCode, rowData, { fieldName, value, time, author });
+      await onUpdateShootingRow(rowCode, rowData, { fieldName, value, time, author }, changedFields);
     } catch(e) {
       console.error(e);
     } finally {
@@ -534,7 +541,7 @@ export const ShootingRow = React.memo(({ item, index, activeGid, onToggleFilmed,
                 item.canceled ? 'TRUE' : 'FALSE',
                 item.missingDetails ? 'TRUE' : 'FALSE'
               ];
-              onUpdateShootingRow(rowCode, rowData);
+              onUpdateShootingRow(rowCode, rowData, undefined, ['filmed', 'filmingDate']);
             } else {
               onToggleFilmed && onToggleFilmed({ ...item, ...updatedForm }, nextFilmed);
             }
@@ -582,7 +589,7 @@ export const ShootingRow = React.memo(({ item, index, activeGid, onToggleFilmed,
                   item.canceled ? 'TRUE' : 'FALSE',
                   item.missingDetails ? 'TRUE' : 'FALSE'
                 ];
-                onUpdateShootingRow && onUpdateShootingRow(rowCode, rowData);
+                onUpdateShootingRow && onUpdateShootingRow(rowCode, rowData, undefined, ['filmingDate']);
               }}
             />
           </td>
@@ -716,7 +723,7 @@ export const ShootingRow = React.memo(({ item, index, activeGid, onToggleFilmed,
                   nextMissing ? 'TRUE' : 'FALSE'
                 ];
                 try {
-                  await onUpdateShootingRow(rowCode, rowData);
+                  await onUpdateShootingRow(rowCode, rowData, undefined, ['missingDetails']);
                 } catch(e) {
                   setOptimisticMissing(null);
                   console.error(e);
@@ -799,7 +806,7 @@ export const ShootingRow = React.memo(({ item, index, activeGid, onToggleFilmed,
                 ];
                 setOptimisticDone(nextDone);
                 try {
-                  await onUpdateShootingRow(rowCode, rowData);
+                  await onUpdateShootingRow(rowCode, rowData, undefined, ['done']);
                 } catch(e) {
                   setOptimisticDone(null);
                   console.error(e);
@@ -865,7 +872,7 @@ export const ShootingRow = React.memo(({ item, index, activeGid, onToggleFilmed,
                   item.missingDetails ? 'TRUE' : 'FALSE'
                 ];
                 try {
-                  await onUpdateShootingRow(rowCode, rowData);
+                  await onUpdateShootingRow(rowCode, rowData, undefined, nextCanceled ? ['canceled', 'done'] : ['canceled']);
                 } catch(e) {
                   setOptimisticCanceled(null);
                   console.error(e);
@@ -953,7 +960,7 @@ export const ShootingRow = React.memo(({ item, index, activeGid, onToggleFilmed,
                 isMissing ? 'TRUE' : 'FALSE'
               ];
               try {
-                await onUpdateShootingRow(rowCode, rowData);
+                await onUpdateShootingRow(rowCode, rowData, undefined, ['canceled']);
               } catch(e) {
                 setOptimisticCanceled(null);
                 console.error(e);

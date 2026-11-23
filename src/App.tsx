@@ -4458,7 +4458,12 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
     }
   };
 
-  const handleUpdateShootingRow = async (oldCode: string, newRowData: any[], noteMeta?: { fieldName?: string; value?: string; time?: string; author?: string }) => {
+  const handleUpdateShootingRow = async (
+    oldCode: string,
+    newRowData: any[],
+    noteMeta?: { fieldName?: string; value?: string; time?: string; author?: string },
+    changedFields?: string[]
+  ) => {
     const tbl = REELS_TABLE_MAP[activeGid];
     const newCode = newRowData[5] || oldCode;
 
@@ -4646,6 +4651,108 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
       };
     }
 
+    // ── BULLETPROOF PARTIAL-PATCH GUARD (Prevents stale-tab full-row overwrites!) ──
+    // Only send the exact column(s) the user actually changed to Supabase so editing
+    // one field (e.g. notes/script/filmed) can NEVER wipe editor/editor_col, done, or drive_final!
+    const fieldToDbCol: Record<string, string> = activeGid === '0'
+      ? {
+          date: 'date',
+          branch: 'branch',
+          year: 'year',
+          typeCol: 'type_col',
+          creator: 'creator',
+          code: 'code',
+          dataFiles: 'data_files',
+          script: 'script',
+          type: 'type',
+          format: 'format',
+          creatorNotes: 'creator_notes',
+          editorNotes: 'editor_notes',
+          missingDetails: 'missing_details',
+          problem: 'problem',
+          done: 'done',
+          editor: 'editor',
+          driveFinal: 'drive_final',
+          canceled: 'canceled',
+          hardDriveStatus: 'hard_drive_status',
+        }
+      : {
+          date: 'date',
+          branch: 'branch',
+          year: 'year',
+          teacher: 'teacher',
+          extraName: 'extra_name',
+          code: 'code',
+          script: 'script',
+          type: 'type',
+          format: 'format',
+          filmed: 'filmed',
+          filmingDate: 'filming_date',
+          by: 'by',
+          storage: 'storage',
+          notes: 'notes',
+          editorNotes: 'editor_notes',
+          driveRaw: 'drive_raw',
+          editorCol: 'editor_col',
+          editor: 'editor_col',
+          done: 'done',
+          driveFinal: 'drive_final',
+          canceled: 'canceled',
+          missingDetails: 'missing_details',
+          hardDriveStatus: 'hard_drive_status',
+        };
+
+    const allowedItemKeys = new Set<string>(changedFields || []);
+    if (newCode && cleanCodePart(newCode) !== cleanCodePart(oldCode)) {
+      allowedItemKeys.add('code');
+    }
+
+    if (changedFields && changedFields.length > 0) {
+      const partialPayload: Record<string, any> = { updated_at: dbPayload.updated_at };
+      for (const f of allowedItemKeys) {
+        const dbCol = fieldToDbCol[f];
+        if (dbCol && dbPayload[dbCol] !== undefined) {
+          partialPayload[dbCol] = dbPayload[dbCol];
+        }
+      }
+      dbPayload = partialPayload;
+
+      // Preserve untouched fields from prevItem in optimistic state too!
+      if (prevItem) {
+        const mergedItem: any = { ...prevItem };
+        for (const f of allowedItemKeys) {
+          if (f === 'code') {
+            mergedItem.code = updatedItem.code;
+            mergedItem.id = updatedItem.id;
+            mergedItem.uniqueKey = updatedItem.uniqueKey;
+          } else if (f === 'editor' && activeGid !== '0') {
+            mergedItem.editorCol = updatedItem.editorCol;
+          } else if (updatedItem[f] !== undefined) {
+            mergedItem[f] = updatedItem[f];
+          }
+        }
+        updatedItem = mergedItem;
+        isFilmed = updatedItem.filmed === true || updatedItem.filmed === 'TRUE';
+      }
+    } else if (prevItem) {
+      // Fallback for any legacy caller without changedFields: diff against prevItem
+      // and NEVER allow silently wiping editor / editor_col / drive_final!
+      const partialPayload: Record<string, any> = { updated_at: dbPayload.updated_at };
+      for (const [itemKey, dbCol] of Object.entries(fieldToDbCol)) {
+        if (dbPayload[dbCol] === undefined) continue;
+        const prevVal = prevItem[itemKey] ?? prevItem[dbCol] ?? '';
+        const nextVal = dbPayload[dbCol];
+        if (String(prevVal ?? '') !== String(nextVal ?? '')) {
+          // Extra guard: if legacy caller tries to wipe editor/drive_final to empty, skip
+          if ((dbCol === 'editor' || dbCol === 'editor_col' || dbCol === 'drive_final') && String(prevVal).trim() && !String(nextVal || '').trim()) {
+            continue;
+          }
+          partialPayload[dbCol] = nextVal;
+        }
+      }
+      dbPayload = partialPayload;
+    }
+
     // Guard: Prevent marketing users (both juniors and managers) from modifying Done or removing/modifying Final Link in VE (1939073164) and Cuts (0)
     if (activeGid === '1939073164' || activeGid === '0') {
       const isVideoTeam = profile?.team?.toLowerCase() === 'video';
@@ -4706,6 +4813,15 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
     if (updatedItem.missingDetails !== prevItem?.missingDetails) {
       if (updatedItem.missingDetails) {
         recordAuditLog(profile, 'missing_details', newCode, 'حدد تفاصيل ناقصة على الريل');
+      }
+    }
+    const prevEditorAudit = String(prevItem?.editorCol ?? prevItem?.editor ?? '').trim();
+    const nextEditorAudit = String(updatedItem?.editorCol ?? updatedItem?.editor ?? '').trim();
+    if (nextEditorAudit !== prevEditorAudit && (dbPayload.editor !== undefined || dbPayload.editor_col !== undefined)) {
+      if (!nextEditorAudit && prevEditorAudit) {
+        recordAuditLog(profile, 'editor_cleared', newCode, `قام بإزالة اسم المونتير (السابق: ${prevEditorAudit})`);
+      } else {
+        recordAuditLog(profile, 'editor_updated', newCode, `قام بتغيير المونتير من "${prevEditorAudit || 'بدون'}" إلى "${nextEditorAudit}"`);
       }
     }
 
@@ -5093,19 +5209,19 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
           notifyCoreCountsChanged([activeGid]);
         }
 
-        // Two-way sync: If editing in VE tab, sync notes and shared fields back to Shooting tab!
+        // Two-way sync: If editing in VE tab, sync ONLY the changed shared fields back to Shooting tab!
         if (activeGid === '1939073164') {
-          await supabase.from('reels_shooting_26').update({
-            notes: updatedItem.notes,
-            by: updatedItem.by,
-            storage: updatedItem.storage,
-            type: updatedItem.type,
-            format: updatedItem.format,
-            editor_col: updatedItem.editorCol,
-            done: updatedItem.done === true,
-            drive_final: updatedItem.driveFinal,
-            updated_at: new Date().toISOString()
-          }).or(`code.eq."${oldCode}",code.eq."${newCode}",code.eq."${updatedItem.code}"`);
+          const sharedSyncCols = ['notes', 'by', 'storage', 'type', 'format', 'editor_col', 'done', 'drive_final'];
+          const shootingSyncPatch: Record<string, any> = {};
+          for (const col of sharedSyncCols) {
+            if (dbPayload[col] !== undefined) {
+              shootingSyncPatch[col] = dbPayload[col];
+            }
+          }
+          if (Object.keys(shootingSyncPatch).length > 0) {
+            shootingSyncPatch.updated_at = new Date().toISOString();
+            await supabase.from('reels_shooting_26').update(shootingSyncPatch).or(`code.eq."${oldCode}",code.eq."${newCode}",code.eq."${updatedItem.code}"`);
+          }
         }
       } catch (err: any) {
         console.error(err);

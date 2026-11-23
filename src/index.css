@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Noto+Sans+Arabic:wght@300;400;500;600;700;800&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@300;400;500;600;700&family=Noto+Sans+Arabic:wght@300;400;500;600;700;800&family=Outfit:wght@300;400;500;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -261,36 +261,54 @@ body {
 }
 
 /* ========================================================
-   LIGHT MODE THEME (Warm Greige & Espresso — Ultra Eye-Comfort)
-   Warm linen/stone surfaces + deep espresso ink (zero blue-light glare)
+   LIGHT MODE THEME (Dimmed Warm Taupe & Espresso — Low-Glare Eye-Comfort)
+   Soft dimmed warm stone surfaces + deep espresso ink + IBM Plex Sans Arabic font
 ======================================================== */
 html.light-mode {
-  --background: #e6e4df;
-  --foreground: #1f1914;
-  --primary: #523d2d;
-  --primary-bright: #664e3b;
-  --secondary: #d4d1cb;
-  --accent: #6b4e3d;
-  --border: rgba(45, 34, 24, 0.16);
-  --glass: rgba(223, 221, 217, 0.97);
-  --dropdown-bg: #dfddd9;
+  --background: #cfcbc4;
+  --foreground: #1a140f;
+  --primary: #4a3728;
+  --primary-bright: #5c4534;
+  --secondary: #bbb6ad;
+  --accent: #634836;
+  --border: rgba(38, 28, 19, 0.18);
+  --glass: rgba(198, 194, 186, 0.97);
+  --dropdown-bg: #c6c2ba;
   color-scheme: light;
 }
 
 html.light-mode,
 html.light-mode body {
-  background-color: #e6e4df !important;
-  color: #1f1914 !important;
+  background-color: #cfcbc4 !important;
+  color: #1a140f !important;
   background-image: none !important;
+  font-family: 'Plus Jakarta Sans', 'IBM Plex Sans Arabic', sans-serif !important;
+}
+
+/* Dedicated cleaner, calmer font when Light Mode is active */
+html.light-mode .arabic-text,
+html.light-mode input,
+html.light-mode textarea,
+html.light-mode select,
+html.light-mode button,
+html.light-mode th,
+html.light-mode td,
+html.light-mode h1,
+html.light-mode h2,
+html.light-mode h3,
+html.light-mode h4,
+html.light-mode p,
+html.light-mode span:not(.font-mono) {
+  font-family: 'Plus Jakarta Sans', 'IBM Plex Sans Arabic', sans-serif !important;
 }
 
 /* Top sticky header bar */
 html.light-mode .bg-background\/30 {
-  background-color: rgba(230, 228, 223, 0.97) !important;
-  border-color: rgba(45, 34, 24, 0.14) !important;
+  background-color: rgba(207, 203, 196, 0.97) !important;
+  border-color: rgba(38, 28, 19, 0.16) !important;
 }
 
-/* Root/page-level dark backgrounds -> warm linen stone */
+/* Root/page-level dark backgrounds -> dimmed warm stone */
 html.light-mode .bg-\[\#05070a\],
 html.light-mode .bg-\[\#060a12\],
 html.light-mode .bg-\[\#070a10\],
@@ -298,11 +316,11 @@ html.light-mode .bg-\[\#070a12\],
 html.light-mode .bg-\[\#070b14\],
 html.light-mode .bg-\[\#070b14\]\/95,
 html.light-mode .bg-\[\#080a0f\] {
-  background-color: #e6e4df !important;
-  color: #1f1914;
+  background-color: #cfcbc4 !important;
+  color: #1a140f;
 }
 
-/* Card, panel, modal, scrollbar bar, OP27 & dark slate surfaces -> warm greige */
+/* Card, panel, modal, scrollbar bar, OP27 & dark slate surfaces -> calm matte warm taupe */
 html.light-mode .bg-\[\#090d16\],
 html.light-mode .bg-\[\#0a0d14\],
 html.light-mode .bg-\[\#0a0d14\]\/90,
@@ -345,29 +363,29 @@ html.light-mode .bg-\[\#1f1f23\],
 html.light-mode .bg-slate-950,
 html.light-mode .bg-slate-900,
 html.light-mode .bg-slate-800 {
-  background-color: #dfddd9 !important;
-  color: #1f1914;
+  background-color: #c6c2ba !important;
+  color: #1a140f;
 }
 
 /* Studio Calendar out-of-month days */
 html.light-mode .bg-\[\#131314\]\/80 {
-  background-color: #d6d3cd !important;
-  color: #5e5147;
+  background-color: #bcb7ae !important;
+  color: #4a3e34;
 }
 
 /* Keep event card reel-count pill readable inside Studio Calendar */
 html.light-mode .studio-calendar-theme [draggable="true"] .bg-black\/30,
 html.light-mode .studio-calendar-theme [draggable="true"] .bg-black\/20 {
-  background-color: rgba(31, 25, 20, 0.34) !important;
-  color: #f7f5f2 !important;
+  background-color: rgba(26, 20, 15, 0.36) !important;
+  color: #f3f0eb !important;
 }
 
 /* Studio Calendar secondary gray surfaces */
 html.light-mode .bg-\[\#282a2c\],
 html.light-mode .bg-\[\#282a2c\]\/50,
 html.light-mode .bg-\[\#282a2c\]\/60 {
-  background-color: #d5d2cc !important;
-  color: #1f1914;
+  background-color: #bdb8af !important;
+  color: #1a140f;
 }
 
 html.light-mode .bg-\[\#303134\],
@@ -375,30 +393,30 @@ html.light-mode .bg-\[\#323639\],
 html.light-mode .bg-\[\#3c4043\],
 html.light-mode .hover\:bg-\[\#303134\]:hover,
 html.light-mode .hover\:bg-\[\#3c4043\]:hover {
-  background-color: #c7c3bc !important;
-  color: #1f1914;
+  background-color: #b0aba1 !important;
+  color: #1a140f;
 }
 
 html.light-mode .border-\[\#3c4043\],
 html.light-mode .border-\[\#5f6368\] {
-  border-color: #b7b2aa !important;
+  border-color: #9e988e !important;
 }
 
 html.light-mode .text-\[\#e8eaed\] {
-  color: #1f1914 !important;
+  color: #1a140f !important;
 }
 
 html.light-mode .text-\[\#9aa0a6\],
 html.light-mode .text-\[\#5f6368\] {
-  color: #4f4339 !important;
+  color: #46392f !important;
 }
 
 html.light-mode .text-\[\#8ab4f8\],
 html.light-mode .text-\[\#4285f4\] {
-  color: #2c4f6e !important;
+  color: #254461 !important;
 }
 
-/* Dark gradient card surfaces -> warm greige */
+/* Dark gradient card surfaces -> dimmed warm taupe */
 html.light-mode .from-\[\#0a0e18\],
 html.light-mode .from-\[\#0c101a\],
 html.light-mode .from-\[\#0c1628\],
@@ -407,18 +425,18 @@ html.light-mode .from-\[\#1b0f24\],
 html.light-mode .from-\[\#1d120a\],
 html.light-mode .from-slate-950 {
   background-image: none !important;
-  background-color: #dfddd9 !important;
-  color: #1f1914;
+  background-color: #c6c2ba !important;
+  color: #1a140f;
 }
 
-/* Dark 800/900/950 colored banners, PageAnnouncementBar & selected KPI cards -> warm earthy stone tints */
+/* Dark 800/900/950 colored banners, PageAnnouncementBar & selected KPI cards -> dimmed earthy stone tints */
 html.light-mode .from-purple-950\/40,
 html.light-mode .from-purple-950\/70,
 html.light-mode .from-purple-900\/40,
 html.light-mode .bg-purple-950\/50 {
   background-image: none !important;
-  background-color: #dedad6 !important;
-  box-shadow: 0 1px 3px rgba(45, 34, 24, 0.08) !important;
+  background-color: #c5c0c4 !important;
+  box-shadow: 0 1px 3px rgba(38, 28, 19, 0.08) !important;
 }
 
 html.light-mode .from-rose-950\/40,
@@ -427,13 +445,13 @@ html.light-mode .from-orange-950\/70,
 html.light-mode .bg-rose-950\/60,
 html.light-mode .bg-rose-950\/90 {
   background-image: none !important;
-  background-color: #e4dad6 !important;
-  box-shadow: 0 1px 3px rgba(45, 34, 24, 0.08) !important;
+  background-color: #ccc1bd !important;
+  box-shadow: 0 1px 3px rgba(38, 28, 19, 0.08) !important;
 }
 
 html.light-mode .bg-rose-950\/20,
 html.light-mode .bg-rose-950\/30 {
-  background-color: #e6ddd9 !important;
+  background-color: #cfc5c1 !important;
 }
 
 html.light-mode .from-blue-950\/40,
@@ -442,8 +460,8 @@ html.light-mode .from-blue-900\/20,
 html.light-mode .bg-blue-950,
 html.light-mode .bg-blue-950\/50 {
   background-image: none !important;
-  background-color: #d9dde0 !important;
-  box-shadow: 0 1px 3px rgba(45, 34, 24, 0.08) !important;
+  background-color: #bfc4c8 !important;
+  box-shadow: 0 1px 3px rgba(38, 28, 19, 0.08) !important;
 }
 
 html.light-mode .from-cyan-950\/40,
@@ -453,8 +471,8 @@ html.light-mode .bg-cyan-950\/30,
 html.light-mode .bg-cyan-950\/15,
 html.light-mode .bg-cyan-800\/30 {
   background-image: none !important;
-  background-color: #d7dfdf !important;
-  box-shadow: 0 1px 3px rgba(45, 34, 24, 0.08) !important;
+  background-color: #bdc6c6 !important;
+  box-shadow: 0 1px 3px rgba(38, 28, 19, 0.08) !important;
 }
 
 html.light-mode .from-emerald-950\/40,
@@ -465,8 +483,8 @@ html.light-mode .bg-emerald-900\/50,
 html.light-mode .bg-emerald-900\/60,
 html.light-mode .bg-emerald-800\/30 {
   background-image: none !important;
-  background-color: #d8dfd8 !important;
-  box-shadow: 0 1px 3px rgba(45, 34, 24, 0.08) !important;
+  background-color: #bec6c0 !important;
+  box-shadow: 0 1px 3px rgba(38, 28, 19, 0.08) !important;
 }
 
 html.light-mode .from-amber-950\/40,
@@ -475,26 +493,26 @@ html.light-mode .bg-amber-950\/50,
 html.light-mode .bg-amber-900\/30,
 html.light-mode .bg-amber-900\/65 {
   background-image: none !important;
-  background-color: #e4ddd0 !important;
-  box-shadow: 0 1px 3px rgba(45, 34, 24, 0.08) !important;
+  background-color: #cbc3b5 !important;
+  box-shadow: 0 1px 3px rgba(38, 28, 19, 0.08) !important;
 }
 
 /* Remove garish neon colored glow shadows in Light Mode */
 html.light-mode [class*="shadow-[0_0_"] {
-  box-shadow: 0 1px 3px rgba(45, 34, 24, 0.08) !important;
+  box-shadow: 0 1px 3px rgba(38, 28, 19, 0.09) !important;
 }
 
 html.light-mode .glass-panel {
-  background: #dfddd9 !important;
-  border-color: rgba(45, 34, 24, 0.16) !important;
-  box-shadow: 0 2px 8px rgba(45, 34, 24, 0.06) !important;
+  background: #c6c2ba !important;
+  border-color: rgba(38, 28, 19, 0.18) !important;
+  box-shadow: 0 2px 8px rgba(38, 28, 19, 0.07) !important;
 }
 
 /* Tables & sticky headers */
 html.light-mode .table-container {
-  background: #e1dfdb !important;
-  border-color: #b8b3aa !important;
-  box-shadow: 0 2px 8px rgba(45, 34, 24, 0.06) !important;
+  background: #c9c5bd !important;
+  border-color: #9e988e !important;
+  box-shadow: 0 2px 8px rgba(38, 28, 19, 0.07) !important;
 }
 
 html.light-mode .table-container thead,
@@ -503,71 +521,71 @@ html.light-mode .table-container thead th,
 html.light-mode .th-style,
 html.light-mode .bg-\[\#0c1222\],
 html.light-mode .bg-\[\#0c1222\]\/95 {
-  background-color: #cec9c2 !important;
-  color: #1f1914 !important;
-  border-bottom: 1px solid #b3ada4 !important;
+  background-color: #b5b0a6 !important;
+  color: #1a140f !important;
+  border-bottom: 1px solid #969086 !important;
 }
 
 html.light-mode .row-hover:hover {
-  background-color: rgba(82, 61, 45, 0.06) !important;
+  background-color: rgba(74, 55, 40, 0.08) !important;
 }
 
 html.light-mode tbody tr {
-  border-color: rgba(45, 34, 24, 0.11) !important;
+  border-color: rgba(38, 28, 19, 0.13) !important;
 }
 
 /* Soften loud saturated green/rose row highlights for eye comfort */
 html.light-mode .bg-emerald-500\/\[0\.22\],
 html.light-mode .bg-emerald-500\/\[0\.08\] {
-  background-color: rgba(37, 94, 67, 0.1) !important;
+  background-color: rgba(37, 94, 67, 0.12) !important;
 }
 
 html.light-mode .bg-rose-500\/\[0\.09\],
 html.light-mode .bg-rose-500\/\[0\.06\] {
-  background-color: rgba(140, 45, 56, 0.09) !important;
+  background-color: rgba(140, 45, 56, 0.11) !important;
 }
 
 /* Warm earthy & espresso solid buttons/badges in Light Mode */
 html.light-mode .bg-emerald-500,
 html.light-mode .bg-emerald-600 {
-  background-color: #2a6649 !important;
+  background-color: #265c42 !important;
 }
 html.light-mode .bg-rose-500,
 html.light-mode .bg-rose-600 {
-  background-color: #8c3440 !important;
+  background-color: #802f3a !important;
 }
 html.light-mode .bg-amber-500,
 html.light-mode .bg-amber-600 {
-  background-color: #7d4e21 !important;
+  background-color: #73471e !important;
 }
 html.light-mode .bg-orange-500,
 html.light-mode .bg-orange-600 {
-  background-color: #8a4822 !important;
+  background-color: #7d411e !important;
 }
 html.light-mode .bg-indigo-500,
 html.light-mode .bg-indigo-600 {
-  background-color: #523d2d !important;
+  background-color: #4a3728 !important;
 }
 html.light-mode .bg-blue-500,
 html.light-mode .bg-blue-600 {
-  background-color: #2f5573 !important;
+  background-color: #2b4d69 !important;
 }
 html.light-mode .bg-purple-500,
 html.light-mode .bg-purple-600 {
-  background-color: #5c436b !important;
+  background-color: #533c61 !important;
 }
 html.light-mode .bg-cyan-500,
 html.light-mode .bg-cyan-600 {
-  background-color: #285d6b !important;
+  background-color: #245461 !important;
 }
 
-/* Translucent white/black surface overrides -> warm nested greige stone layers */
+/* Translucent white/black surface overrides -> dimmed warm nested taupe layers */
 html.light-mode .bg-white\/\[0\.01\],
 html.light-mode .bg-white\/\[0\.015\],
 html.light-mode .bg-white\/\[0\.02\],
 html.light-mode .bg-white\/\[0\.03\],
 html.light-mode .bg-white\/\[0\.04\] {
-  background-color: #e2e0dc !important;
+  background-color: #cbc7bf !important;
 }
 
 html.light-mode .bg-white\/5,
@@ -575,32 +593,32 @@ html.light-mode .bg-white\/\[0\.05\],
 html.light-mode .bg-white\/\[0\.06\],
 html.light-mode .bg-white\/\[0\.07\],
 html.light-mode .bg-white\/\[0\.08\] {
-  background-color: #d6d3cd !important;
+  background-color: #beb9b0 !important;
 }
 
 html.light-mode .bg-white\/10,
 html.light-mode .bg-white\/\[0\.12\],
 html.light-mode .bg-white\/15,
 html.light-mode .bg-white\/20 {
-  background-color: #c8c4bd !important;
+  background-color: #b1aca2 !important;
 }
 
 html.light-mode .bg-white:not(.toggle-knob) {
-  background-color: #e2e0dc !important;
+  background-color: #cbc7bf !important;
 }
 
 html.light-mode .hover\:bg-white\/5:hover,
 html.light-mode .hover\:bg-white\/10:hover {
-  background-color: #c4c0b8 !important;
+  background-color: #ada89e !important;
 }
 
 html.light-mode .toggle-track-off {
-  background-color: #a39d94 !important;
+  background-color: #8f897f !important;
 }
 
 html.light-mode .toggle-knob {
-  background-color: #f4f2ee !important;
-  box-shadow: 0 1px 3px rgba(31, 25, 20, 0.35) !important;
+  background-color: #e6e2db !important;
+  box-shadow: 0 1px 3px rgba(26, 20, 15, 0.35) !important;
 }
 
 /* Soft inner black cards (non-overlay) */
@@ -608,7 +626,7 @@ html.light-mode .bg-black\/20:not(.fixed),
 html.light-mode .bg-black\/25:not(.fixed),
 html.light-mode .bg-black\/30:not(.fixed),
 html.light-mode .bg-black\/40:not(.fixed) {
-  background-color: #d1cec8 !important;
+  background-color: #bab5ac !important;
 }
 
 /* Full-screen dialog overlays: warm dimmed backdrop */
@@ -953,19 +971,19 @@ html.light-mode .text-yellow-400 { color: #854d0e !important; }
 
 html.light-mode .text-lime-300 { color: #3f6212 !important; }
 
-/* Inputs, selects, textareas -> warm greige stone (zero glare) */
+/* Inputs, selects, textareas -> dimmed warm taupe stone (zero glare) */
 html.light-mode input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]),
 html.light-mode textarea,
 html.light-mode select {
-  background-color: #e4e2dd !important;
-  color: #1f1914 !important;
-  border-color: #b5b0a8 !important;
+  background-color: #d2cec7 !important;
+  color: #1a140f !important;
+  border-color: #9c968b !important;
   color-scheme: light !important;
 }
 
 html.light-mode select option {
-  background-color: #dfddd9 !important;
-  color: #1f1914 !important;
+  background-color: #c6c2ba !important;
+  color: #1a140f !important;
 }
 
 /* Soften neon glow shadows in Light Mode */
@@ -975,25 +993,25 @@ html.light-mode .chip-base {
 
 /* Canceled rows in Light Mode */
 html.light-mode .canceled-row {
-  background-color: rgba(140, 45, 56, 0.1) !important;
-  border-color: rgba(140, 45, 56, 0.32) !important;
-  color: #751f29 !important;
+  background-color: rgba(140, 45, 56, 0.12) !important;
+  border-color: rgba(140, 45, 56, 0.35) !important;
+  color: #6e1a24 !important;
 }
 
 /* Light Mode Scrollbars */
 html.light-mode ::-webkit-scrollbar-track {
-  background: #d2cfc9;
+  background: #bab5ac;
 }
 
 html.light-mode ::-webkit-scrollbar-thumb {
-  background: #9a938a;
+  background: #878077;
 }
 
 html.light-mode ::-webkit-scrollbar-thumb:hover {
-  background: #70685e;
+  background: #615a50;
 }
 
 html.light-mode .top-scroll-track::-webkit-scrollbar-track,
 html.light-mode .table-container::-webkit-scrollbar-track {
-  background: #d2cfc9;
+  background: #bab5ac;
 }

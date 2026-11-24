@@ -3098,6 +3098,71 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
     driveRaw: ''
   });
 
+  // ── Quick Presets (آخر الإدخالات السريعة) ──
+  type ShootingQuickPreset = {
+    id: string;
+    branch: string;
+    year: string;
+    teacher: string;
+    extraName: string;
+    type: string;
+    format: string;
+  };
+  const [shootingQuickPresets, setShootingQuickPresets] = useState<ShootingQuickPreset[]>(() => {
+    try {
+      const raw = localStorage.getItem('shooting_quick_presets_v1');
+      const parsed = raw ? JSON.parse(raw) : [];
+      return Array.isArray(parsed) ? parsed.slice(0, 4) : [];
+    } catch {
+      return [];
+    }
+  });
+  const saveShootingQuickPreset = (f: { branch: string; year: string; teacher: string; extraName: string; type: string; format: string }) => {
+    if (!f.teacher?.trim() || !f.year?.trim()) return;
+    const key = `${f.branch}|${f.year}|${f.teacher}|${f.extraName}|${f.type}|${f.format}`.toLowerCase();
+    const newPreset: ShootingQuickPreset = {
+      id: key,
+      branch: f.branch,
+      year: f.year,
+      teacher: f.teacher,
+      extraName: f.extraName,
+      type: f.type,
+      format: f.format
+    };
+    setShootingQuickPresets(prev => {
+      const next = [newPreset, ...prev.filter(p => p.id !== key)].slice(0, 4);
+      try { localStorage.setItem('shooting_quick_presets_v1', JSON.stringify(next)); } catch {}
+      return next;
+    });
+  };
+  const removeShootingQuickPreset = (presetId: string) => {
+    setShootingQuickPresets(prev => {
+      const next = prev.filter(p => p.id !== presetId);
+      try { localStorage.setItem('shooting_quick_presets_v1', JSON.stringify(next)); } catch {}
+      return next;
+    });
+  };
+
+  // ── Google Docs Link Access Checker (Warning Only) ──
+  const [docAccessStatus, setDocAccessStatus] = useState<'idle' | 'checking' | 'public' | 'restricted'>('idle');
+  const [docAutoTitle, setDocAutoTitle] = useState<string>('');
+
+  // ── Bulk Add (لصق جماعي لعدة سكريبتات مرة واحدة) ──
+  type BulkPreviewItem = {
+    id: string;
+    url: string;
+    title: string;
+    previewCode: string;
+    isDuplicate: boolean;
+    duplicateReason?: string;
+    isRestricted: boolean;
+  };
+  const [isBulkAddMode, setIsBulkAddMode] = useState(false);
+  const [bulkLinksText, setBulkLinksText] = useState('');
+  const [bulkPreviewItems, setBulkPreviewItems] = useState<BulkPreviewItem[]>([]);
+  const [isBulkScanning, setIsBulkScanning] = useState(false);
+  const [bulkProgress, setBulkProgress] = useState<{ current: number; total: number } | null>(null);
+
   const [sequenceRegistry, setSequenceRegistry] = useState<SequenceRegistry>(() => loadLocalSequenceRegistry());
   const [isEditingManualCode, setIsEditingManualCode] = useState(false);
   const [manualCodeOverride, setManualCodeOverride] = useState('');
@@ -3108,6 +3173,69 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
       .then(reg => setSequenceRegistry(reg))
       .catch(() => {});
   }, [isDemo, showAddModal, showGoogleSheetImportModal]);
+
+  // Auto-fill Extra Name (Creator) with logged-in user's name when opening Add Modal
+  useEffect(() => {
+    if (!showAddModal) {
+      setDocAccessStatus('idle');
+      setDocAutoTitle('');
+      return;
+    }
+    const rawUserName = (profile?.name || '').trim();
+    if (!rawUserName || rawUserName.toLowerCase() === 'admin') return;
+    setShootingAddForm(prev => {
+      // Match existing extraName option case-insensitively (full or first name), else use profile name
+      const firstName = rawUserName.split(/\s+/)[0] || rawUserName;
+      const matched =
+        uniqueExtraNames.find(n => n.toLowerCase() === rawUserName.toLowerCase()) ||
+        uniqueExtraNames.find(n => n.toLowerCase() === firstName.toLowerCase()) ||
+        rawUserName;
+      return { ...prev, extraName: matched };
+    });
+  }, [showAddModal, profile?.name]);
+
+  // Auto-check Google Docs permission whenever scriptLink changes (non-blocking warning)
+  useEffect(() => {
+    if (!showAddModal || isBulkAddMode) {
+      setDocAccessStatus('idle');
+      setDocAutoTitle('');
+      return;
+    }
+    const link = (shootingAddForm.scriptLink || '').trim();
+    if (!link || !link.includes('docs.google.com/document/d/')) {
+      setDocAccessStatus('idle');
+      setDocAutoTitle('');
+      return;
+    }
+    let cancelled = false;
+    setDocAccessStatus('checking');
+    const timer = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/duration?action=doc-extract&url=${encodeURIComponent(link)}`);
+        if (cancelled) return;
+        const data = await res.json().catch(() => ({}));
+        if (res.status === 403 || data?.isPublic === false) {
+          setDocAccessStatus('restricted');
+          setDocAutoTitle('');
+        } else if (res.ok) {
+          setDocAccessStatus('public');
+          const fetchedTitle = String(data?.title || '').trim();
+          setDocAutoTitle(fetchedTitle);
+          if (fetchedTitle) {
+            setShootingAddForm(prev => prev.scriptName.trim() ? prev : { ...prev, scriptName: fetchedTitle });
+          }
+        } else {
+          setDocAccessStatus('idle');
+        }
+      } catch {
+        if (!cancelled) setDocAccessStatus('idle');
+      }
+    }, 450);
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [shootingAddForm.scriptLink, showAddModal, isBulkAddMode]);
 
   useEffect(() => {
     if (isDemo) return;
@@ -3506,6 +3634,252 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
     toast.success(`🎯 تم حفظ وتعميم حد الأولوية لهذا التاب إلى: ${newLimit >= 999 ? 'غير محدود' : newLimit} مهمة`);
   };
 
+  const handleBulkScan = async () => {
+    if (!shootingAddForm.teacher?.trim() || !shootingAddForm.extraName?.trim() || !shootingAddForm.type?.trim() || !shootingAddForm.format?.trim()) {
+      toast.error('يرجى تحديد المدرس والاسم الإضافي والنوع والمقاس أولاً');
+      return;
+    }
+    const rawLines = bulkLinksText
+      .split(/\r?\n/)
+      .map(l => l.trim())
+      .filter(Boolean);
+
+    if (rawLines.length === 0) {
+      toast.error('يرجى لصق رابط واحد على الأقل (كل رابط في سطر)');
+      return;
+    }
+
+    setIsBulkScanning(true);
+    try {
+      const existingRows = reelsDbRows || [];
+      const seenDocIds = new Set<string>();
+      const seenUrls = new Set<string>();
+      const tempKnownCodes = new Set<string>(allReelsCodesSet);
+
+      const scanned: BulkPreviewItem[] = await Promise.all(
+        rawLines.map(async (line, idx) => {
+          let customTitle = '';
+          let url = line;
+          if (line.includes('|')) {
+            const parts = line.split('|');
+            if (parts[1]?.trim().startsWith('http')) {
+              customTitle = parts[0].trim();
+              url = parts.slice(1).join('|').trim();
+            }
+          }
+
+          const cleanUrl = url.replace(/\/edit.*|\/view.*|\?.*$/i, '').trim().toLowerCase();
+          const docIdMatch = url.match(/\/(?:document|spreadsheets|presentation|file)\/d\/([a-zA-Z0-9_-]{15,})/i);
+          const docId = docIdMatch ? docIdMatch[1] : null;
+
+          let isDuplicate = false;
+          let duplicateReason = '';
+
+          // Check against existing DB rows
+          for (const r of existingRows) {
+            const rScript = String(r.script || '');
+            if (docId && rScript.includes(docId)) {
+              isDuplicate = true;
+              duplicateReason = `مكرر مع (${r.code})`;
+              break;
+            }
+            if (!docId && cleanUrl.length > 15 && rScript.toLowerCase().includes(cleanUrl)) {
+              isDuplicate = true;
+              duplicateReason = `مكرر مع (${r.code})`;
+              break;
+            }
+          }
+
+          // Check duplicates within pasted batch itself
+          if (!isDuplicate) {
+            if (docId && seenDocIds.has(docId)) {
+              isDuplicate = true;
+              duplicateReason = 'مكرر داخل القائمة';
+            } else if (!docId && cleanUrl && seenUrls.has(cleanUrl)) {
+              isDuplicate = true;
+              duplicateReason = 'مكرر داخل القائمة';
+            }
+          }
+          if (docId) seenDocIds.add(docId);
+          if (cleanUrl) seenUrls.add(cleanUrl);
+
+          let fetchedTitle = customTitle;
+          let isRestricted = false;
+          if (url.includes('docs.google.com/document/d/')) {
+            try {
+              const res = await fetch(`/api/duration?action=doc-extract&url=${encodeURIComponent(url)}`);
+              const data = await res.json().catch(() => ({}));
+              if (res.status === 403 || data?.isPublic === false) {
+                isRestricted = true;
+              } else if (res.ok && !fetchedTitle && data?.title) {
+                fetchedTitle = String(data.title).trim();
+              }
+            } catch {}
+          }
+
+          return {
+            id: `bulk-${idx}-${Date.now()}`,
+            url,
+            title: fetchedTitle,
+            previewCode: '',
+            isDuplicate,
+            duplicateReason,
+            isRestricted
+          };
+        })
+      );
+
+      // Compute sequential preview codes for all non-duplicate items
+      const withCodes = scanned.map(item => {
+        if (item.isDuplicate) return item;
+        const computed = computeNextUniqueReelCode({
+          year: shootingAddForm.year,
+          teacher: shootingAddForm.teacher,
+          extraName: shootingAddForm.extraName,
+          isCut: false,
+          allKnownCodes: tempKnownCodes,
+          sequenceRegistry,
+        });
+        tempKnownCodes.add(computed.code.toLowerCase());
+        const seqMatch = computed.code.match(/-(\d+(?:\s*v\d+)?)$/i);
+        const seqTag = seqMatch ? `#${seqMatch[1].replace(/\s*v\d+$/i, '')}` : '';
+        const fallbackTitle = `اسكريبت مستر ${shootingAddForm.teacher} ${seqTag} - ${shootingAddForm.year.toUpperCase()} (${shootingAddForm.type})`.replace(/\s+/g, ' ').trim();
+        return {
+          ...item,
+          previewCode: computed.code,
+          title: item.title || fallbackTitle
+        };
+      });
+
+      setBulkPreviewItems(withCodes);
+      const validCount = withCodes.filter(x => !x.isDuplicate).length;
+      const restrictedCount = withCodes.filter(x => x.isRestricted).length;
+      if (restrictedCount > 0) {
+        toast.info(`تم تجهيز ${validCount} ريل — تنبيه: يوجد ${restrictedCount} رابط Google Docs مقفول 🔒`);
+      } else {
+        toast.success(`✅ تم تجهيز ومعاينة ${validCount} ريل جاهز للإضافة!`);
+      }
+    } finally {
+      setIsBulkScanning(false);
+    }
+  };
+
+  const handleBulkSubmit = async () => {
+    const validItems = bulkPreviewItems.filter(x => !x.isDuplicate && x.url.trim());
+    if (validItems.length === 0) {
+      toast.error('لا توجد روابط صالحة للإضافة (اضغط معاينة أولاً)');
+      return;
+    }
+    const tbl = REELS_TABLE_MAP[activeGid];
+    if (!tbl) return;
+
+    setIsSubmittingAdd(true);
+    setBulkProgress({ current: 0, total: validItems.length });
+    saveShootingQuickPreset(shootingAddForm);
+
+    const addedRows: any[] = [];
+    let workingRegistry = sequenceRegistry;
+    const workingCodesSet = new Set<string>(allReelsCodesSet);
+
+    try {
+      for (let i = 0; i < validItems.length; i++) {
+        const entry = validItems[i];
+        setBulkProgress({ current: i + 1, total: validItems.length });
+
+        const claimed = await resolveAndClaimUniqueCodeFromDb({
+          year: shootingAddForm.year,
+          teacher: shootingAddForm.teacher,
+          extraName: shootingAddForm.extraName,
+          isCut: false,
+          localKnownCodes: workingCodesSet,
+          sequenceRegistry: workingRegistry,
+        });
+        workingRegistry = claimed.registry;
+        workingCodesSet.add(claimed.code.toLowerCase());
+
+        const cleanTitle = (entry.title || claimed.code).replace(/"/g, "'").trim();
+        const scriptValue = `=HYPERLINK("${entry.url.trim()}", "${cleanTitle}")`;
+        const nowIso = new Date().toISOString();
+        const newRow = {
+          date: new Date().toLocaleDateString('en-US'),
+          branch: shootingAddForm.branch,
+          year: shootingAddForm.year,
+          teacher: shootingAddForm.teacher,
+          extraName: shootingAddForm.extraName,
+          code: claimed.code,
+          id: claimed.code,
+          script: scriptValue,
+          type: shootingAddForm.type,
+          format: shootingAddForm.format,
+          filmed: false,
+          filmingDate: '',
+          by: '',
+          storage: '',
+          notes: '',
+          driveRaw: '',
+          editorCol: '',
+          done: false,
+          driveFinal: '',
+          canceled: false,
+          missingDetails: false,
+          uniqueKey: claimed.code
+        };
+
+        const { error } = await supabase.from(tbl).insert([{
+          date: newRow.date,
+          branch: newRow.branch,
+          year: newRow.year,
+          teacher: newRow.teacher,
+          extra_name: newRow.extraName,
+          code: newRow.code,
+          script: newRow.script,
+          type: newRow.type,
+          format: newRow.format,
+          filmed: false,
+          filming_date: '',
+          by: '',
+          storage: '',
+          notes: '',
+          drive_raw: '',
+          editor_col: '',
+          done: false,
+          drive_final: '',
+          canceled: false,
+          missing_details: false,
+          created_at: nowIso,
+          updated_at: nowIso
+        }]);
+
+        if (!error) {
+          addedRows.push(newRow);
+        }
+      }
+
+      setSequenceRegistry(workingRegistry);
+      if (addedRows.length > 0) {
+        const addedCodes = new Set(addedRows.map(r => r.code));
+        setReelsDbRows(prev => [...addedRows.reverse(), ...prev.filter(x => !addedCodes.has(x.code))]);
+        setReelsDbByGid(prev => {
+          const cur = prev[activeGid] || [];
+          return { ...prev, [activeGid]: [...addedRows, ...cur.filter((x: any) => !addedCodes.has(x.code))] };
+        });
+        toast.success(`🚀 تم إضافة ${addedRows.length} ريل بنجاح دفعة واحدة!`);
+        setBulkLinksText('');
+        setBulkPreviewItems([]);
+        setIsBulkAddMode(false);
+        setShowAddModal(false);
+      } else {
+        toast.error('تعذر إضافة الروابط — يرجى المحاولة مرة أخرى');
+      }
+    } catch (err: any) {
+      console.error('Bulk add error:', err);
+      toast.error('حدث خطأ أثناء الإضافة الجماعية: ' + (err?.message || err));
+    } finally {
+      setBulkProgress(null);
+      setIsSubmittingAdd(false);
+    }
+  };
+
   const handleAddSubmit = async (e: React.FormEvent | null, keepOpen = false) => {
     if (e) e.preventDefault();
     if (isSubmittingAdd) return;
@@ -3831,6 +4205,9 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
               return { ...prev, [activeGid]: [newShooting, ...cur.filter((x: any) => x.code !== newShooting.code)] };
             });
           }
+
+          // Save current combo to Quick Presets for 1-click reuse
+          saveShootingQuickPreset(shootingAddForm);
 
           // Keep modal open with Branch/Year/Teacher/ExtraName/Type/Format preserved if "حفظ وإضافة واحد تاني" was clicked
           if (keepOpen) {
@@ -7547,6 +7924,85 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
                 >
                   {['1436746012', '1939073164', '798246690', '0'].includes(activeGid) ? (
                     <>
+                      {/* ⚡ Quick Presets Bar (آخر الإدخالات السريعة — محفوظة + تلقائية من آخر الريلز) */}
+                      {activeGid === '1436746012' && (() => {
+                        const combinedPresets: ShootingQuickPreset[] = [...shootingQuickPresets];
+                        const seenIds = new Set(combinedPresets.map(p => p.id));
+                        if (combinedPresets.length < 4 && Array.isArray(reelsDbRows)) {
+                          for (const r of reelsDbRows) {
+                            if (combinedPresets.length >= 4) break;
+                            const b = String(r.branch || '').trim();
+                            const y = String(r.year || '').trim().toLowerCase();
+                            const t = String(r.teacher || '').trim();
+                            const ex = String(r.extraName || '').trim();
+                            const tp = String(r.type || '').trim();
+                            const fm = String(r.format || '').trim();
+                            if (!t || !y || !tp) continue;
+                            const pid = `${b}|${y}|${t}|${ex}|${tp}|${fm}`.toLowerCase();
+                            if (seenIds.has(pid)) continue;
+                            seenIds.add(pid);
+                            combinedPresets.push({ id: pid, branch: b || 'Alexandria', year: y, teacher: t, extraName: ex, type: tp, format: fm || 'REEL' });
+                          }
+                        }
+                        if (combinedPresets.length === 0) return null;
+                        return (
+                          <div className="p-2.5 rounded-xl bg-white/[0.03] border border-white/10 space-y-2">
+                            <div className="flex items-center justify-between">
+                              <span className="text-[10px] font-black text-amber-300 arabic-text flex items-center gap-1">
+                                <span>⚡ آخر الإدخالات السريعة (ضغطة واحدة)</span>
+                              </span>
+                              <span className="text-[9px] text-muted arabic-text">تملأ الفرع + السنة + المدرس + النوع + المقاس</span>
+                            </div>
+                            <div className="flex flex-wrap gap-1.5">
+                              {combinedPresets.map(p => {
+                                const isSaved = shootingQuickPresets.some(sp => sp.id === p.id);
+                                return (
+                                  <div
+                                    key={p.id}
+                                    className="group inline-flex items-center gap-1 rounded-lg bg-indigo-500/15 hover:bg-indigo-500/25 border border-indigo-500/30 transition-all"
+                                  >
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setShootingAddForm(prev => ({
+                                          ...prev,
+                                          branch: p.branch,
+                                          year: p.year,
+                                          teacher: p.teacher,
+                                          extraName: p.extraName || prev.extraName,
+                                          type: p.type,
+                                          format: p.format
+                                        }));
+                                        toast.success(`⚡ تم تطبيق: ${p.teacher} · ${p.year.toUpperCase()}`);
+                                      }}
+                                      className="px-2.5 py-1 text-[10px] font-bold text-indigo-200 hover:text-white cursor-pointer arabic-text flex items-center gap-1"
+                                    >
+                                      <span>{p.teacher}</span>
+                                      <span className="opacity-50">·</span>
+                                      <span className="font-mono uppercase">{p.year}</span>
+                                      <span className="opacity-50">·</span>
+                                      <span>{p.type}</span>
+                                      <span className="opacity-50">·</span>
+                                      <span>{p.format}</span>
+                                    </button>
+                                    {isSaved && (
+                                      <button
+                                        type="button"
+                                        onClick={() => removeShootingQuickPreset(p.id)}
+                                        className="pl-1.5 pr-1 py-1 text-white/40 hover:text-rose-400 cursor-pointer text-[10px]"
+                                        title="حذف من الاختصارات"
+                                      >
+                                        ×
+                                      </button>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        );
+                      })()}
+
                       <div className="grid grid-cols-2 gap-4">
                         <div>
                           <label className="block text-xs font-bold text-muted mb-1.5 arabic-text">الفرع (Branch)</label>
@@ -7630,6 +8086,137 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
                         </div>
                       </div>
 
+                      {/* Mode Switcher for Shooting: Single vs Bulk Add 🚀 */}
+                      {activeGid === '1436746012' && (
+                        <div className="flex items-center justify-between gap-2 p-1.5 rounded-xl bg-white/[0.03] border border-white/10">
+                          <div className="flex items-center gap-1.5 w-full">
+                            <button
+                              type="button"
+                              onClick={() => setIsBulkAddMode(false)}
+                              className={`flex-1 py-2 px-3 rounded-lg text-xs font-black transition-all cursor-pointer arabic-text ${
+                                !isBulkAddMode
+                                  ? 'bg-primary text-white shadow-sm'
+                                  : 'text-muted hover:text-white hover:bg-white/5'
+                              }`}
+                            >
+                              📝 إضافة فردية (ريل واحد)
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setIsBulkAddMode(true)}
+                              className={`flex-1 py-2 px-3 rounded-lg text-xs font-black transition-all cursor-pointer arabic-text flex items-center justify-center gap-1.5 ${
+                                isBulkAddMode
+                                  ? 'bg-emerald-600 text-white shadow-sm'
+                                  : 'text-muted hover:text-white hover:bg-white/5'
+                              }`}
+                            >
+                              <span>🚀 إضافة أكتر من سكريبت</span>
+                              <span className="px-1.5 py-0.5 rounded bg-black/20 text-[9px]">عدة روابط</span>
+                            </button>
+                          </div>
+                        </div>
+                      )}
+
+                      {activeGid === '1436746012' && isBulkAddMode ? (
+                        <div className="space-y-3 p-4 rounded-2xl bg-emerald-500/[0.05] border border-emerald-500/25">
+                          <div className="flex items-center justify-between gap-2 flex-wrap">
+                            <label className="text-xs font-black text-emerald-300 arabic-text">
+                              🚀 الزق روابط Google Docs هنا (كل رابط في سطر)
+                            </label>
+                            <span className="text-[10px] text-muted arabic-text">
+                              اختياري: تقدر تكتب <span className="font-mono text-white/70">اسم السكريبت | الرابط</span>
+                            </span>
+                          </div>
+                          <textarea
+                            rows={5}
+                            dir="ltr"
+                            value={bulkLinksText}
+                            onChange={e => {
+                              setBulkLinksText(e.target.value);
+                              if (bulkPreviewItems.length > 0) setBulkPreviewItems([]);
+                            }}
+                            placeholder={`https://docs.google.com/document/d/...\nhttps://docs.google.com/document/d/...\nhttps://docs.google.com/document/d/...`}
+                            className="w-full bg-black/30 border border-white/15 rounded-xl px-3.5 py-2.5 text-white font-mono text-xs focus:outline-none focus:border-emerald-500 transition-colors resize-y"
+                          />
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-[11px] text-muted arabic-text">
+                              عدد السطور: <strong className="text-white font-mono">{bulkLinksText.split(/\r?\n/).filter(l => l.trim()).length}</strong>
+                            </span>
+                            <button
+                              type="button"
+                              disabled={isBulkScanning || !bulkLinksText.trim()}
+                              onClick={handleBulkScan}
+                              className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-black transition-all cursor-pointer flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed arabic-text"
+                            >
+                              {isBulkScanning ? (
+                                <>
+                                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                  <span>جاري سحب الأسماء وفحص الصلاحية...</span>
+                                </>
+                              ) : (
+                                <span>🔍 سحب الأسماء ومعاينة الأكواد</span>
+                              )}
+                            </button>
+                          </div>
+
+                          {bulkPreviewItems.length > 0 && (
+                            <div className="space-y-2 max-h-56 overflow-y-auto pr-1 pt-2 border-t border-white/10">
+                              {bulkPreviewItems.map((bItem, idx) => (
+                                <div
+                                  key={bItem.id}
+                                  className={`p-2.5 rounded-xl border flex flex-col gap-1.5 ${
+                                    bItem.isDuplicate
+                                      ? 'bg-rose-500/10 border-rose-500/30 opacity-70'
+                                      : bItem.isRestricted
+                                        ? 'bg-amber-500/10 border-amber-500/30'
+                                        : 'bg-white/[0.03] border-white/10'
+                                  }`}
+                                >
+                                  <div className="flex items-center justify-between gap-2">
+                                    <div className="flex items-center gap-2 min-w-0">
+                                      <span className="px-2 py-0.5 rounded-md bg-primary/20 text-primary font-mono text-[10px] font-black shrink-0">
+                                        {bItem.isDuplicate ? 'مكرر' : bItem.previewCode}
+                                      </span>
+                                      {bItem.isDuplicate && (
+                                        <span className="text-[10px] font-bold text-rose-300 arabic-text">
+                                          ⚠️ {bItem.duplicateReason} (سيتم تخطيه)
+                                        </span>
+                                      )}
+                                      {!bItem.isDuplicate && bItem.isRestricted && (
+                                        <span className="text-[10px] font-bold text-amber-300 arabic-text">
+                                          🔒 تنبيه: الرابط مقفول (Request Access)
+                                        </span>
+                                      )}
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={() => setBulkPreviewItems(prev => prev.filter(x => x.id !== bItem.id))}
+                                      className="text-muted hover:text-rose-400 text-xs cursor-pointer px-1"
+                                      title="إزالة من القائمة"
+                                    >
+                                      ×
+                                    </button>
+                                  </div>
+                                  {!bItem.isDuplicate && (
+                                    <input
+                                      type="text"
+                                      value={bItem.title}
+                                      onChange={e => {
+                                        const val = e.target.value;
+                                        setBulkPreviewItems(prev => prev.map((x, i) => i === idx ? { ...x, title: val } : x));
+                                      }}
+                                      className="w-full bg-black/25 border border-white/10 rounded-lg px-2.5 py-1.5 text-xs font-bold text-white arabic-text focus:outline-none focus:border-emerald-500"
+                                      placeholder="اسم السكريبت..."
+                                    />
+                                  )}
+                                  <span className="text-[10px] font-mono text-muted truncate" dir="ltr">{bItem.url}</span>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <>
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div>
                           <div className="flex items-center justify-between mb-1.5">
@@ -7711,6 +8298,25 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
                               <span>{duplicateScriptLinkWarning}</span>
                             </div>
                           )}
+                          {/* 🔒 Google Docs Access Permission Status (Non-blocking Warning) */}
+                          {!duplicateScriptLinkWarning && docAccessStatus === 'checking' && (
+                            <div className="mt-1.5 text-[11px] font-bold text-sky-300 bg-sky-500/10 border border-sky-500/25 rounded-xl px-2.5 py-1.5 flex items-center gap-2 arabic-text">
+                              <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
+                              <span>جاري فحص صلاحية رابط Google Docs...</span>
+                            </div>
+                          )}
+                          {!duplicateScriptLinkWarning && docAccessStatus === 'restricted' && (
+                            <div className="mt-1.5 text-[11px] font-bold text-amber-300 bg-amber-500/15 border border-amber-500/35 rounded-xl p-2.5 flex items-start gap-2 arabic-text">
+                              <AlertTriangle className="w-4 h-4 shrink-0 text-amber-400 mt-0.5" />
+                              <span>🔒 تنبيه: رابط Google Docs ده مقفول (Request Access) — افتحه <strong>Anyone with the link</strong> عشان المصوّر والمونتير يقدروا يفتحوه!</span>
+                            </div>
+                          )}
+                          {!duplicateScriptLinkWarning && docAccessStatus === 'public' && (
+                            <div className="mt-1.5 text-[11px] font-bold text-emerald-300 bg-emerald-500/10 border border-emerald-500/25 rounded-xl px-2.5 py-1.5 flex items-center gap-2 arabic-text">
+                              <CheckCircle2 className="w-3.5 h-3.5 shrink-0 text-emerald-400" />
+                              <span>🔓 الرابط مفتوح (Anyone with the link){docAutoTitle ? ` · تم سحب العنوان تلقائياً` : ''}</span>
+                            </div>
+                          )}
                         </div>
                       </div>
 
@@ -7761,6 +8367,8 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
                           </div>
                         )}
                       </div>
+                        </>
+                      )}
                     </>
                   ) : isTagme3at ? (
                     <>
@@ -7938,7 +8546,9 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
 
                   {(() => {
                     const isShootingModal = ['1436746012', '1939073164', '798246690', '0'].includes(activeGid);
-                    const isShootingIncomplete = isShootingModal && (
+                    const isActiveBulkMode = activeGid === '1436746012' && isBulkAddMode;
+                    const validBulkCount = bulkPreviewItems.filter(x => !x.isDuplicate && x.url.trim()).length;
+                    const isShootingIncomplete = isShootingModal && !isActiveBulkMode && (
                       !shootingAddForm.branch ||
                       !shootingAddForm.year ||
                       (activeGid !== '0' && !shootingAddForm.teacher?.trim()) ||
@@ -7949,7 +8559,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
                       !shootingAddForm.scriptLink?.trim() ||
                       !generatedCode
                     );
-                    const hasDuplicateError = isShootingModal && (!!duplicateScriptLinkWarning || !!duplicateScriptNameWarning);
+                    const hasDuplicateError = isShootingModal && !isActiveBulkMode && (!!duplicateScriptLinkWarning || !!duplicateScriptNameWarning);
                     const isTagmeIncomplete = isTagme3at && !addForm.name?.trim();
                     const isDisabled = loading || isShootingIncomplete || hasDuplicateError || isTagmeIncomplete || isSubmittingAdd;
 
@@ -7977,38 +8587,58 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
                           >
                             إلغاء
                           </button>
-                          {activeGid === '1436746012' && (
+                          {isActiveBulkMode ? (
                             <button
                               type="button"
-                              disabled={isDisabled}
-                              onClick={() => handleAddSubmit(null, true)}
-                              className="px-5 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold arabic-text text-xs shadow-lg shadow-emerald-600/25 transition-all hover:scale-105 active:scale-95 cursor-pointer flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed disabled:pointer-events-none disabled:hover:scale-100"
-                              title="حفظ الريل الحالي والبقاء في النافذة بنفس الفرع والسنة والمدرس وتوليد الرقم التالي تلقائياً"
+                              disabled={isSubmittingAdd || validBulkCount === 0}
+                              onClick={handleBulkSubmit}
+                              className="px-7 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold arabic-text text-xs shadow-lg shadow-emerald-600/30 transition-all hover:scale-105 active:scale-95 cursor-pointer flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed disabled:pointer-events-none disabled:hover:scale-100"
                             >
-                              {isSubmittingAdd ? (
+                              {isSubmittingAdd && bulkProgress ? (
                                 <>
                                   <Loader2 className="w-4 h-4 animate-spin text-white" />
-                                  <span>جاري الحفظ...</span>
+                                  <span>جاري إضافة {bulkProgress.current} / {bulkProgress.total}...</span>
                                 </>
                               ) : (
-                                <span>حفظ وإضافة واحد تاني (نفس المدرس) ➕</span>
+                                <span>🚀 حفظ وإضافة الكل ({validBulkCount} ريل)</span>
                               )}
                             </button>
+                          ) : (
+                            <>
+                              {activeGid === '1436746012' && (
+                                <button
+                                  type="button"
+                                  disabled={isDisabled}
+                                  onClick={() => handleAddSubmit(null, true)}
+                                  className="px-5 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold arabic-text text-xs shadow-lg shadow-emerald-600/25 transition-all hover:scale-105 active:scale-95 cursor-pointer flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed disabled:pointer-events-none disabled:hover:scale-100"
+                                  title="حفظ الريل الحالي والبقاء في النافذة بنفس الفرع والسنة والمدرس وتوليد الرقم التالي تلقائياً"
+                                >
+                                  {isSubmittingAdd ? (
+                                    <>
+                                      <Loader2 className="w-4 h-4 animate-spin text-white" />
+                                      <span>جاري الحفظ...</span>
+                                    </>
+                                  ) : (
+                                    <span>حفظ وإضافة واحد تاني (نفس المدرس) ➕</span>
+                                  )}
+                                </button>
+                              )}
+                              <button
+                                type="submit"
+                                disabled={isDisabled}
+                                className="px-7 py-3 rounded-xl bg-primary hover:bg-primary/90 text-white font-bold arabic-text text-xs shadow-lg shadow-primary/30 transition-all hover:scale-105 active:scale-95 cursor-pointer flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed disabled:pointer-events-none disabled:hover:scale-100"
+                              >
+                                {isSubmittingAdd ? (
+                                  <>
+                                    <Loader2 className="w-4 h-4 animate-spin text-white" />
+                                    <span>جاري الحفظ والإضافة... ⏳</span>
+                                  </>
+                                ) : (
+                                  <span>حفظ وإضافة 🚀</span>
+                                )}
+                              </button>
+                            </>
                           )}
-                          <button
-                            type="submit"
-                            disabled={isDisabled}
-                            className="px-7 py-3 rounded-xl bg-primary hover:bg-primary/90 text-white font-bold arabic-text text-xs shadow-lg shadow-primary/30 transition-all hover:scale-105 active:scale-95 cursor-pointer flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed disabled:pointer-events-none disabled:hover:scale-100"
-                          >
-                            {isSubmittingAdd ? (
-                              <>
-                                <Loader2 className="w-4 h-4 animate-spin text-white" />
-                                <span>جاري الحفظ والإضافة... ⏳</span>
-                              </>
-                            ) : (
-                              <span>حفظ وإضافة 🚀</span>
-                            )}
-                          </button>
                         </div>
                       </div>
                     );

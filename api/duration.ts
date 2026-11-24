@@ -49,6 +49,23 @@ async function handleDocExtract(req: VercelRequest, res: VercelResponse) {
 
   try {
     let plainText = '';
+    let docTitle = '';
+    let isPublic = false;
+
+    const extractTitleFromDisposition = (cd: string) => {
+      if (!cd) return '';
+      const utf8Match = cd.match(/filename\*\s*=\s*UTF-8''([^;]+)/i);
+      if (utf8Match?.[1]) {
+        try {
+          return decodeURIComponent(utf8Match[1]).replace(/\.txt$/i, '').trim();
+        } catch {}
+      }
+      const basicMatch = cd.match(/filename\s*=\s*"?([^";]+)"?/i);
+      if (basicMatch?.[1]) {
+        return basicMatch[1].replace(/\.txt$/i, '').trim();
+      }
+      return '';
+    };
 
     try {
       const exportUrl = `https://docs.google.com/document/d/${docId}/export?format=txt`;
@@ -61,6 +78,8 @@ async function handleDocExtract(req: VercelRequest, res: VercelResponse) {
       const contentType = docRes.headers.get('content-type') || '';
       if (docRes.ok && contentType.includes('text/plain')) {
         plainText = await docRes.text();
+        isPublic = true;
+        docTitle = extractTitleFromDisposition(docRes.headers.get('content-disposition') || '');
       }
     } catch {
       // Fall through to Service Account fallback
@@ -86,14 +105,21 @@ async function handleDocExtract(req: VercelRequest, res: VercelResponse) {
       return res.status(403).json({
         error: 'تعذر قراءة الملف — تأكد أن الملف مشارك (Anyone with the link can view)',
         docId,
+        isPublic: false,
+        title: '',
         codes: [],
         links: [],
       });
     }
 
+    if (!docTitle) {
+      const firstLine = plainText.split(/\r?\n/).map(l => l.trim()).find(l => l.length >= 2 && !l.startsWith('http'));
+      if (firstLine) docTitle = firstLine.slice(0, 80);
+    }
+
     const { codes, links } = parseDocContent(plainText);
     res.setHeader('Cache-Control', 's-maxage=120, stale-while-revalidate=300');
-    return res.status(200).json({ docId, codes, links });
+    return res.status(200).json({ docId, isPublic, title: docTitle, codes, links });
   } catch (err: any) {
     console.error('doc-extract error:', err);
     return res.status(500).json({

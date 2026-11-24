@@ -34,13 +34,30 @@ function localDocExtractPlugin() {
             res.end(JSON.stringify({
               error: 'تعذر قراءة الملف محلياً — تأكد أن الملف مشارك (Anyone with the link)',
               docId,
+              isPublic: false,
+              title: '',
               codes: [],
               links: [],
             }));
             return;
           }
 
+          let docTitle = '';
+          const cd = docRes.headers.get('content-disposition') || '';
+          const utf8Match = cd.match(/filename\*\s*=\s*UTF-8''([^;]+)/i);
+          if (utf8Match?.[1]) {
+            try { docTitle = decodeURIComponent(utf8Match[1]).replace(/\.txt$/i, '').trim(); } catch {}
+          } else {
+            const basicMatch = cd.match(/filename\s*=\s*"?([^";]+)"?/i);
+            if (basicMatch?.[1]) docTitle = basicMatch[1].replace(/\.txt$/i, '').trim();
+          }
+
           const text = await docRes.text();
+          if (!docTitle) {
+            const firstLine = text.split(/\r?\n/).map(l => l.trim()).find(l => l.length >= 2 && !l.startsWith('http'));
+            if (firstLine) docTitle = firstLine.slice(0, 80);
+          }
+
           const codeMatches = text.match(/[A-Za-z0-9]+-[A-Za-z0-9]+-[A-Za-z0-9]+-[A-Za-z0-9]+-[^\r\n]*?\{[^}\r\n]+\}/g) || [];
           const codes = Array.from(new Set(codeMatches.map(c => c.trim()).filter(Boolean)));
 
@@ -51,7 +68,7 @@ function localDocExtractPlugin() {
 
           res.statusCode = 200;
           res.setHeader('Content-Type', 'application/json');
-          res.end(JSON.stringify({ docId, codes, links }));
+          res.end(JSON.stringify({ docId, isPublic: true, title: docTitle, codes, links }));
         } catch {
           next();
         }

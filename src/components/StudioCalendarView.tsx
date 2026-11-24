@@ -3147,7 +3147,7 @@ export const StudioCalendarView: React.FC<StudioCalendarViewProps> = ({
                   <span>الريلز والاسكريبتات ({activeSession.taskCodes?.length || 0})</span>
                 </h4>
                 <span className="text-xs text-[#9aa0a6]">
-                  انقر على المربع لتحديث حالة التصوير مباشرة
+                  تحديث حالة التصوير يتم من شيت Shooting فقط 🔒
                 </span>
               </div>
 
@@ -3165,22 +3165,20 @@ export const StudioCalendarView: React.FC<StudioCalendarViewProps> = ({
                       <div
                         key={code}
                         className={`p-3 rounded-2xl border transition-all flex items-center justify-between gap-3 ${
-                          isFilmed ? 'bg-emerald-500/10 border-emerald-500/30' : 'bg-[#1f1f1f] border-[#3c4043] hover:border-white/20'
+                          isFilmed ? 'bg-emerald-500/10 border-emerald-500/30' : 'bg-[#1f1f1f] border-[#3c4043]'
                         }`}
                       >
                         <div className="flex items-center gap-3 min-w-0 flex-1">
-                          <button
-                            type="button"
-                            onClick={() => handleToggleTaskFilmed(code, isFilmed)}
-                            className={`w-6 h-6 rounded-lg flex items-center justify-center transition-all shrink-0 cursor-pointer ${
+                          <div
+                            className={`w-6 h-6 rounded-lg flex items-center justify-center shrink-0 ${
                               isFilmed 
-                                ? 'bg-emerald-500 text-white shadow-md shadow-emerald-500/30' 
-                                : 'border border-[#5f6368] hover:border-emerald-400 text-transparent hover:text-emerald-400/50 bg-white/5'
+                                ? 'bg-emerald-500/25 text-emerald-400 border border-emerald-500/40' 
+                                : 'border border-[#5f6368]/60 text-transparent bg-white/5'
                             }`}
-                            title={isFilmed ? 'إلغاء حالة تم التصوير' : 'تحديد كـ تم التصوير ✅'}
+                            title="تحديث حالة التصوير يتم من شيت Shooting فقط"
                           >
                             <Check size={14} strokeWidth={3} />
-                          </button>
+                          </div>
 
                           <div className="min-w-0 flex-1 space-y-1">
                             <div className="flex items-center gap-2">
@@ -3248,18 +3246,16 @@ export const StudioCalendarView: React.FC<StudioCalendarViewProps> = ({
                             <span>الاسكريبت</span>
                           </button>
 
-                          <button
-                            type="button"
-                            onClick={() => handleToggleTaskFilmed(code, isFilmed)}
-                            className={`text-[10px] font-bold px-2.5 py-1 rounded-full cursor-pointer transition-all active:scale-95 border ${
+                          <span
+                            className={`text-[10px] font-bold px-2.5 py-1 rounded-full border select-none ${
                               isFilmed 
-                                ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40 hover:bg-emerald-500/30' 
-                                : 'bg-amber-500/20 text-amber-300 border-amber-500/40 hover:bg-amber-500/30'
+                                ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40' 
+                                : 'bg-amber-500/20 text-amber-300 border-amber-500/40'
                             }`}
-                            title="انقر لتغيير حالة التصوير"
+                            title="تغيير حالة التصوير يتم من شيت Shooting فقط"
                           >
                             {isFilmed ? 'تم التصوير ✅' : 'لم يصور ⏳'}
-                          </button>
+                          </span>
                         </div>
                       </div>
                     );
@@ -3270,22 +3266,15 @@ export const StudioCalendarView: React.FC<StudioCalendarViewProps> = ({
 
             {/* Actions */}
             <div className="pt-3 border-t border-[#3c4043] flex items-center justify-between gap-3">
+              <span className="text-[11px] text-[#9aa0a6]">
+                💡 لتأكيد التصوير ونقل الريل إلى VE استخدم شيت Shooting
+              </span>
               <button
                 type="button"
                 onClick={() => setModalMode(null)}
-                className="px-5 py-2.5 rounded-xl hover:bg-white/5 text-[#9aa0a6] hover:text-white transition-colors text-xs font-bold cursor-pointer"
+                className="px-6 py-2.5 rounded-xl bg-white/10 hover:bg-white/15 text-white transition-colors text-xs font-bold cursor-pointer"
               >
                 إغلاق
-              </button>
-
-              <button
-                type="button"
-                disabled={isSaving}
-                onClick={e => handleMarkAllFilmed(activeSession, e)}
-                className="px-6 py-2.5 rounded-full bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-lg shadow-emerald-600/30 transition-all hover:scale-105 active:scale-95 cursor-pointer flex items-center gap-2"
-              >
-                <CheckCircle2 size={16} />
-                <span>تسجيل انتهاء الجلسة وتصوير الكل ✅</span>
               </button>
             </div>
           </div>

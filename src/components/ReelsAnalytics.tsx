@@ -138,6 +138,7 @@ export const ReelsAnalytics = ({ isDemo = false }: ReelsAnalyticsProps) => {
   const [expandedBottleneck, setExpandedBottleneck] = useState<'ve' | 'filmed' | 'edit' | null>(null);
   const [trackFilter, setTrackFilter] = useState<'ALL' | 'SHOOTING_VE' | 'CUTS'>('ALL');
   const [selectedMonth, setSelectedMonth] = useState<string>('ALL');
+  const [expandedWeeks, setExpandedWeeks] = useState<Record<string, boolean>>({});
 
   const loading = isDemo ? (shootingLoading || veLoading || cutsLoading) : dbLoading;
   const error = isDemo ? (shootingError || veError || cutsError) : null;
@@ -441,7 +442,18 @@ export const ReelsAnalytics = ({ isDemo = false }: ReelsAnalyticsProps) => {
     ensureMonth('2026-10');
     ensureMonth('2026-11');
 
-    // ── Weekly Breakdown inside each Month (4 Weeks: 1-7, 8-14, 15-21, 22-End) ──
+    // ── Weekly & Daily Breakdown inside each Month (4 Weeks: 1-7, 8-14, 15-21, 22-End) ──
+    interface DayBucket {
+      day: number;
+      dayName: string;
+      shortDate: string;
+      filmed: number;
+      doneVE: number;
+      doneCuts: number;
+      totalDone: number;
+      edited: number;
+    }
+
     interface WeekBucket {
       weekNum: number;
       label: string;
@@ -451,28 +463,56 @@ export const ReelsAnalytics = ({ isDemo = false }: ReelsAnalyticsProps) => {
       doneCuts: number;
       totalDone: number;
       edited: number;
+      days: DayBucket[];
     }
+
+    const arabicWeekdays = ['الأحد', 'الإثنين', 'الثلاثاء', 'الأربعاء', 'الخميس', 'الجمعة', 'السبت'];
+
+    const buildWeekDays = (mKey: string, startDay: number, endDay: number): DayBucket[] => {
+      const [yStr, mStr] = mKey.split('-');
+      const yNum = Number(yStr) || 2026;
+      const mNum = Number(mStr) || 1;
+      const days: DayBucket[] = [];
+      for (let d = startDay; d <= endDay; d++) {
+        const dt = new Date(yNum, mNum - 1, d);
+        days.push({
+          day: d,
+          dayName: arabicWeekdays[dt.getDay()] || '',
+          shortDate: `${d} / ${mNum}`,
+          filmed: 0,
+          doneVE: 0,
+          doneCuts: 0,
+          totalDone: 0,
+          edited: 0
+        });
+      }
+      return days;
+    };
 
     const weeklyByMonth: Record<string, WeekBucket[]> = {};
     const ensureMonthWeeks = (mKey: string) => {
       if (!weeklyByMonth[mKey]) {
+        const [yStr, mStr] = mKey.split('-');
+        const yNum = Number(yStr) || 2026;
+        const mNum = Number(mStr) || 1;
+        const daysInMonth = new Date(yNum, mNum, 0).getDate();
         weeklyByMonth[mKey] = [
-          { weekNum: 1, label: 'الأسبوع الأول', dayRange: '1 – 7', filmed: 0, doneVE: 0, doneCuts: 0, totalDone: 0, edited: 0 },
-          { weekNum: 2, label: 'الأسبوع الثاني', dayRange: '8 – 14', filmed: 0, doneVE: 0, doneCuts: 0, totalDone: 0, edited: 0 },
-          { weekNum: 3, label: 'الأسبوع الثالث', dayRange: '15 – 21', filmed: 0, doneVE: 0, doneCuts: 0, totalDone: 0, edited: 0 },
-          { weekNum: 4, label: 'الأسبوع الرابع', dayRange: '22 – نهاية الشهر', filmed: 0, doneVE: 0, doneCuts: 0, totalDone: 0, edited: 0 }
+          { weekNum: 1, label: 'الأسبوع الأول', dayRange: '1 – 7', filmed: 0, doneVE: 0, doneCuts: 0, totalDone: 0, edited: 0, days: buildWeekDays(mKey, 1, Math.min(7, daysInMonth)) },
+          { weekNum: 2, label: 'الأسبوع الثاني', dayRange: '8 – 14', filmed: 0, doneVE: 0, doneCuts: 0, totalDone: 0, edited: 0, days: buildWeekDays(mKey, 8, Math.min(14, daysInMonth)) },
+          { weekNum: 3, label: 'الأسبوع الثالث', dayRange: '15 – 21', filmed: 0, doneVE: 0, doneCuts: 0, totalDone: 0, edited: 0, days: buildWeekDays(mKey, 15, Math.min(21, daysInMonth)) },
+          { weekNum: 4, label: 'الأسبوع الرابع', dayRange: `22 – ${daysInMonth}`, filmed: 0, doneVE: 0, doneCuts: 0, totalDone: 0, edited: 0, days: buildWeekDays(mKey, 22, daysInMonth) }
         ];
       }
       return weeklyByMonth[mKey];
     };
 
-    const getWeekIndex = (d: Date | null): number => {
-      if (!d) return -1;
+    const getWeekAndDay = (mKey: string, d: Date | null): { wb: WeekBucket; db?: DayBucket } | null => {
+      if (!d) return null;
       const day = d.getDate();
-      if (day <= 7) return 0;
-      if (day <= 14) return 1;
-      if (day <= 21) return 2;
-      return 3;
+      const wIdx = day <= 7 ? 0 : day <= 14 ? 1 : day <= 21 ? 2 : 3;
+      const wb = ensureMonthWeeks(mKey)[wIdx];
+      const db = wb.days.find(x => x.day === day);
+      return { wb, db };
     };
 
     ['2026-08', '2026-09', '2026-10', '2026-11'].forEach(ensureMonthWeeks);
@@ -491,8 +531,11 @@ export const ReelsAnalytics = ({ isDemo = false }: ReelsAnalyticsProps) => {
         const fKey = getYearMonth(fDate);
         if (fKey) {
           ensureMonth(fKey).filmed++;
-          const wIdx = getWeekIndex(fDate);
-          if (wIdx >= 0) ensureMonthWeeks(fKey)[wIdx].filmed++;
+          const wd = getWeekAndDay(fKey, fDate);
+          if (wd) {
+            wd.wb.filmed++;
+            if (wd.db) wd.db.filmed++;
+          }
         }
       }
     });
@@ -506,26 +549,32 @@ export const ReelsAnalytics = ({ isDemo = false }: ReelsAnalyticsProps) => {
         ensureMonthWeeks(vKey);
       }
       if (item.done && !item.canceled) {
-        const dDate = parseDate(item.filmingDate) || parseDate(item.updatedAt) || vDate;
+        const dDate = parseDate(item.updatedAt) || parseDate(item.filmingDate) || vDate;
         const dKey = getYearMonth(dDate);
         if (dKey) {
           const m = ensureMonth(dKey);
           m.doneVE++;
           m.totalDone++;
-          const wIdx = getWeekIndex(dDate);
-          if (wIdx >= 0) {
-            const wb = ensureMonthWeeks(dKey)[wIdx];
-            wb.doneVE++;
-            wb.totalDone++;
+          const wd = getWeekAndDay(dKey, dDate);
+          if (wd) {
+            wd.wb.doneVE++;
+            wd.wb.totalDone++;
+            if (wd.db) {
+              wd.db.doneVE++;
+              wd.db.totalDone++;
+            }
           }
         }
       }
       if (item.editCheck && !item.canceled) {
         const eDate = parseDate(item.updatedAt) || parseDate(item.filmingDate) || vDate;
         const eKey = getYearMonth(eDate);
-        const wIdx = getWeekIndex(eDate);
-        if (eKey && wIdx >= 0) {
-          ensureMonthWeeks(eKey)[wIdx].edited++;
+        if (eKey) {
+          const wd = getWeekAndDay(eKey, eDate);
+          if (wd) {
+            wd.wb.edited++;
+            if (wd.db) wd.db.edited++;
+          }
         }
       }
     });
@@ -545,20 +594,26 @@ export const ReelsAnalytics = ({ isDemo = false }: ReelsAnalyticsProps) => {
           const m = ensureMonth(dKey);
           m.doneCuts++;
           m.totalDone++;
-          const wIdx = getWeekIndex(dDate);
-          if (wIdx >= 0) {
-            const wb = ensureMonthWeeks(dKey)[wIdx];
-            wb.doneCuts++;
-            wb.totalDone++;
+          const wd = getWeekAndDay(dKey, dDate);
+          if (wd) {
+            wd.wb.doneCuts++;
+            wd.wb.totalDone++;
+            if (wd.db) {
+              wd.db.doneCuts++;
+              wd.db.totalDone++;
+            }
           }
         }
       }
       if ((item as any).editCheck && !item.canceled) {
         const eDate = parseDate(item.updatedAt) || cDate;
         const eKey = getYearMonth(eDate);
-        const wIdx = getWeekIndex(eDate);
-        if (eKey && wIdx >= 0) {
-          ensureMonthWeeks(eKey)[wIdx].edited++;
+        if (eKey) {
+          const wd = getWeekAndDay(eKey, eDate);
+          if (wd) {
+            wd.wb.edited++;
+            if (wd.db) wd.db.edited++;
+          }
         }
       }
     });
@@ -1403,7 +1458,7 @@ export const ReelsAnalytics = ({ isDemo = false }: ReelsAnalyticsProps) => {
           </div>
         </div>
 
-        {/* ── Weekly Breakdown Inside Selected Month (4 Weeks) ── */}
+        {/* ── Weekly & Daily Breakdown Inside Selected Month (4 Weeks with Expandable Days) ── */}
         {(() => {
           const activeWeeklyMonthKey =
             selectedMonth !== 'ALL'
@@ -1416,6 +1471,23 @@ export const ReelsAnalytics = ({ isDemo = false }: ReelsAnalyticsProps) => {
           const sumDoneCuts = weeks.reduce((a, w) => a + w.doneCuts, 0);
           const sumTotalDone = weeks.reduce((a, w) => a + w.totalDone, 0);
           const sumEdited = weeks.reduce((a, w) => a + w.edited, 0);
+          const allExpanded = weeks.length > 0 && weeks.every(w => expandedWeeks[`${activeWeeklyMonthKey}-W${w.weekNum}`]);
+
+          const toggleWeekExpand = (weekNum: number) => {
+            const key = `${activeWeeklyMonthKey}-W${weekNum}`;
+            setExpandedWeeks(prev => ({ ...prev, [key]: !prev[key] }));
+          };
+
+          const toggleAllWeeks = () => {
+            const nextVal = !allExpanded;
+            setExpandedWeeks(prev => {
+              const updated = { ...prev };
+              weeks.forEach(w => {
+                updated[`${activeWeeklyMonthKey}-W${w.weekNum}`] = nextVal;
+              });
+              return updated;
+            });
+          };
 
           return (
             <div className="bg-white/[0.02] border border-white/10 rounded-2xl overflow-hidden mt-4">
@@ -1423,13 +1495,24 @@ export const ReelsAnalytics = ({ isDemo = false }: ReelsAnalyticsProps) => {
                 <div className="flex items-center gap-2.5 flex-wrap">
                   <span className="text-xs font-black text-white arabic-text flex items-center gap-2">
                     <Calendar size={14} className="text-indigo-400" />
-                    <span>📅 تفصيل الإنتاج الأسبوعي داخل الشهر (4 أسابيع)</span>
+                    <span>📅 تفصيل الإنتاج الأسبوعي واليومي داخل الشهر (4 أسابيع)</span>
                   </span>
                   <span className="px-2.5 py-0.5 rounded-full text-[11px] font-black bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 arabic-text">
                     {activeWeeklyMonthObj?.label || activeWeeklyMonthKey}
                   </span>
+                  <span className="text-[10px] text-muted arabic-text">
+                    (اضغط على أي أسبوع لعرض الأيام)
+                  </span>
                 </div>
                 <div className="flex items-center gap-1.5 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={toggleAllWeeks}
+                    className="px-2.5 py-1 rounded-lg text-[10px] font-black transition-all cursor-pointer arabic-text bg-white/5 text-indigo-300 hover:bg-indigo-500/20 border border-indigo-500/30 flex items-center gap-1"
+                  >
+                    {allExpanded ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                    <span>{allExpanded ? 'طي كل الأيام' : 'عرض كل الأيام'}</span>
+                  </button>
                   {stats.monthlyBreakdown.map((m) => (
                     <button
                       key={`wk-btn-${m.key}`}
@@ -1451,8 +1534,8 @@ export const ReelsAnalytics = ({ isDemo = false }: ReelsAnalyticsProps) => {
                 <table className="w-full text-right text-xs">
                   <thead>
                     <tr className="border-b border-white/10 text-white/60 font-bold arabic-text bg-white/[0.01]">
-                      <th className="py-3 px-4">الأسبوع</th>
-                      <th className="py-3 px-4 text-center">الأيام</th>
+                      <th className="py-3 px-4">الأسبوع / اليوم</th>
+                      <th className="py-3 px-4 text-center">الأيام / التاريخ</th>
                       <th className="py-3 px-4 text-center text-cyan-400">🎥 اتصور (Filmed)</th>
                       <th className="py-3 px-4 text-center text-emerald-400">🎬 VE (Done)</th>
                       <th className="py-3 px-4 text-center text-orange-400">✂️ Cuts (Done)</th>
@@ -1461,36 +1544,98 @@ export const ReelsAnalytics = ({ isDemo = false }: ReelsAnalyticsProps) => {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-white/5 font-mono">
-                    {weeks.map((w) => (
-                      <tr key={`week-${w.weekNum}`} className="hover:bg-white/[0.04] transition-colors">
-                        <td className="py-3.5 px-4 font-black text-white arabic-text flex items-center gap-2">
-                          <span className="w-6 h-6 rounded-lg bg-indigo-500/15 border border-indigo-500/30 text-indigo-300 text-[11px] font-mono font-black flex items-center justify-center shrink-0">
-                            W{w.weekNum}
-                          </span>
-                          <span>{w.label}</span>
-                        </td>
-                        <td className="py-3.5 px-4 text-center text-[11px] text-muted arabic-text">
-                          {w.dayRange}
-                        </td>
-                        <td className="py-3.5 px-4 text-center font-bold text-cyan-400">{w.filmed}</td>
-                        <td className="py-3.5 px-4 text-center font-bold text-emerald-400">{w.doneVE}</td>
-                        <td className="py-3.5 px-4 text-center font-bold text-orange-400">{w.doneCuts}</td>
-                        <td className="py-3.5 px-4 text-center">
-                          <span className="px-2.5 py-1 rounded-lg bg-purple-500/15 text-purple-300 border border-purple-500/30 font-black text-xs">
-                            {w.totalDone}
-                          </span>
-                        </td>
-                        <td className="py-3.5 px-4 text-center">
-                          <span className={`px-2.5 py-1 rounded-lg font-black text-xs border ${
-                            w.edited > 0
-                              ? 'bg-amber-500/15 text-amber-300 border-amber-500/30'
-                              : 'bg-white/5 text-white/40 border-white/10'
-                          }`}>
-                            {w.edited}
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
+                    {weeks.map((w) => {
+                      const wkKey = `${activeWeeklyMonthKey}-W${w.weekNum}`;
+                      const isExpanded = Boolean(expandedWeeks[wkKey]);
+                      return (
+                        <React.Fragment key={`week-${w.weekNum}`}>
+                          <tr
+                            onClick={() => toggleWeekExpand(w.weekNum)}
+                            className={`transition-colors cursor-pointer select-none ${
+                              isExpanded ? 'bg-indigo-500/[0.08] hover:bg-indigo-500/[0.12]' : 'hover:bg-white/[0.04]'
+                            }`}
+                          >
+                            <td className="py-3.5 px-4 font-black text-white arabic-text flex items-center gap-2">
+                              <span className="text-indigo-300 transition-transform">
+                                {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                              </span>
+                              <span className="w-6 h-6 rounded-lg bg-indigo-500/15 border border-indigo-500/30 text-indigo-300 text-[11px] font-mono font-black flex items-center justify-center shrink-0">
+                                W{w.weekNum}
+                              </span>
+                              <span>{w.label}</span>
+                            </td>
+                            <td className="py-3.5 px-4 text-center text-[11px] text-muted arabic-text">
+                              {w.dayRange}
+                            </td>
+                            <td className="py-3.5 px-4 text-center font-bold text-cyan-400">{w.filmed}</td>
+                            <td className="py-3.5 px-4 text-center font-bold text-emerald-400">{w.doneVE}</td>
+                            <td className="py-3.5 px-4 text-center font-bold text-orange-400">{w.doneCuts}</td>
+                            <td className="py-3.5 px-4 text-center">
+                              <span className="px-2.5 py-1 rounded-lg bg-purple-500/15 text-purple-300 border border-purple-500/30 font-black text-xs">
+                                {w.totalDone}
+                              </span>
+                            </td>
+                            <td className="py-3.5 px-4 text-center">
+                              <span className={`px-2.5 py-1 rounded-lg font-black text-xs border ${
+                                w.edited > 0
+                                  ? 'bg-amber-500/15 text-amber-300 border-amber-500/30'
+                                  : 'bg-white/5 text-white/40 border-white/10'
+                              }`}>
+                                {w.edited}
+                              </span>
+                            </td>
+                          </tr>
+
+                          {isExpanded && (w.days || []).map((d) => {
+                            const hasActivity = d.filmed > 0 || d.doneVE > 0 || d.doneCuts > 0 || d.totalDone > 0 || d.edited > 0;
+                            return (
+                              <tr
+                                key={`day-${activeWeeklyMonthKey}-${d.day}`}
+                                className={`bg-black/20 hover:bg-white/[0.03] transition-colors text-[11px] ${
+                                  hasActivity ? '' : 'opacity-45'
+                                }`}
+                              >
+                                <td className="py-2 pr-11 pl-4 text-white/80 arabic-text flex items-center gap-2">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-indigo-400/70 shrink-0" />
+                                  <span className="font-bold">{d.dayName}</span>
+                                  <span className="text-[10px] text-muted">(يوم {d.day})</span>
+                                </td>
+                                <td className="py-2 px-4 text-center text-[11px] text-muted font-mono">
+                                  {d.shortDate}
+                                </td>
+                                <td className={`py-2 px-4 text-center font-bold ${d.filmed > 0 ? 'text-cyan-400' : 'text-white/30'}`}>
+                                  {d.filmed}
+                                </td>
+                                <td className={`py-2 px-4 text-center font-bold ${d.doneVE > 0 ? 'text-emerald-400' : 'text-white/30'}`}>
+                                  {d.doneVE}
+                                </td>
+                                <td className={`py-2 px-4 text-center font-bold ${d.doneCuts > 0 ? 'text-orange-400' : 'text-white/30'}`}>
+                                  {d.doneCuts}
+                                </td>
+                                <td className="py-2 px-4 text-center">
+                                  <span className={`px-2 py-0.5 rounded-md font-black text-[11px] border ${
+                                    d.totalDone > 0
+                                      ? 'bg-purple-500/15 text-purple-300 border-purple-500/30'
+                                      : 'bg-white/5 text-white/30 border-white/10'
+                                  }`}>
+                                    {d.totalDone}
+                                  </span>
+                                </td>
+                                <td className="py-2 px-4 text-center">
+                                  <span className={`px-2 py-0.5 rounded-md font-black text-[11px] border ${
+                                    d.edited > 0
+                                      ? 'bg-amber-500/15 text-amber-300 border-amber-500/30'
+                                      : 'bg-white/5 text-white/30 border-white/10'
+                                  }`}>
+                                    {d.edited}
+                                  </span>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </React.Fragment>
+                      );
+                    })}
                   </tbody>
                   <tfoot>
                     <tr className="border-t-2 border-white/15 bg-white/[0.03] font-mono font-black">

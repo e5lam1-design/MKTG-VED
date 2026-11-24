@@ -256,14 +256,14 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
       const icon = variant === 'success' ? '✅' : variant === 'error' ? '❌' : '⏳';
       
       setItemToasts(prev => {
-        const filtered = prev.filter(t => t.id !== id);
+        const filtered = prev.filter(t => t.id !== id).slice(-1);
         return [...filtered, { id, name: `${icon} ${msg}` }];
       });
 
       if (variant !== 'loading') {
         setTimeout(() => {
           setItemToasts(prev => prev.filter(t => t.id !== id));
-        }, 4000);
+        }, variant === 'error' ? 3000 : 1800);
       }
       return id;
     };
@@ -2061,6 +2061,18 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
   const [activeTagmeToast, setActiveTagmeToast] = useState<{ item: any, stage: { gid: string, label: string }, uniqueKey: string } | null>(null);
   const [activeVeToast, setActiveVeToast] = useState<{ item: any } | null>(null);
 
+  useEffect(() => {
+    if (!activeVeToast) return;
+    const t = setTimeout(() => setActiveVeToast(null), 2200);
+    return () => clearTimeout(t);
+  }, [activeVeToast]);
+
+  useEffect(() => {
+    if (!activeTagmeToast) return;
+    const t = setTimeout(() => setActiveTagmeToast(null), 2500);
+    return () => clearTimeout(t);
+  }, [activeTagmeToast]);
+
   const [noteAuthors, setNoteAuthors] = useState<Record<string, { author: string; timestamp: string }>>(() => {
     const saved = localStorage.getItem('note_authors');
     if (saved) {
@@ -3494,8 +3506,8 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
     toast.success(`🎯 تم حفظ وتعميم حد الأولوية لهذا التاب إلى: ${newLimit >= 999 ? 'غير محدود' : newLimit} مهمة`);
   };
 
-  const handleAddSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const handleAddSubmit = async (e: React.FormEvent | null, keepOpen = false) => {
+    if (e) e.preventDefault();
     if (isSubmittingAdd) return;
 
     // For Shooting / reels / Cuts sheets
@@ -3814,17 +3826,35 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
             }
 
             setReelsDbRows(prev => [newShooting, ...prev.filter(x => x.code !== newShooting.code)]);
+            setReelsDbByGid(prev => {
+              const cur = prev[activeGid] || [];
+              return { ...prev, [activeGid]: [newShooting, ...cur.filter((x: any) => x.code !== newShooting.code)] };
+            });
           }
 
-          // Close modal immediately and show success!
-          setShowAddModal(false);
-          setShootingAddForm(prev => ({
-            ...prev,
-            scriptName: '',
-            scriptLink: '',
-            driveRaw: ''
-          }));
-          toast.success("تم إضافة السكريبت الجديد بنجاح في Supabase! 🎉");
+          // Keep modal open with Branch/Year/Teacher/ExtraName/Type/Format preserved if "حفظ وإضافة واحد تاني" was clicked
+          if (keepOpen) {
+            setManualCodeOverride('');
+            setIsEditingManualCode(false);
+            setShootingAddForm(prev => ({
+              ...prev,
+              scriptName: '',
+              scriptLink: '',
+              driveRaw: ''
+            }));
+            toast.success(`✅ تم حفظ (${newShooting.code}) — جاهز لإضافة الريل اللي بعده! ➕`);
+          } else {
+            setShowAddModal(false);
+            setManualCodeOverride('');
+            setIsEditingManualCode(false);
+            setShootingAddForm(prev => ({
+              ...prev,
+              scriptName: '',
+              scriptLink: '',
+              driveRaw: ''
+            }));
+            toast.success("تم إضافة السكريبت الجديد بنجاح في Supabase! 🎉");
+          }
 
           const broadcastCode = newShooting.code || generatedCode;
           if (globalChannelRef.current && profile?.name) {
@@ -4423,35 +4453,31 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
             };
           });
         }
-      } else if (wasPreviouslyFilmed) {
-        // Un-filmed in Shooting. Check if editor work was already done before deleting!
+      } else {
+        // Un-filmed in Shooting: check if it exists in VE and remove it!
         const { data: existingVeRow } = await supabase
           .from('reels_ve_26')
           .select('code, done, drive_final, editor_col')
           .ilike('code', targetCode)
           .maybeSingle();
 
-        const hasWorkDone = existingVeRow && (
-          existingVeRow.done === true ||
-          Boolean(existingVeRow.drive_final && existingVeRow.drive_final.trim()) ||
-          (existingVeRow.editor_col && existingVeRow.editor_col !== 'غير محدد' && existingVeRow.editor_col !== '---')
-        );
-
-        // Direct rule: If unfilmed in Shooting, remove completely from VE!
-        await supabase
-          .from('reels_ve_26')
-          .delete()
-          .ilike('code', targetCode);
-        toast.info("تمت إزالة الريل تلقائياً من شيت VE لإلغاء علامة التصوير 🎬");
-        setReelsDbByGid(prev => {
-          const veRows = prev['1939073164'];
-          if (!veRows) return prev;
-          return {
-            ...prev,
-            ['1939073164']: veRows.filter((r: any) => String(r.code || '').trim().toLowerCase() !== targetCode.toLowerCase())
-          };
-        });
-        notifyCoreCountsChanged(['1939073164']);
+        if (existingVeRow) {
+          // Direct rule: If unfilmed in Shooting, remove completely from VE!
+          await supabase
+            .from('reels_ve_26')
+            .delete()
+            .ilike('code', targetCode);
+          toast.info("تمت إزالة الريل تلقائياً من شيت VE لإلغاء علامة التصوير 🎬");
+          setReelsDbByGid(prev => {
+            const veRows = prev['1939073164'];
+            if (!veRows) return prev;
+            return {
+              ...prev,
+              ['1939073164']: veRows.filter((r: any) => String(r.code || '').trim().toLowerCase() !== targetCode.toLowerCase())
+            };
+          });
+          notifyCoreCountsChanged(['1939073164']);
+        }
       }
     } catch (syncErr) {
       console.error('[VE Sync] Error syncing shooting row to VE:', syncErr);
@@ -5339,14 +5365,17 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
       return prev.map((r: any) => (r.code === rowCode || r.id === rowCode) ? { ...r, editCheck: true, edit_check: true, done: false } : r);
     });
     setReelsDbByGid(prev => {
-      const currentList = prev[activeGid];
-      if (!Array.isArray(currentList)) return prev;
-      return {
-        ...prev,
-        [activeGid]: currentList.map((r: any) =>
-          (r.code === rowCode || r.id === rowCode) ? { ...r, editCheck: true, edit_check: true, done: false } : r
-        )
-      };
+      const next = { ...prev };
+      const gidsToSync = activeGid === '0' ? ['0'] : ['1436746012', '1939073164'];
+      for (const gid of gidsToSync) {
+        const list = next[gid];
+        if (Array.isArray(list)) {
+          next[gid] = list.map((r: any) =>
+            (r.code === rowCode || r.id === rowCode) ? { ...r, editCheck: true, edit_check: true, done: false } : r
+          );
+        }
+      }
+      return next;
     });
 
     // Broadcast Realtime activity for subscribers
@@ -5358,24 +5387,37 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
       type: 'edit_check'
     });
 
-    // 2. Direct Supabase update
-    const targetTable = activeGid === '0' ? 'reels_cuts_26' : 'reels_ve_26';
+    // 2. Direct Supabase update (sync both reels_ve_26 and reels_shooting_26 when in VE or Shooting)
+    const nowIso = new Date().toISOString();
+    const targetTable = activeGid === '0' ? 'reels_cuts_26' : activeGid === '1436746012' ? 'reels_shooting_26' : 'reels_ve_26';
     try {
       const { error } = await supabase
         .from(targetTable)
         .update({ 
           edit_check: true, 
           done: false, 
-          updated_at: new Date().toISOString() 
+          updated_at: nowIso 
         })
         .eq('code', rowCode);
+
+      if (activeGid === '1436746012') {
+        await supabase
+          .from('reels_ve_26')
+          .update({ edit_check: true, done: false, updated_at: nowIso })
+          .ilike('code', rowCode);
+      } else if (activeGid === '1939073164') {
+        await supabase
+          .from('reels_shooting_26')
+          .update({ edit_check: true, done: false, updated_at: nowIso })
+          .ilike('code', rowCode);
+      }
 
       if (error) {
         console.error(`Error updating edit_check in ${targetTable}:`, error);
         toast.error(`خطأ أثناء الحفظ في قاعدة البيانات: ${error.message}`);
       } else {
         toast.success("⚠️ تم تسجيل طلب التعديل (EDIT) وإعادة فتح المهمة!");
-        notifyCoreCountsChanged([activeGid]);
+        notifyCoreCountsChanged(activeGid === '0' ? ['0'] : ['1436746012', '1939073164']);
 
         // Telegram Notification for Edit Request
         const editorName = item.editor_col || item.editor || item.editorCol || '';
@@ -6676,7 +6718,10 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
           </>
         )}
         {activeGid === '1436746012' && (
-          <th className="px-3 py-4 text-center th-style"><ColFilter colKey="canceled" label="Cancel" /></th>
+          <>
+            <th className="px-3 py-4 text-center th-style"><ColFilter colKey="canceled" label="Cancel" /></th>
+            <th className="px-3 py-4 text-center th-style">EDIT</th>
+          </>
         )}
         <th className="px-4 py-4 text-center th-style" id="tour-ve-final-col">Drive Link (Final)</th>
         <th className="px-3 py-4 text-center th-style">Publish</th>
@@ -6899,7 +6944,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
     extraNames: uniqueExtraNames
   }), [uniqueBranches, uniqueYears, uniqueTypes, uniqueFormats, editorsList, uniqueExtraNames]);
 
-  const colSpan = isOperations ? 7 : isTagme3at ? (tagmeViewMode === 'SIMPLE' ? 8 : 13) : isStageTab ? 13 : activeGid === '0' ? 18 : activeGid === '1939073164' ? (veViewMode === 'SIMPLE' ? 17 : 22) : activeGid === '1436746012' ? 17 : activeGid === '798246690' ? 16 : 7;
+  const colSpan = isOperations ? 7 : isTagme3at ? (tagmeViewMode === 'SIMPLE' ? 8 : 13) : isStageTab ? 13 : activeGid === '0' ? 18 : activeGid === '1939073164' ? (veViewMode === 'SIMPLE' ? 17 : 22) : activeGid === '1436746012' ? 18 : activeGid === '798246690' ? 16 : 7;
 
   const effectiveLoading = isTagme3at 
     ? (isTagmeDbLoading && tagmeDbRows.length === 0)
@@ -7254,7 +7299,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
         </main>
       ) : (
         <main className="flex-1 flex flex-col min-w-0 bg-[#05070a]">
-        <header className="px-12 py-10 flex justify-between items-end bg-background/30 backdrop-blur-3xl sticky top-0 z-10 border-b border-white/[0.03]">
+        <header className="px-12 py-10 flex justify-between items-end bg-background/30 backdrop-blur-3xl relative z-10 border-b border-white/[0.03]">
           <motion.div key={activeLabel} initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} className="space-y-2">
             <div className="flex items-center gap-3 text-primary mb-1 uppercase tracking-[0.3em] font-black text-[10px]">
               <Clock size={12} />
@@ -7591,24 +7636,39 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
                             <label className="block text-xs font-bold text-muted arabic-text">اسم السكريبت (Script Name)</label>
                             <button
                               type="button"
-                              onClick={() => {
+                              onClick={async () => {
                                 let generated = '';
-                                if (shootingAddForm.scriptLink) {
+                                const rawLink = (shootingAddForm.scriptLink || '').trim();
+                                if (rawLink) {
                                   try {
-                                    const parsed = parseScriptValue(shootingAddForm.scriptLink);
+                                    const parsed = parseScriptValue(rawLink);
                                     if (parsed && parsed.text && !parsed.text.startsWith('http') && !parsed.text.includes('document/d/')) {
                                       generated = parsed.text;
                                     }
                                   } catch {}
+                                  // Try fetching the real Google Doc title if it's a Google Docs URL
+                                  if (!generated && rawLink.includes('docs.google.com/document/d/')) {
+                                    try {
+                                      const res = await fetch(`/api/duration?action=doc-extract&url=${encodeURIComponent(rawLink)}`);
+                                      if (res.ok) {
+                                        const data = await res.json();
+                                        if (data?.title && String(data.title).trim()) {
+                                          generated = String(data.title).trim();
+                                        }
+                                      }
+                                    } catch {}
+                                  }
                                 }
                                 if (!generated) {
+                                  const seqMatch = String(generatedCode || '').match(/-(\d+(?:\s*v\d+)?)$/i);
+                                  const seqTag = seqMatch ? `#${seqMatch[1].replace(/\s*v\d+$/i, '')}` : '';
                                   if (activeGid === '0') {
-                                    generated = `${shootingAddForm.year?.toUpperCase() || ''} Cut - ${shootingAddForm.extraName || 'ريل'}`;
+                                    generated = `${shootingAddForm.year?.toUpperCase() || ''} Cut ${seqTag} - ${shootingAddForm.extraName || 'ريل'}`.replace(/\s+/g, ' ').trim();
                                   } else {
                                     const t = shootingAddForm.teacher ? `مستر ${shootingAddForm.teacher}` : 'الدرس';
                                     const y = shootingAddForm.year ? shootingAddForm.year.toUpperCase() : '';
                                     const tp = shootingAddForm.type ? `(${shootingAddForm.type})` : '';
-                                    generated = `اسكريبت ${t} - ${y} ${tp}`.trim();
+                                    generated = `اسكريبت ${t} ${seqTag} - ${y} ${tp}`.replace(/\s+/g, ' ').trim();
                                   }
                                 }
                                 setShootingAddForm(prev => ({ ...prev, scriptName: generated }));
@@ -7908,19 +7968,37 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
                           </div>
                         )}
 
-                        <div className="flex justify-end gap-3">
+                        <div className="flex justify-end gap-2.5 flex-wrap">
                           <button
                             type="button"
                             disabled={isSubmittingAdd}
                             onClick={() => setShowAddModal(false)}
-                            className="px-6 py-3 rounded-xl bg-white/5 hover:bg-white/10 text-muted hover:text-white transition-colors font-bold arabic-text text-xs cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
+                            className="px-5 py-3 rounded-xl bg-white/5 hover:bg-white/10 text-muted hover:text-white transition-colors font-bold arabic-text text-xs cursor-pointer disabled:opacity-30 disabled:cursor-not-allowed"
                           >
                             إلغاء
                           </button>
+                          {activeGid === '1436746012' && (
+                            <button
+                              type="button"
+                              disabled={isDisabled}
+                              onClick={() => handleAddSubmit(null, true)}
+                              className="px-5 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold arabic-text text-xs shadow-lg shadow-emerald-600/25 transition-all hover:scale-105 active:scale-95 cursor-pointer flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed disabled:pointer-events-none disabled:hover:scale-100"
+                              title="حفظ الريل الحالي والبقاء في النافذة بنفس الفرع والسنة والمدرس وتوليد الرقم التالي تلقائياً"
+                            >
+                              {isSubmittingAdd ? (
+                                <>
+                                  <Loader2 className="w-4 h-4 animate-spin text-white" />
+                                  <span>جاري الحفظ...</span>
+                                </>
+                              ) : (
+                                <span>حفظ وإضافة واحد تاني (نفس المدرس) ➕</span>
+                              )}
+                            </button>
+                          )}
                           <button
                             type="submit"
                             disabled={isDisabled}
-                            className="px-8 py-3 rounded-xl bg-primary hover:bg-primary/90 text-white font-bold arabic-text text-xs shadow-lg shadow-primary/30 transition-all hover:scale-105 active:scale-95 cursor-pointer flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed disabled:pointer-events-none disabled:hover:scale-100"
+                            className="px-7 py-3 rounded-xl bg-primary hover:bg-primary/90 text-white font-bold arabic-text text-xs shadow-lg shadow-primary/30 transition-all hover:scale-105 active:scale-95 cursor-pointer flex items-center gap-2 disabled:opacity-40 disabled:cursor-not-allowed disabled:pointer-events-none disabled:hover:scale-100"
                           >
                             {isSubmittingAdd ? (
                               <>
@@ -9068,8 +9146,8 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
             </div>
           ) : (
             <FilterContext.Provider value={filterContextValue}>
-              {/* Top Horizontal Scrollbar & Quick Controls */}
-              <div className="flex items-center gap-2 mb-3 px-3 py-2 bg-[#070b14]/95 backdrop-blur-2xl border border-white/15 rounded-2xl shadow-lg ring-1 ring-white/5 select-none transition-all">
+              {/* Top Horizontal Scrollbar & Quick Controls (Sticky on Scroll) */}
+              <div className="sticky top-2 z-40 flex items-center gap-2 mb-3 px-3 py-2 bg-[#070b14]/95 backdrop-blur-2xl border border-white/15 rounded-2xl shadow-xl ring-1 ring-white/5 select-none transition-all">
                 {/* Left controls: Scroll Left / Jump to Start */}
                 <div className="flex items-center gap-1.5 shrink-0">
                   <button
@@ -9592,74 +9670,65 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
 
           {activeVeToast && (
             <motion.div
-              initial={{ opacity: 0, y: 50, scale: 0.9 }}
+              initial={{ opacity: 0, y: 24, scale: 0.96 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 50, scale: 0.9 }}
-              className="fixed bottom-8 left-1/2 -translate-x-1/2 z-[150] bg-gradient-to-r from-[#061e14] via-[#092e1e] to-[#061e14] border-2 border-emerald-500/50 px-8 py-5 rounded-2xl shadow-[0_0_50px_rgba(16,185,129,0.5)] flex items-center gap-8 max-w-2xl w-full justify-between text-white"
+              exit={{ opacity: 0, y: 24, scale: 0.96 }}
+              className="fixed bottom-4 left-4 z-[150] bg-[#061e14]/95 border border-emerald-500/40 px-4 py-2.5 rounded-xl shadow-lg flex items-center gap-3 max-w-md text-white backdrop-blur-md"
             >
-              <div className="flex items-center gap-4">
-                <div className="w-14 h-14 rounded-2xl bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400 animate-pulse shrink-0">
-                  <CheckCircle2 size={32} />
-                </div>
-                <div className="flex flex-col text-right" dir="rtl">
-                  <span className="text-sm font-bold text-white arabic-text">تم النسخ إلى [شيت VE] بنجاح! 🚀</span>
-                  <span className="text-xs text-emerald-300 arabic-text line-clamp-1 mt-0.5">{activeVeToast.item.id}</span>
-                </div>
+              <div className="w-8 h-8 rounded-lg bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-emerald-400 shrink-0">
+                <CheckCircle2 size={18} />
               </div>
-              <div className="flex items-center gap-3 shrink-0">
+              <div className="flex flex-col text-right min-w-0" dir="rtl">
+                <span className="text-xs font-bold text-white arabic-text truncate">تم النسخ إلى شيت VE 🚀</span>
+                <span className="text-[10px] text-emerald-300 font-mono truncate">{activeVeToast.item.id}</span>
+              </div>
+              <div className="flex items-center gap-1.5 shrink-0">
                 <button
                   onClick={() => {
                     setActiveGid('1939073164');
                     setActiveLabel('Ve');
                     setActiveVeToast(null);
                   }}
-                  className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs px-6 py-3 rounded-xl shadow-lg shadow-emerald-600/50 flex items-center gap-2 transition-all hover:scale-105 active:scale-95 whitespace-nowrap cursor-pointer"
+                  className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] px-3 py-1.5 rounded-lg flex items-center gap-1 transition-all whitespace-nowrap cursor-pointer"
                 >
-                  <span>الانتقال للشيت</span>
-                  <ChevronRight size={16} />
+                  <span>للشيت</span>
+                  <ChevronRight size={13} />
                 </button>
                 <button
                   onClick={() => setActiveVeToast(null)}
-                  className="text-muted hover:text-white p-2 transition-colors cursor-pointer"
+                  className="text-muted hover:text-white p-1 transition-colors cursor-pointer"
                 >
-                  <XCircle size={20} />
+                  <XCircle size={15} />
                 </button>
               </div>
             </motion.div>
           )}
         </AnimatePresence>
 
-        {/* Floating new item toasts container */}
-        <div className="fixed bottom-6 right-6 z-[300] flex flex-col gap-3 pointer-events-none max-w-sm w-full">
+        {/* Floating compact toasts container */}
+        <div className="fixed bottom-4 right-4 z-[300] flex flex-col gap-2 pointer-events-none max-w-xs w-full">
           <AnimatePresence>
             {itemToasts.map((toast) => (
               <motion.div
                 key={toast.id}
-                initial={{ opacity: 0, y: 50, scale: 0.9 }}
+                initial={{ opacity: 0, y: 16, scale: 0.95 }}
                 animate={{ opacity: 1, y: 0, scale: 1 }}
-                exit={{ opacity: 0, scale: 0.9, x: 100 }}
-                className="pointer-events-auto bg-[#0a0e14]/95 border border-emerald-500/30 shadow-[0_10px_30px_rgba(16,185,129,0.15)] rounded-2xl p-4 flex gap-4 items-start relative overflow-hidden backdrop-blur-xl"
+                exit={{ opacity: 0, scale: 0.95, x: 40 }}
+                className="pointer-events-auto bg-[#0a0e14]/95 border border-emerald-500/35 shadow-lg rounded-xl px-3.5 py-2.5 flex gap-2.5 items-center relative overflow-hidden backdrop-blur-md"
                 dir="rtl"
               >
-                <div className="absolute left-0 top-0 bottom-0 w-1.5 bg-emerald-500 shadow-[0_0_10px_rgba(16,185,129,0.5)]" />
-                
-                <div className="w-10 h-10 rounded-xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center shrink-0">
-                  <Bell size={20} className="animate-bounce" />
-                </div>
-                
-                <div className="flex-1 min-w-0 text-right space-y-1">
-                  <h4 className="text-[10px] font-black text-emerald-400 uppercase tracking-wider">{toast.title || "تمت إضافة درس جديد! 🎉"}</h4>
-                  <p className="text-xs font-bold text-white leading-relaxed line-clamp-2 arabic-text">{toast.name}</p>
+                <div className="absolute left-0 top-0 bottom-0 w-1 bg-emerald-500" />
+                <div className="flex-1 min-w-0 text-right">
+                  <p className="text-xs font-bold text-white leading-snug line-clamp-2 arabic-text">{toast.name}</p>
                   {toast.filingName && (
                     <p className="text-[9px] font-mono text-muted/60 truncate uppercase tracking-wider">{toast.filingName}</p>
                   )}
                 </div>
-                
                 <button 
                   onClick={() => setItemToasts(prev => prev.filter(t => t.id !== toast.id))}
                   className="text-muted hover:text-white transition-colors cursor-pointer shrink-0"
                 >
-                  <XCircle size={16} />
+                  <XCircle size={14} />
                 </button>
               </motion.div>
             ))}

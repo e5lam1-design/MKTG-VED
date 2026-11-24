@@ -543,7 +543,7 @@ export const ShootingRow = React.memo(({ item, index, activeGid, onToggleFilmed,
               ];
               onUpdateShootingRow(rowCode, rowData, undefined, ['filmed', 'filmingDate']);
             } else {
-              onToggleFilmed && onToggleFilmed({ ...item, ...updatedForm }, nextFilmed);
+              onToggleFilmed && onToggleFilmed({ ...item, ...updatedForm, filmed: item.filmed }, nextFilmed);
             }
           }}
           className={`w-6 h-6 rounded-md flex items-center justify-center mx-auto transition-all duration-300 ${activeGid === '1939073164' ? 'cursor-default' : 'cursor-pointer'} ${loadingFilmedCode === (item.code || item.id) && activeGid !== '1939073164' ? 'opacity-50 pointer-events-none' : ''} ${
@@ -926,58 +926,87 @@ export const ShootingRow = React.memo(({ item, index, activeGid, onToggleFilmed,
           )}
         </>
       )}
-      {/* Cancel Checkmark for Shooting */}
+      {/* Cancel & EDIT Checkmarks for Shooting */}
       {activeGid === '1436746012' && (
-        <td className="px-3 py-5 text-center cancel-cell">
-          <button
-            onClick={async () => {
-              const rowCode = item.code || item.id;
-              if (!rowCode) { alert("لا يمكن تعديل هذا الصف لعدم وجود كود (Code)"); return; }
-              if (!onUpdateShootingRow) return;
-              setIsSaving(true);
-              const nextCanceled = !isCanceled;
-              setOptimisticCanceled(nextCanceled);
-              const rowData = [
-                item.date,
-                editForm.branch,
-                editForm.year,
-                editForm.teacher,
-                editForm.extraName,
-                rowCode,
-                editForm.script,
-                editForm.type,
-                editForm.format,
-                item.filmed ? 'TRUE' : 'FALSE',
-                item.filmingDate,
-                editForm.by,
-                editForm.storage,
-                editForm.notes,
-                editForm.driveRaw,
-                editForm.editorCol,
-                item.done ? 'TRUE' : 'FALSE',
-                editForm.driveFinal,
-                nextCanceled ? 'TRUE' : 'FALSE',
-                isMissing ? 'TRUE' : 'FALSE'
-              ];
-              try {
-                await onUpdateShootingRow(rowCode, rowData, undefined, ['canceled']);
-              } catch(e) {
-                setOptimisticCanceled(null);
-                console.error(e);
-              } finally {
-                setIsSaving(false);
-              }
-            }}
-            className={`w-6 h-6 rounded-md flex items-center justify-center mx-auto transition-all duration-300 cursor-pointer cancel-action-btn no-strike ${
-              isCanceled 
-                ? 'bg-rose-500 text-white shadow-[0_0_10px_rgba(244,63,94,0.5)] ring-2 ring-rose-400' 
-                : 'bg-white/10 text-muted hover:bg-rose-500/30 hover:text-rose-300'
-            }`}
-            title={isCanceled ? "إلغاء الكنسلة" : "كنسل المهمة"}
-          >
-            {isCanceled && <XCircle size={14} />}
-          </button>
-        </td>
+        <>
+          <td className="px-3 py-5 text-center cancel-cell">
+            <button
+              onClick={async () => {
+                const rowCode = item.code || item.id;
+                if (!rowCode) { alert("لا يمكن تعديل هذا الصف لعدم وجود كود (Code)"); return; }
+                if (!onUpdateShootingRow) return;
+                setIsSaving(true);
+                const nextCanceled = !isCanceled;
+                setOptimisticCanceled(nextCanceled);
+                const rowData = [
+                  item.date,
+                  editForm.branch,
+                  editForm.year,
+                  editForm.teacher,
+                  editForm.extraName,
+                  rowCode,
+                  editForm.script,
+                  editForm.type,
+                  editForm.format,
+                  item.filmed ? 'TRUE' : 'FALSE',
+                  item.filmingDate,
+                  editForm.by,
+                  editForm.storage,
+                  editForm.notes,
+                  editForm.driveRaw,
+                  editForm.editorCol,
+                  item.done ? 'TRUE' : 'FALSE',
+                  editForm.driveFinal,
+                  nextCanceled ? 'TRUE' : 'FALSE',
+                  isMissing ? 'TRUE' : 'FALSE'
+                ];
+                try {
+                  await onUpdateShootingRow(rowCode, rowData, undefined, ['canceled']);
+                } catch(e) {
+                  setOptimisticCanceled(null);
+                  console.error(e);
+                } finally {
+                  setIsSaving(false);
+                }
+              }}
+              className={`w-6 h-6 rounded-md flex items-center justify-center mx-auto transition-all duration-300 cursor-pointer cancel-action-btn no-strike ${
+                isCanceled 
+                  ? 'bg-rose-500 text-white shadow-[0_0_10px_rgba(244,63,94,0.5)] ring-2 ring-rose-400' 
+                  : 'bg-white/10 text-muted hover:bg-rose-500/30 hover:text-rose-300'
+              }`}
+              title={isCanceled ? "إلغاء الكنسلة" : "كنسل المهمة"}
+            >
+              {isCanceled && <XCircle size={14} />}
+            </button>
+          </td>
+          {/* EDIT Checkmark (طلب تعديل) in Shooting: synced with VE */}
+          <td className="px-3 py-5 text-center">
+            <button
+              onClick={async () => {
+                if (isEditChecked) {
+                  const msg = "تم طلب تعديل مسبقاً لهذا الريل (مسموح بطلب تعديل مرة واحدة فقط) 🔒";
+                  if (toast && toast.error) toast.error(msg);
+                  else alert(msg);
+                  return;
+                }
+                const rowCode = item.code || item.id;
+                if (!rowCode) { alert("لا يمكن تعديل هذا الصف لعدم وجود كود (Code)"); return; }
+                setIsEditChecked(true);
+                if (onToggleEditCheck) {
+                  onToggleEditCheck(item, true);
+                }
+              }}
+              className={`w-6 h-6 rounded-md flex items-center justify-center mx-auto transition-all duration-300 ${
+                isEditChecked
+                  ? 'bg-blue-600 text-white shadow-[0_0_12px_rgba(37,99,235,0.6)] cursor-not-allowed opacity-90'
+                  : 'bg-white/10 text-muted hover:bg-blue-500/30 hover:text-blue-300 cursor-pointer'
+              }`}
+              title={isEditChecked ? "تم طلب تعديل مسبقاً (مغلق - مسموح بطلب تعديل مرة واحدة فقط)" : "طلب تعديل (EDIT - مسموح مرة واحدة فقط)"}
+            >
+              {isEditChecked ? <CheckCircle2 size={14} /> : null}
+            </button>
+          </td>
+        </>
       )}
       <td className="px-4 py-5 text-center">
         <div className="flex flex-col gap-2 items-center justify-center">

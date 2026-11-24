@@ -346,7 +346,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
           .from('reels_ve_26')
           .select('*')
           .order('updated_at', { ascending: false })
-          .limit(200);
+          .limit(600);
 
         if (reelsData) {
           reelsData.forEach((item: any) => {
@@ -410,7 +410,7 @@ export const HomeView: React.FC<HomeViewProps> = ({
           .from('reels_cuts_26')
           .select('*')
           .order('updated_at', { ascending: false })
-          .limit(300);
+          .limit(500);
 
         if (cutsData) {
           cutsData.forEach((item: any) => {
@@ -907,6 +907,116 @@ export const HomeView: React.FC<HomeViewProps> = ({
   const isViewingSelf = !selectedUserName || selectedUserName === currentUser?.name || selectedUserName === currentUser?.email;
   const activeDisplayName = isViewingSelf ? (currentUser?.name || 'يا بطل') : selectedUserName;
 
+  const [showPersonalWeeks, setShowPersonalWeeks] = useState(false);
+
+  // ── Personal Period Stats (اليوم · الأسبوع · الشهر + 4 أسابيع) — Strictly for this user only ──
+  const personalPeriodStats = useMemo(() => {
+    const myTasks = tasks.filter(t => t.isAssignedToMe);
+    const now = new Date();
+    const todayY = now.getFullYear();
+    const todayM = now.getMonth();
+    const todayD = now.getDate();
+
+    const startOfToday = new Date(todayY, todayM, todayD, 0, 0, 0, 0);
+    // Current week: last 7 days including today
+    const startOfWeek = new Date(todayY, todayM, todayD - 6, 0, 0, 0, 0);
+    const daysInMonth = new Date(todayY, todayM + 1, 0).getDate();
+    const monthNamesAr = ['يناير', 'فبراير', 'مارس', 'أبريل', 'مايو', 'يونيو', 'يوليو', 'أغسطس', 'سبتمبر', 'أكتوبر', 'نوفمبر', 'ديسمبر'];
+
+    const parseTaskDate = (raw?: string | null): Date | null => {
+      if (!raw) return null;
+      const s = String(raw).trim();
+      if (!s) return null;
+      const d = new Date(s);
+      if (!isNaN(d.getTime()) && d.getFullYear() >= 2020) return d;
+      const m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})$/);
+      if (m) {
+        const p1 = Number(m[1]);
+        const p2 = Number(m[2]);
+        let y = Number(m[3]);
+        if (y < 100) y += 2000;
+        const dt = p1 > 12 ? new Date(y, p2 - 1, p1) : new Date(y, p1 - 1, p2);
+        if (!isNaN(dt.getTime())) return dt;
+      }
+      return null;
+    };
+
+    type Bucket = { total: number; ve: number; cuts: number; tagme: number; shooting: number; edits: number };
+    const mkBucket = (): Bucket => ({ total: 0, ve: 0, cuts: 0, tagme: 0, shooting: 0, edits: 0 });
+
+    const today = mkBucket();
+    const week = mkBucket();
+    const month = mkBucket();
+    const weeks = [
+      { weekNum: 1, label: 'الأسبوع الأول', range: '1 – 7', ...mkBucket() },
+      { weekNum: 2, label: 'الأسبوع الثاني', range: '8 – 14', ...mkBucket() },
+      { weekNum: 3, label: 'الأسبوع الثالث', range: '15 – 21', ...mkBucket() },
+      { weekNum: 4, label: 'الأسبوع الرابع', range: `22 – ${daysInMonth}`, ...mkBucket() }
+    ];
+
+    const addToBucket = (b: Bucket, gid: string, isEditOnly: boolean) => {
+      if (isEditOnly) {
+        b.edits++;
+        return;
+      }
+      b.total++;
+      if (gid === '1939073164') b.ve++;
+      else if (gid === '0') b.cuts++;
+      else if (gid === '1535230545') b.tagme++;
+      else if (gid === '1436746012') b.shooting++;
+    };
+
+    myTasks.forEach(t => {
+      const det = t.details || {};
+      if (det.canceled === true) return;
+      const isCompleted = t.done === true || (t.sourceGid === '1436746012' && det.filmed === true);
+      const actDate =
+        parseTaskDate(det.updated_at) ||
+        parseTaskDate(det.filming_date) ||
+        parseTaskDate(t.date) ||
+        parseTaskDate(t.createdAt);
+
+      if (!actDate) return;
+
+      const isToday = actDate.getFullYear() === todayY && actDate.getMonth() === todayM && actDate.getDate() === todayD;
+      const isThisWeek = actDate >= startOfWeek && actDate <= new Date(todayY, todayM, todayD, 23, 59, 59, 999);
+      const isThisMonth = actDate.getFullYear() === todayY && actDate.getMonth() === todayM;
+      const wIdx = actDate.getDate() <= 7 ? 0 : actDate.getDate() <= 14 ? 1 : actDate.getDate() <= 21 ? 2 : 3;
+
+      if (isCompleted) {
+        if (isToday) addToBucket(today, t.sourceGid, false);
+        if (isThisWeek) addToBucket(week, t.sourceGid, false);
+        if (isThisMonth) {
+          addToBucket(month, t.sourceGid, false);
+          addToBucket(weeks[wIdx], t.sourceGid, false);
+        }
+      }
+      if (t.isEdit) {
+        if (isToday) addToBucket(today, t.sourceGid, true);
+        if (isThisWeek) addToBucket(week, t.sourceGid, true);
+        if (isThisMonth) {
+          addToBucket(month, t.sourceGid, true);
+          addToBucket(weeks[wIdx], t.sourceGid, true);
+        }
+      }
+    });
+
+    const totalAssigned = myTasks.filter(t => t.details?.canceled !== true).length;
+    const totalDoneAll = myTasks.filter(t => t.details?.canceled !== true && t.done).length;
+    const completionRate = totalAssigned > 0 ? Math.round((totalDoneAll / totalAssigned) * 100) : 0;
+
+    return {
+      today,
+      week,
+      month,
+      weeks,
+      monthLabel: `${monthNamesAr[todayM]} ${todayY}`,
+      completionRate,
+      totalAssigned,
+      totalDoneAll
+    };
+  }, [tasks]);
+
   return (
     <div className="space-y-6 animate-fadeIn" dir="rtl">
       {/* Top Welcome Header Banner */}
@@ -966,6 +1076,151 @@ export const HomeView: React.FC<HomeViewProps> = ({
             </button>
           </div>
         </div>
+      </div>
+
+      {/* 📊 Personal Achievement Stats Card (اليوم · هذا الأسبوع · هذا الشهر) — Private per user */}
+      <div className="rounded-3xl bg-[#0a0e16]/90 border border-white/10 p-5 md:p-6 shadow-xl space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-center gap-2.5 flex-wrap">
+            <span className="text-sm font-black text-white arabic-text flex items-center gap-2">
+              <Sparkles size={16} className="text-emerald-400" />
+              <span>📊 إنجازك الشخصي ({activeDisplayName})</span>
+            </span>
+            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 arabic-text">
+              🔒 تظهر لك أنت فقط
+            </span>
+            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-white/5 text-white/80 border border-white/15 arabic-text font-mono">
+              📋 باسمك: {personalPeriodStats.totalAssigned}
+            </span>
+            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 arabic-text font-mono">
+              ✅ DONE: {personalPeriodStats.totalDoneAll}
+            </span>
+            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/15 text-amber-300 border border-amber-500/30 arabic-text font-mono">
+              ⏳ متبقي: {Math.max(0, personalPeriodStats.totalAssigned - personalPeriodStats.totalDoneAll)}
+            </span>
+            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-indigo-500/15 text-indigo-300 border border-indigo-500/30 arabic-text">
+              نسبة الإنجاز: {personalPeriodStats.completionRate}%
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setShowPersonalWeeks(prev => !prev)}
+            className="px-3 py-1.5 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-bold text-indigo-300 flex items-center gap-1.5 transition-all cursor-pointer self-start sm:self-auto arabic-text"
+          >
+            {showPersonalWeeks ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+            <span>{showPersonalWeeks ? 'إخفاء تفصيل الأسابيع' : `تفصيل أسابيع ${personalPeriodStats.monthLabel}`}</span>
+          </button>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {[
+            {
+              key: 'today',
+              title: '📅 إنجاز اليوم',
+              subtitle: 'المهام المنجزة النهارده',
+              data: personalPeriodStats.today,
+              accent: 'from-cyan-950/50 to-[#0c121e] border-cyan-500/30',
+              numColor: 'text-cyan-300'
+            },
+            {
+              key: 'week',
+              title: '📆 إنجاز هذا الأسبوع',
+              subtitle: 'آخر 7 أيام',
+              data: personalPeriodStats.week,
+              accent: 'from-indigo-950/50 to-[#0c121e] border-indigo-500/30',
+              numColor: 'text-indigo-300'
+            },
+            {
+              key: 'month',
+              title: `🗓️ إنجاز شهر ${personalPeriodStats.monthLabel}`,
+              subtitle: 'إجمالي المنجز خلال الشهر',
+              data: personalPeriodStats.month,
+              accent: 'from-emerald-950/50 to-[#0c121e] border-emerald-500/30',
+              numColor: 'text-emerald-300'
+            }
+          ].map(card => (
+            <div
+              key={card.key}
+              className={`p-4 rounded-2xl bg-gradient-to-br ${card.accent} border flex flex-col justify-between gap-3`}
+            >
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <h3 className="text-xs font-black text-white arabic-text">{card.title}</h3>
+                  <p className="text-[10px] text-muted arabic-text mt-0.5">{card.subtitle}</p>
+                </div>
+                <div className="text-left">
+                  <span className={`text-3xl font-black font-mono ${card.numColor}`}>
+                    {card.data.total}
+                  </span>
+                  <span className="block text-[9px] text-muted font-bold arabic-text">مهمة DONE</span>
+                </div>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-1.5 pt-2 border-t border-white/10 text-[10px] font-bold">
+                <span className="px-2 py-0.5 rounded-lg bg-emerald-500/15 text-emerald-300 border border-emerald-500/25 font-mono">
+                  VE: {card.data.ve}
+                </span>
+                <span className="px-2 py-0.5 rounded-lg bg-orange-500/15 text-orange-300 border border-orange-500/25 font-mono">
+                  Cuts: {card.data.cuts}
+                </span>
+                <span className="px-2 py-0.5 rounded-lg bg-purple-500/15 text-purple-300 border border-purple-500/25 font-mono">
+                  تجميعات: {card.data.tagme}
+                </span>
+                {card.data.shooting > 0 && (
+                  <span className="px-2 py-0.5 rounded-lg bg-cyan-500/15 text-cyan-300 border border-cyan-500/25 font-mono">
+                    Shooting: {card.data.shooting}
+                  </span>
+                )}
+                {card.data.edits > 0 && (
+                  <span className="px-2 py-0.5 rounded-lg bg-amber-500/15 text-amber-300 border border-amber-500/25 font-mono">
+                    تعديل: {card.data.edits}
+                  </span>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Collapsible 4-Week Personal Breakdown inside Current Month */}
+        {showPersonalWeeks && (
+          <div className="overflow-x-auto rounded-2xl border border-white/10 bg-white/[0.02]">
+            <table className="w-full text-right text-xs">
+              <thead>
+                <tr className="border-b border-white/10 text-white/60 font-bold arabic-text bg-white/[0.02]">
+                  <th className="py-2.5 px-4">الأسبوع</th>
+                  <th className="py-2.5 px-4 text-center">الأيام</th>
+                  <th className="py-2.5 px-4 text-center text-emerald-400">🎬 VE</th>
+                  <th className="py-2.5 px-4 text-center text-orange-400">✂️ Cuts</th>
+                  <th className="py-2.5 px-4 text-center text-purple-300">📦 تجميعات</th>
+                  <th className="py-2.5 px-4 text-center text-cyan-300">🏆 الإجمالي</th>
+                  <th className="py-2.5 px-4 text-center text-amber-400">🛠️ تعديل</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-white/5 font-mono">
+                {personalPeriodStats.weeks.map(w => (
+                  <tr key={`pw-${w.weekNum}`} className="hover:bg-white/[0.03] transition-colors">
+                    <td className="py-2.5 px-4 font-bold text-white arabic-text flex items-center gap-2">
+                      <span className="w-6 h-6 rounded-lg bg-indigo-500/15 border border-indigo-500/30 text-indigo-300 text-[10px] font-mono font-black flex items-center justify-center">
+                        W{w.weekNum}
+                      </span>
+                      <span>{w.label}</span>
+                    </td>
+                    <td className="py-2.5 px-4 text-center text-[11px] text-muted">{w.range}</td>
+                    <td className="py-2.5 px-4 text-center font-bold text-emerald-400">{w.ve}</td>
+                    <td className="py-2.5 px-4 text-center font-bold text-orange-400">{w.cuts}</td>
+                    <td className="py-2.5 px-4 text-center font-bold text-purple-300">{w.tagme}</td>
+                    <td className="py-2.5 px-4 text-center">
+                      <span className="px-2 py-0.5 rounded-lg bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 font-black">
+                        {w.total}
+                      </span>
+                    </td>
+                    <td className="py-2.5 px-4 text-center font-bold text-amber-300">{w.edits}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
 
       {/* Proactive Alert Banners: Edits requested from me OR Waiting tasks available */}

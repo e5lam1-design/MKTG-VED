@@ -63,6 +63,23 @@ export const mapSheetRow = (row: any[], gid: string) => {
   }
 
   if (gid === '1476192399') {
+    // Support compact fallback schema (test.json: ['', 'TERM', 'YEAR', 'Teacher', 'NAME', 'FILING NAME'])
+    if (row.length <= 8 && !row[10] && row[3]) {
+      return {
+        date: formatDateToShort(row[0] || ''),
+        term: row[1] || '',
+        year: row[2] || '',
+        teacher: row[3] || '',
+        name: row[4] || 'بدون اسم',
+        filingName: row[5] || '',
+        smartboard: '',
+        id: row[3] || '',
+        linkBunny: '',
+        rawMinutes: '',
+        finalMinutes: '',
+        exactDuration: '',
+      };
+    }
     // Try col 17 first (direct play link), then extract from iframe embed in col 16
     let linkBunny = row[17] || '';
     if (!linkBunny && row[16]) {
@@ -194,6 +211,7 @@ export function useGoogleSheets(gid: string, customDocId?: string) {
     try {
       let rows: any[][] = [];
 
+      let usedStaticFallback = false;
       // For all proxy-managed sheets: Operations, Tagme3at Backend, REELS, and Designers/Creators
       const reelsGids = ['1436746012', '1939073164', '0', '798246690'];
       const proxyGids = [OPERATIONS_GID, '1535230545', '2086331904', '501319673', ...reelsGids];
@@ -223,6 +241,7 @@ export function useGoogleSheets(gid: string, customDocId?: string) {
             if (fallbackRes.ok) {
               const json = await fallbackRes.json();
               rows = json.rows || [];
+              usedStaticFallback = true;
             } else {
               throw err;
             }
@@ -371,9 +390,12 @@ export function useGoogleSheets(gid: string, customDocId?: string) {
           return true;
         });
 
-      sheetCache[targetGid] = parsedData;
-      if (targetGid === OPERATIONS_GID) {
-        setCachedSheet(targetGid, parsedData).catch(() => {});
+      const hasValidOpTeachers = targetGid !== OPERATIONS_GID || parsedData.some((r: any) => r.teacher && String(r.teacher).trim());
+      if (hasValidOpTeachers) {
+        sheetCache[targetGid] = parsedData;
+        if (targetGid === OPERATIONS_GID && !usedStaticFallback) {
+          setCachedSheet(targetGid, parsedData).catch(() => {});
+        }
       }
       setData(prev => {
         if (
@@ -411,7 +433,11 @@ export function useGoogleSheets(gid: string, customDocId?: string) {
     // Fast-path 2: Persistent high-speed IndexedDB cache (loads 8,800+ rows in ~15ms)
     getCachedSheet(gid).then((cached) => {
       if (isCancelled || activeGidRef.current !== gid) return;
-      if (cached && cached.length > 0) {
+      const isValidCache =
+        cached &&
+        cached.length > 0 &&
+        (gid !== OPERATIONS_GID || cached.some((r: any) => r.teacher && String(r.teacher).trim()));
+      if (isValidCache) {
         sheetCache[gid] = cached;
         setData(cached);
         setLoading(false);

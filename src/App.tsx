@@ -3214,7 +3214,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
         const res = await fetch(`/api/duration?action=doc-extract&url=${encodeURIComponent(link)}`);
         if (cancelled) return;
         const data = await res.json().catch(() => ({}));
-        if (res.status === 403 || data?.isPublic === false) {
+        if (res.status === 403 || res.status === 401 || res.status === 404 || data?.isPublic === false || !res.ok) {
           setDocAccessStatus('restricted');
           setDocAutoTitle('');
         } else if (res.ok) {
@@ -7859,7 +7859,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
               </button>
             )}
 
-            {profile?.role && (activeGid === '1436746012' || activeGid === '0' || PERMISSIONS.canAddEntry(profile.role)) && (
+            {profile?.role && activeGid !== '1939073164' && (activeGid === '1436746012' || activeGid === '0' || PERMISSIONS.canAddEntry(profile.role)) && (
               <button
                 onClick={() => {
                   if (activeGid === '0') {

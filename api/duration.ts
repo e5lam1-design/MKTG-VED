@@ -86,19 +86,23 @@ async function handleDocExtract(req: VercelRequest, res: VercelResponse) {
     }
 
     if (!plainText && process.env.GOOGLE_CLIENT_EMAIL && process.env.GOOGLE_PRIVATE_KEY) {
-      const auth = new google.auth.GoogleAuth({
-        credentials: {
-          client_email: process.env.GOOGLE_CLIENT_EMAIL.replace(/"/g, '').trim(),
-          private_key: formatPrivateKey(process.env.GOOGLE_PRIVATE_KEY),
-        },
-        scopes: ['https://www.googleapis.com/auth/drive.readonly'],
-      });
-      const drive = google.drive({ version: 'v3', auth });
-      const exported = await drive.files.export(
-        { fileId: docId, mimeType: 'text/plain' },
-        { responseType: 'text' }
-      );
-      plainText = typeof exported.data === 'string' ? exported.data : String(exported.data || '');
+      try {
+        const auth = new google.auth.GoogleAuth({
+          credentials: {
+            client_email: process.env.GOOGLE_CLIENT_EMAIL.replace(/"/g, '').trim(),
+            private_key: formatPrivateKey(process.env.GOOGLE_PRIVATE_KEY),
+          },
+          scopes: ['https://www.googleapis.com/auth/drive.readonly'],
+        });
+        const drive = google.drive({ version: 'v3', auth });
+        const exported = await drive.files.export(
+          { fileId: docId, mimeType: 'text/plain' },
+          { responseType: 'text' }
+        );
+        plainText = typeof exported.data === 'string' ? exported.data : String(exported.data || '');
+      } catch {
+        // Private doc not accessible even by service account -> fall through to 403 isPublic: false
+      }
     }
 
     if (!plainText) {

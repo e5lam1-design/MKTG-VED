@@ -393,7 +393,7 @@ export function useGoogleSheets(gid: string, customDocId?: string) {
       const hasValidOpTeachers = targetGid !== OPERATIONS_GID || parsedData.some((r: any) => r.teacher && String(r.teacher).trim());
       if (hasValidOpTeachers) {
         sheetCache[targetGid] = parsedData;
-        if (targetGid === OPERATIONS_GID && !usedStaticFallback) {
+        if (targetGid === OPERATIONS_GID) {
           setCachedSheet(targetGid, parsedData).catch(() => {});
         }
       }
@@ -447,8 +447,8 @@ export function useGoogleSheets(gid: string, customDocId?: string) {
         }
       }
 
-      // If not cached, perform standard network fetch
-      if (!cached || cached.length === 0) {
+      // If not cached (or cached data was invalid/outdated), perform standard network fetch once
+      if (!isValidCache) {
         setData([]);
         setLoading(true);
         fetchData(gid, false, customDocId);

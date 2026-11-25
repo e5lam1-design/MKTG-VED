@@ -6832,6 +6832,13 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
             const isFilmed = item.filmed === true || item.filmed === 'TRUE' || String(item.filmed).toLowerCase() === 'true';
             if (val === 'اتصور' && !isFilmed) return false;
             if (val === 'لم يتصور' && isFilmed) return false;
+          } else if (key === 'editCheck') {
+            const hasEdit = item.editCheck === true || item.edit_check === true;
+            if (val === 'TRUE' && !hasEdit) return false;
+          } else if (key === 'missingRaw') {
+            const isFilmed = item.filmed === true || item.filmed === 'TRUE' || String(item.filmed).toLowerCase() === 'true';
+            const hasRaw = Boolean(String(item.driveRaw || item.drive_raw || '').trim());
+            if (val === 'TRUE' && (!isFilmed || hasRaw)) return false;
           } else if (key === 'done') {
             const isItemDone = item.done === true || item.done === 'TRUE' || String(item.done).toLowerCase() === 'true';
             if ((val === 'Done' || val === 'TRUE' || val === 'تم') && !isItemDone) return false;
@@ -9234,7 +9241,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
               {sortBy === 'addedDate' && (sortOrder === 'asc' ? '🔼' : '🔽')}
             </button>
 
-            {isStage && (
+            {isStage && !isReelsStage && (
               <div className="flex items-center gap-1.5 border-r border-white/10 pr-3 mr-1">
                 <span className="font-bold text-emerald-400">تجميعة:</span>
                 <button
@@ -9356,6 +9363,117 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
                 </button>
               </div>
             )}
+
+            {/* Dedicated Quick Filters for Shooting (المصوّر BY + لم يتصور + EDIT) */}
+            {activeGid === '1436746012' && (() => {
+              const shootingSource = Array.isArray(combinedData) ? combinedData : [];
+              const byCounts: Record<string, number> = {};
+              let unfilmedCount = 0;
+              let editReqCount = 0;
+
+              shootingSource.forEach((r: any) => {
+                const b = String(r.by || '').trim();
+                if (b) {
+                  const key = b.toLowerCase();
+                  byCounts[key] = (byCounts[key] || 0) + 1;
+                }
+                const isF = r.filmed === true || r.filmed === 'TRUE' || String(r.filmed).toLowerCase() === 'true';
+                const isC = r.canceled === true || r.canceled === 'TRUE';
+                if (!isF && !isC) unfilmedCount++;
+                if (r.editCheck === true || r.edit_check === true) editReqCount++;
+              });
+
+              const byList = (reelsOptionsLists?.bys || []).filter(
+                (b: string) => b && b !== '---' && (byCounts[b.toLowerCase()] || 0) > 0
+              );
+
+              return (
+                <div className="flex items-center gap-1.5 border-r border-white/10 pr-3 mr-1 flex-wrap">
+                  <span className="font-bold text-cyan-400 arabic-text">🎥 المصوّر (BY):</span>
+                  {byList.map((photographer: string) => {
+                    const isActive = String(colFilters.by || '').toLowerCase() === photographer.toLowerCase();
+                    const cnt = byCounts[photographer.toLowerCase()] || 0;
+                    return (
+                      <button
+                        key={`by-pill-${photographer}`}
+                        type="button"
+                        onClick={() => {
+                          setColFilters(prev => {
+                            const updated = { ...prev };
+                            if (String(updated.by || '').toLowerCase() === photographer.toLowerCase()) delete updated.by;
+                            else updated.by = photographer;
+                            return updated;
+                          });
+                        }}
+                        className={`px-3 py-1.5 rounded-xl border font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                          isActive
+                            ? 'bg-cyan-500/30 border-cyan-400 text-cyan-200 font-black scale-105 shadow-md ring-2 ring-cyan-400/40'
+                            : 'bg-white/5 border-white/10 text-muted hover:bg-cyan-500/10 hover:text-cyan-300'
+                        }`}
+                        title={`فلترة الريلز التي صورها ${photographer}`}
+                      >
+                        <span>{photographer}</span>
+                        {cnt > 0 && (
+                          <span className={`px-1.5 py-0.5 rounded-md text-[9px] font-mono ${
+                            isActive ? 'bg-cyan-500 text-white' : 'bg-white/10 text-cyan-300'
+                          }`}>
+                            {cnt}
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+
+                  <span className="h-4 w-px bg-white/10 mx-1" />
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setColFilters(prev => {
+                        const updated = { ...prev };
+                        if (updated.filmed === 'لم يتصور') delete updated.filmed;
+                        else updated.filmed = 'لم يتصور';
+                        return updated;
+                      });
+                    }}
+                    className={`px-3 py-1.5 rounded-xl border font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                      colFilters.filmed === 'لم يتصور'
+                        ? 'bg-amber-500/30 border-amber-400 text-amber-200 font-black scale-105 shadow-md ring-2 ring-amber-400/40'
+                        : 'bg-white/5 border-white/10 text-muted hover:bg-amber-500/10 hover:text-amber-300'
+                    }`}
+                    title="الريلز التي لم تُصور بعد"
+                  >
+                    <span>لم يتصور ⏳</span>
+                    <span className={`px-1.5 py-0.5 rounded-md text-[9px] font-mono ${
+                      colFilters.filmed === 'لم يتصور' ? 'bg-amber-500 text-white' : 'bg-white/10 text-amber-300'
+                    }`}>{unfilmedCount}</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setColFilters(prev => {
+                        const updated = { ...prev };
+                        if (updated.editCheck === 'TRUE') delete updated.editCheck;
+                        else updated.editCheck = 'TRUE';
+                        return updated;
+                      });
+                    }}
+                    className={`px-3 py-1.5 rounded-xl border font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                      colFilters.editCheck === 'TRUE'
+                        ? 'bg-blue-500/30 border-blue-400 text-blue-200 font-black scale-105 shadow-md ring-2 ring-blue-400/40'
+                        : 'bg-white/5 border-white/10 text-muted hover:bg-blue-500/10 hover:text-blue-300'
+                    }`}
+                    title="ريلز عليها طلب تعديل EDIT"
+                  >
+                    <span>مطلوب EDIT 🛠️</span>
+                    <span className={`px-1.5 py-0.5 rounded-md text-[9px] font-mono ${
+                      colFilters.editCheck === 'TRUE' ? 'bg-blue-500 text-white' : 'bg-white/10 text-blue-300'
+                    }`}>{editReqCount}</span>
+                  </button>
+                </div>
+              );
+            })()}
 
             {sortBy !== 'default' && (
               <button

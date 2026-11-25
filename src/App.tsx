@@ -58,7 +58,8 @@ import {
   Send,
   Loader2,
   HardDrive,
-  AlertTriangle
+  AlertTriangle,
+  ExternalLink
 } from 'lucide-react';
 import { useGoogleSheets } from './hooks/useGoogleSheets';
 import { AuthProvider, useAuth } from './contexts/AuthContext';

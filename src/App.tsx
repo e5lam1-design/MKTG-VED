@@ -6505,8 +6505,8 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
 
 
   const tagmeStatusCounts = useMemo(() => {
-    if (!isTagme3at || !Array.isArray(combinedData)) return { All: 0, Pending: 0, Done: 0, Unassigned: 0 };
-    let all = 0, pending = 0, done = 0, unassigned = 0;
+    if (!isTagme3at || !Array.isArray(combinedData)) return { All: 0, Pending: 0, Done: 0, Unassigned: 0, Missing: 0 };
+    let all = 0, pending = 0, done = 0, unassigned = 0, missing = 0;
 
     combinedData.forEach((item: any) => {
       all++;
@@ -6516,6 +6516,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
       const isMissing = stOverride?.missingDetails !== undefined ? Boolean(stOverride.missingDetails) : (item.missingDetails === true || item.missing_details === true || item.cancel === true || String(item.cancel) === 'true');
       const isAssigned = isAssignedEditor(item.editor);
 
+      if (isMissing) missing++;
       if (isDone) {
         done++;
       } else {
@@ -6526,7 +6527,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
       }
     });
 
-    return { All: all, Pending: pending, Done: done, Unassigned: unassigned };
+    return { All: all, Pending: pending, Done: done, Unassigned: unassigned, Missing: missing };
   }, [isTagme3at, combinedData, taskStatuses]);
 
   const reelsStatusCounts = useMemo(() => {
@@ -6796,6 +6797,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
 
         if (statusFilter === 'Done' && !isDone) return false;
         if (statusFilter === 'Pending' && isDone) return false;
+        if (statusFilter === 'Missing' && !isMissing) return false;
         if (statusFilter === 'Unassigned') {
           if (isDone || isMissing || isAssigned) return false;
         }
@@ -8952,6 +8954,7 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
                   {[
                     { id: 'All', label: 'ALL' },
                     { id: 'Pending', label: 'PENDING' },
+                    { id: 'Missing', label: 'تفاصيل ناقصة ⚠️' },
                     { id: 'Unassigned', label: 'بدون مونتير 👤' },
                     { id: 'Done', label: 'DONE' }
                   ].map((f) => {
@@ -8964,10 +8967,14 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
                           statusFilter === f.id
                             ? f.id === 'Unassigned'
                               ? 'bg-amber-500 text-white shadow-lg shadow-amber-500/30 ring-2 ring-amber-400/50'
-                              : 'bg-primary text-white shadow-lg shadow-primary/30'
+                              : f.id === 'Missing'
+                                ? 'bg-rose-600 text-white shadow-lg shadow-rose-600/30 ring-2 ring-rose-400/50'
+                                : 'bg-primary text-white shadow-lg shadow-primary/30'
                             : f.id === 'Unassigned'
                               ? 'text-amber-300 hover:bg-amber-500/10'
-                              : 'text-muted hover:bg-white/5 hover:text-foreground'
+                              : f.id === 'Missing'
+                                ? 'text-rose-300 hover:bg-rose-500/10'
+                                : 'text-muted hover:bg-white/5 hover:text-foreground'
                         }`}
                       >
                         <span>{f.label}</span>

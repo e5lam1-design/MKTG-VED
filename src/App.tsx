@@ -6637,8 +6637,12 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
         if (val && val !== 'All') {
           if (key === 'filmed') {
             const isFilmedItem = item.filmed === true || item.filmed === 'TRUE' || String(item.filmed).toLowerCase() === 'true';
+            const isCanceledItem = item.canceled === true || item.canceled === 'TRUE' || String(item.canceled).toLowerCase() === 'true';
             if (val === 'اتصور' && !isFilmedItem) return;
-            if (val === 'لم يتصور' && isFilmedItem) return;
+            if (val === 'لم يتصور' && (isFilmedItem || isCanceledItem)) return;
+          } else if (key === 'editCheck') {
+            const isEditReq = item.editCheck === true || item.edit_check === true || String(item.editCheck).toLowerCase() === 'true';
+            if (val === 'TRUE' && !isEditReq) return;
           } else if (key === 'done') {
             const isItemDone = item.done === true || item.done === 'TRUE' || String(item.done).toLowerCase() === 'true';
             if ((val === 'Done' || val === 'TRUE' || val === 'تم') && !isItemDone) return;
@@ -6675,23 +6679,26 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
       }
 
       all++;
-      const isDone = item.done === true || item.done === 'TRUE';
-      const isMissing = item.missingDetails === true || item.missingDetails === 'TRUE';
-      const isCanceled = item.canceled === true || item.canceled === 'TRUE';
-      const isFilmed = item.filmed === true || item.filmed === 'TRUE';
+      const isDone = item.done === true || item.done === 'TRUE' || String(item.done).toLowerCase() === 'true';
+      const isMissing = item.missingDetails === true || item.missingDetails === 'TRUE' || String(item.missingDetails).toLowerCase() === 'true';
+      const isCanceled = item.canceled === true || item.canceled === 'TRUE' || String(item.canceled).toLowerCase() === 'true';
+      const isFilmed = item.filmed === true || item.filmed === 'TRUE' || String(item.filmed).toLowerCase() === 'true';
 
       if (isDone) done++;
       if (isMissing) missing++;
       if (isCanceled) canceled++;
       if (isFilmed) filmed++;
-      if (!isDone && !isCanceled) pending++;
+      const isPending = activeGid === '1436746012'
+        ? (!isFilmed && !isDone && !isCanceled)
+        : (!isDone && !isCanceled);
+      if (isPending) pending++;
       const editorVal = item.editorCol || item.editor || '';
       const isUnassigned = !isAssignedEditor(editorVal);
       if (!isDone && !isCanceled && !isMissing && isUnassigned) unassigned++;
     });
 
     return { All: all, Done: done, Missing: missing, Canceled: canceled, Filmed: filmed, Pending: pending, Unassigned: unassigned };
-  }, [combinedData, isReelsStage, searchQuery, isMyTasksOnly, currentUserName, colFilters]);
+  }, [combinedData, isReelsStage, activeGid, searchQuery, isMyTasksOnly, currentUserName, colFilters]);
 
   const filteredData = useMemo(() => {
     const filtered = combinedData.filter((item: any) => {
@@ -6804,16 +6811,22 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
       }
 
       if (isReelsStage && statusFilter !== 'All') {
-        const isDone = item.done === true || item.done === 'TRUE';
-        const isMissing = item.missingDetails === true || item.missingDetails === 'TRUE';
-        const isCanceled = item.canceled === true || item.canceled === 'TRUE';
-        const isFilmed = item.filmed === true || item.filmed === 'TRUE';
+        const isDone = item.done === true || item.done === 'TRUE' || String(item.done).toLowerCase() === 'true';
+        const isMissing = item.missingDetails === true || item.missingDetails === 'TRUE' || String(item.missingDetails).toLowerCase() === 'true';
+        const isCanceled = item.canceled === true || item.canceled === 'TRUE' || String(item.canceled).toLowerCase() === 'true';
+        const isFilmed = item.filmed === true || item.filmed === 'TRUE' || String(item.filmed).toLowerCase() === 'true';
 
         if (statusFilter === 'Done' && !isDone) return false;
         if (statusFilter === 'Missing' && !isMissing) return false;
         if (statusFilter === 'Canceled' && !isCanceled) return false;
         if (statusFilter === 'Filmed' && !isFilmed) return false;
-        if (statusFilter === 'Pending' && (isDone || isCanceled)) return false;
+        if (statusFilter === 'Pending') {
+          if (activeGid === '1436746012') {
+            if (isFilmed || isDone || isCanceled) return false;
+          } else {
+            if (isDone || isCanceled) return false;
+          }
+        }
         if (statusFilter === 'Unassigned') {
           const editorVal = item.editorCol || item.editor || '';
           const isUnassigned = !isAssignedEditor(editorVal);
@@ -6830,8 +6843,9 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
         if (val && val !== 'All') {
           if (key === 'filmed') {
             const isFilmed = item.filmed === true || item.filmed === 'TRUE' || String(item.filmed).toLowerCase() === 'true';
+            const isCanceled = item.canceled === true || item.canceled === 'TRUE' || String(item.canceled).toLowerCase() === 'true';
             if (val === 'اتصور' && !isFilmed) return false;
-            if (val === 'لم يتصور' && isFilmed) return false;
+            if (val === 'لم يتصور' && (isFilmed || isCanceled)) return false;
           } else if (key === 'editCheck') {
             const hasEdit = item.editCheck === true || item.edit_check === true;
             if (val === 'TRUE' && !hasEdit) return false;

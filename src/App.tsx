@@ -10677,8 +10677,105 @@ export function App({ isDemoMode = false }: { isDemoMode?: boolean } = {}) {
   );
 }
 
+// ─── Standalone /demo-2 Page (Old Google Sheet & V.ED V6 Analytics) ────────────
+function Demo2SheetAnalyticsPage() {
+  const [lightMode, setLightMode] = useState<boolean>(() => {
+    try { return localStorage.getItem('mktg_light_mode') === 'true'; } catch { return false; }
+  });
+
+  useEffect(() => {
+    document.title = 'إحصائيات الشيت القديم — & V.ED V6 (Demo-2)';
+    if (lightMode) {
+      document.documentElement.classList.add('light-mode');
+      document.body.classList.add('light-mode');
+    } else {
+      document.documentElement.classList.remove('light-mode');
+      document.body.classList.remove('light-mode');
+    }
+  }, [lightMode]);
+
+  const sheetUrl = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTvcQ3v1JOzacx9tcsYrbriofFyHlu7rOKKlsobvpP9vjnbHGcg_Qn9TLlbkgB2YsGiX0GO1U4wlZjd/pubhtml';
+
+  return (
+    <div className="min-h-screen bg-[#060a12] text-white" dir="rtl">
+      <header className="sticky top-0 z-30 border-b border-white/10 bg-[#0b101d]/90 backdrop-blur-xl px-4 sm:px-8 py-4">
+        <div className="max-w-[1600px] mx-auto flex flex-wrap items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center shadow-lg shadow-indigo-500/25">
+              <BarChart3 size={22} className="text-white" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <h1 className="text-lg sm:text-xl font-black tracking-tight arabic-text">
+                  إحصائيات الشيت القديم — &amp; V.ED V6
+                </h1>
+                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black bg-amber-500/15 text-amber-400 border border-amber-500/30 uppercase tracking-wider">
+                  DEMO-2 · ARCHIVE SHEET
+                </span>
+              </div>
+              <p className="text-xs text-slate-400 arabic-text mt-0.5">
+                قراءة مباشرة من شيت Google Sheets القديم (Shooting / VE / CUTS) بدون اتصال بقاعدة البيانات
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2.5 flex-wrap">
+            <a
+              href={sheetUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="px-3.5 py-2 rounded-xl bg-emerald-500/15 hover:bg-emerald-500/25 border border-emerald-500/30 text-emerald-300 text-xs font-bold transition-all flex items-center gap-1.5"
+            >
+              <ExternalLink size={14} />
+              <span>فتح شيت &amp; V.ED V6</span>
+            </a>
+
+            <button
+              type="button"
+              onClick={() => {
+                const next = !lightMode;
+                setLightMode(next);
+                try { localStorage.setItem('mktg_light_mode', String(next)); } catch {}
+              }}
+              className="px-3.5 py-2 rounded-xl bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-bold transition-all cursor-pointer"
+            >
+              {lightMode ? '🌙 الوضع الليلي' : '☀️ الوضع النهاري'}
+            </button>
+
+            <a
+              href="/"
+              className="px-3.5 py-2 rounded-xl bg-indigo-500/15 hover:bg-indigo-500/25 border border-indigo-500/30 text-indigo-300 text-xs font-bold transition-all"
+            >
+              العودة للنظام الرئيسي
+            </a>
+          </div>
+        </div>
+      </header>
+
+      <main className="max-w-[1600px] mx-auto px-4 sm:px-8 py-6">
+        <React.Suspense
+          fallback={
+            <div className="flex flex-col items-center justify-center py-28 gap-4">
+              <div className="w-10 h-10 border-4 border-indigo-500/20 border-t-indigo-500 rounded-full animate-spin" />
+              <p className="text-xs font-bold text-slate-400 arabic-text">جاري تحميل إحصائيات شيت &amp; V.ED V6...</p>
+            </div>
+          }
+        >
+          <ReelsAnalytics isDemo={true} />
+        </React.Suspense>
+      </main>
+    </div>
+  );
+}
+
 // ─── Auth Gate ─────────────────────────────────────────────────────────────────
 function AppWithAuth({ isDemoMode = false }: { isDemoMode?: boolean }) {
+  const isDemo2 = typeof window !== 'undefined' && (
+    window.location.pathname.toLowerCase().includes('demo-2') ||
+    window.location.search.toLowerCase().includes('demo-2')
+  );
+  if (isDemo2) return <Demo2SheetAnalyticsPage />;
+
   const isDemo = isDemoMode || (typeof window !== 'undefined' && (window.location.search.includes('demo=true') || window.location.pathname.includes('demo')));
   const { user, profile, loading } = useAuth();
 

@@ -26,6 +26,7 @@ import {
   DatePickerCell
 } from '../DashboardUiPrimitives';
 import { DocLinksDropdown } from '../DocLinksDropdown';
+import { ScriptDocLink } from '../ScriptDocLink';
 
 export const ShootingRow = React.memo(({ item, index, activeGid, onToggleFilmed, loadingFilmedCode, onUpdateShootingRow, onToggleEditCheck, liveData, allReelsCodes, sequenceRegistry, optionsLists, autofillDrag, setAutofillDrag, onApplyAutofill, activeCell, setActiveCell, toast, isSubscribed, onToggleSubscribe, isSimple, publishedTasks, sharedLinks, onTogglePublish, onUpdateSharedLink, noteAuthors }: any) => {
   const isGlowing = false;
@@ -470,15 +471,24 @@ export const ShootingRow = React.memo(({ item, index, activeGid, onToggleFilmed,
                 const isGoogleDoc = parsed.url.includes('docs.google.com/document/d/');
                 return (
                   <div className="flex items-center gap-1.5 shrink-0">
-                    <a 
-                      href={parsed.url} 
-                      target="_blank" 
-                      rel="noopener noreferrer" 
-                      className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/20 rounded-xl text-[11px] font-extrabold transition-all text-blue-400 shadow-sm shrink-0 hover:scale-[1.02] active:scale-95 cursor-pointer"
-                    >
-                      <FolderOpen size={12} className="shrink-0 text-blue-400" />
-                      <span className="truncate max-w-[130px] arabic-text" title={parsed.url}>{parsed.text}</span>
-                    </a>
+                    {isGoogleDoc ? (
+                      <ScriptDocLink
+                        url={parsed.url}
+                        text={parsed.text}
+                        rowCreatedAt={item.createdAt || item.created_at || null}
+                        addedBy={item.addedBy || item.added_by || item.extraName || null}
+                      />
+                    ) : (
+                      <a 
+                        href={parsed.url} 
+                        target="_blank" 
+                        rel="noopener noreferrer" 
+                        className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-500/10 hover:bg-blue-500/20 border border-blue-500/20 rounded-xl text-[11px] font-extrabold transition-all text-blue-400 shadow-sm shrink-0 hover:scale-[1.02] active:scale-95 cursor-pointer"
+                      >
+                        <FolderOpen size={12} className="shrink-0 text-blue-400" />
+                        <span className="truncate max-w-[130px] arabic-text" title={parsed.url}>{parsed.text}</span>
+                      </a>
+                    )}
                     {isGoogleDoc && <DocLinksDropdown docUrl={parsed.url} toast={toast} />}
                   </div>
                 );

@@ -135,6 +135,57 @@ async function handleDocExtract(req: VercelRequest, res: VercelResponse) {
   }
 }
 
+async function handleDocMeta(req: VercelRequest, res: VercelResponse) {
+  const rawUrl = (req.query.url as string) || (req.query.docId as string) || '';
+  const docId = extractDocId(rawUrl);
+  if (!docId) {
+    return res.status(400).json({ error: 'Invalid or missing Google Docs URL/ID' });
+  }
+
+  try {
+    if (!process.env.GOOGLE_CLIENT_EMAIL || !process.env.GOOGLE_PRIVATE_KEY) {
+      return res.status(503).json({ error: 'Google Service Account not configured', docId });
+    }
+
+    const auth = new google.auth.GoogleAuth({
+      credentials: {
+        client_email: process.env.GOOGLE_CLIENT_EMAIL.replace(/"/g, '').trim(),
+        private_key: formatPrivateKey(process.env.GOOGLE_PRIVATE_KEY),
+      },
+      scopes: ['https://www.googleapis.com/auth/drive.readonly'],
+    });
+    const drive = google.drive({ version: 'v3', auth });
+    const meta = await drive.files.get({
+      fileId: docId,
+      fields: 'id,name,createdTime,modifiedTime,lastModifyingUser(displayName,emailAddress),version',
+      supportsAllDrives: true,
+    });
+
+    const data = meta.data;
+    const lastModifier =
+      data.lastModifyingUser?.displayName ||
+      (data.lastModifyingUser?.emailAddress ? data.lastModifyingUser.emailAddress.split('@')[0] : '');
+
+    res.setHeader('Cache-Control', 's-maxage=180, stale-while-revalidate=300');
+    return res.status(200).json({
+      docId,
+      name: data.name || '',
+      createdTime: data.createdTime || null,
+      modifiedTime: data.modifiedTime || null,
+      lastModifier: lastModifier || '',
+      version: data.version || null,
+    });
+  } catch (err: any) {
+    const status = err?.code === 404 || err?.status === 404 ? 404 : err?.code === 403 || err?.status === 403 ? 403 : 500;
+    return res.status(status).json({
+      error: status === 403 || status === 404
+        ? 'الملف غير مشارك أو لا يمكن الوصول لبياناته'
+        : (err?.message || 'Failed to read Google Doc metadata'),
+      docId,
+    });
+  }
+}
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
@@ -146,6 +197,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   if (req.query.action === 'doc-extract') {
     return handleDocExtract(req, res);
+  }
+
+  if (req.query.action === 'doc-meta') {
+    return handleDocMeta(req, res);
   }
 
   const url = req.query.url as string;

@@ -624,7 +624,7 @@ export const ReelsAnalytics = ({ isDemo = false }: ReelsAnalyticsProps) => {
       m.completionRate = targetBase > 0 ? Math.round((m.totalDone / targetBase) * 100) : 0;
     });
 
-    const monthlyBreakdown = Object.values(monthMap).sort((a, b) => b.key.localeCompare(a.key));
+    const monthlyBreakdown = Object.values(monthMap).sort((a, b) => a.key.localeCompare(b.key));
 
     // ── 5. Zero-Edit Quality Metric (نسبة الريلز الخالية من التعديلات) ──
     const doneVeList = veData.filter(v => v.done);
@@ -926,7 +926,7 @@ export const ReelsAnalytics = ({ isDemo = false }: ReelsAnalyticsProps) => {
         completionRate: rate
       };
     }
-    return stats.monthlyBreakdown.find(m => m.key === selectedMonth) || stats.monthlyBreakdown[0];
+    return stats.monthlyBreakdown.find(m => m.key === selectedMonth) || stats.monthlyBreakdown[stats.monthlyBreakdown.length - 1];
   }, [stats?.monthlyBreakdown, selectedMonth]);
 
   // Find timeline details dynamically for the searched code
@@ -1463,7 +1463,7 @@ export const ReelsAnalytics = ({ isDemo = false }: ReelsAnalyticsProps) => {
           const activeWeeklyMonthKey =
             selectedMonth !== 'ALL'
               ? selectedMonth
-              : (stats.monthlyBreakdown[0]?.key || '2026-11');
+              : (stats.monthlyBreakdown[stats.monthlyBreakdown.length - 1]?.key || '2026-11');
           const activeWeeklyMonthObj = stats.monthlyBreakdown.find(m => m.key === activeWeeklyMonthKey);
           const weeks = stats.weeklyByMonth?.[activeWeeklyMonthKey] || [];
           const sumFilmed = weeks.reduce((a, w) => a + w.filmed, 0);
